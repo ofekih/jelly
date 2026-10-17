@@ -1,0 +1,269 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: users
+// Document ID: {userId} (matches Firebase Auth UID)
+// Fields:
+//   - updatedAt: number | timestamp (optional) - last update time
+//   - createdAt: number | timestamp (optional) - creation time
+//   - comparisonScope: string (optional, <= 100 chars) - comparison filter scope preference
+//   - customPlacesApiKey: string (optional, <= 200 chars) - optional user-provided Google Places API key
+//   - displayName: string (optional, <= 200 chars) - user display name
+//   - email: string (optional, <= 254 chars) - user email
+//   - photoURL: string (optional, <= 1000 chars) - user avatar URL
+//   - defaultCity: string (optional, <= 200 chars) - default search city preference
+//   - darkMode: bool (optional) - dark mode theme preference
+//
+// Collection: users/{userId}/restaurants
+// Document ID: {restaurantId}
+// Fields:
+//   - id: string (optional/immutable, 1..150 chars) - entry identifier
+//   - placeId: string (optional, <= 300 chars) - Google Places or external ID
+//   - name: string (required, 1..200 chars) - restaurant name
+//   - formattedAddress: string (optional, <= 500 chars) - full street address
+//   - neighborhood: string (optional, <= 200 chars) - neighborhood name
+//   - city: string (optional, <= 200 chars) - city name
+//   - lat: number (optional, -90..90) - latitude coordinate
+//   - lng: number (optional, -180..180) - longitude coordinate
+//   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
+//   - priceLevel: number (optional, 0..5) - price tier (1..4)
+//   - status: string (optional, 'ranked' | 'want_to_try') - listing status
+//   - meal: string (optional, <= 100 chars) - primary meal category
+//   - meals: list<string> (optional, <= 20 items) - meal categories
+//   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
+//   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
+//   - initialRating: number (required, 1..10) - initial gut rating
+//   - rankIndex: number (required, >= 0) - 0-based rank position
+//   - magicScore: number (required, 0..10) - computed ranking score
+//   - elo: number (optional, 0..5000) - Elo rating score
+//   - comparisonsCount: number (optional, >= 0) - head-to-head comparisons count
+//   - rankedHistory: list (optional, <= 100 items) - comparison/ranking history
+//   - notes: string (optional, <= 5000 chars) - personal review notes
+//   - favoriteDishes: string (optional, <= 2000 chars) - recommended dishes
+//   - visitedAt: string | number | timestamp (optional, <= 100 chars if string) - visit date
+//   - createdAt: number | timestamp (optional) - creation timestamp
+//   - updatedAt: number | timestamp (optional) - last update timestamp
+//
+// Collection: users/{userId}/bookmarks
+// Document ID: {bookmarkId}
+// Fields:
+//   - id: string (optional/immutable, 1..150 chars) - bookmark identifier
+//   - placeId: string (optional, <= 300 chars) - Google Places or external ID
+//   - name: string (required, 1..200 chars) - restaurant name
+//   - formattedAddress: string (optional, <= 500 chars) - full street address
+//   - neighborhood: string (optional, <= 200 chars) - neighborhood name
+//   - city: string (optional, <= 200 chars) - city name
+//   - lat: number (optional, -90..90) - latitude coordinate
+//   - lng: number (optional, -180..180) - longitude coordinate
+//   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
+//   - priceLevel: number (optional, 0..5) - price tier (1..4)
+//   - meal: string (optional, <= 100 chars) - target meal category
+//   - meals: list<string> (optional, <= 20 items) - meal categories
+//   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
+//   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
+//   - notes: string (optional, <= 5000 chars) - personal notes / why want to try
+//   - createdAt: number | timestamp (optional) - creation timestamp
+//   - updatedAt: number | timestamp (optional) - last update timestamp
+//
+// Collection: sharedLists
+// Document ID: {shareId}
+// Fields:
+//   - ownerUid: string (required, immutable, matches request.auth.uid) - creator UID
+//   - ownerName: string (optional, <= 200 chars) - display name of creator
+//   - title: string (optional, <= 300 chars) - shared list title
+//   - restaurants: list (optional, <= 500 items) - snapshot of shared restaurants
+//   - bookmarks: list (optional, <= 500 items) - optional snapshot of bookmarks
+//   - createdAt: number | timestamp (optional) - creation timestamp
+//   - updatedAt: number | timestamp (optional) - last update timestamp
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the resource path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate required fields exist on the incoming document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate string length on a required field
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate optional string (if present and non-null, must be string within length bounds)
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+        request.resource.data[field] == null ||
+        (request.resource.data[field] is string &&
+         request.resource.data[field].size() >= minLen &&
+         request.resource.data[field].size() <= maxLen);
+    }
+
+    // Validate list type and maximum size
+    function isValidList(listVal, maxSize) {
+      return listVal is list && listVal.size() <= maxSize;
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update rules)
+    // ===============================================================
+
+    function isValidUserDoc(data) {
+      return data.keys().size() <= 30 &&
+        !('role' in data) &&
+        !('isAdmin' in data) &&
+        isValidOptionalString('comparisonScope', 0, 100) &&
+        isValidOptionalString('customPlacesApiKey', 0, 200) &&
+        isValidOptionalString('displayName', 0, 200) &&
+        isValidOptionalString('email', 0, 254) &&
+        isValidOptionalString('photoURL', 0, 1000) &&
+        isValidOptionalString('defaultCity', 0, 200) &&
+        (!('darkMode' in data) || data.darkMode == null || data.darkMode is bool) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp) &&
+        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp);
+    }
+
+    function isValidRestaurant(data) {
+      return data.keys().size() <= 30 &&
+        hasRequiredFields(['name', 'initialRating', 'rankIndex', 'magicScore']) &&
+        validStringLength('name', 1, 200) &&
+        data.initialRating is number && data.initialRating >= 1 && data.initialRating <= 10 &&
+        data.rankIndex is number && data.rankIndex >= 0 && data.rankIndex <= 100000 &&
+        data.magicScore is number && data.magicScore >= 0 && data.magicScore <= 10 &&
+        isValidOptionalString('id', 1, 150) &&
+        isValidOptionalString('placeId', 0, 300) &&
+        isValidOptionalString('formattedAddress', 0, 500) &&
+        isValidOptionalString('neighborhood', 0, 200) &&
+        isValidOptionalString('city', 0, 200) &&
+        isValidOptionalString('googleMapsUri', 0, 1000) &&
+        isValidOptionalString('primaryTypeDisplay', 0, 200) &&
+        isValidOptionalString('meal', 0, 100) &&
+        isValidOptionalString('notes', 0, 5000) &&
+        isValidOptionalString('favoriteDishes', 0, 2000) &&
+        (!('status' in data) || data.status == null || data.status in ['ranked', 'want_to_try']) &&
+        (!('elo' in data) || data.elo == null || (data.elo is number && data.elo >= 0 && data.elo <= 5000)) &&
+        (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+        (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+        (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
+        (!('meals' in data) || isValidList(data.meals, 20)) &&
+        (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
+        (!('rankedHistory' in data) || isValidList(data.rankedHistory, 100)) &&
+        (!('comparisonsCount' in data) || (data.comparisonsCount is number && data.comparisonsCount >= 0 && data.comparisonsCount <= 1000000)) &&
+        (!('visitedAt' in data) || data.visitedAt == null || (data.visitedAt is string && data.visitedAt.size() <= 100) || data.visitedAt is number || data.visitedAt is timestamp) &&
+        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
+    }
+
+    function isValidBookmark(data) {
+      return data.keys().size() <= 30 &&
+        hasRequiredFields(['name']) &&
+        validStringLength('name', 1, 200) &&
+        isValidOptionalString('id', 1, 150) &&
+        isValidOptionalString('placeId', 0, 300) &&
+        isValidOptionalString('formattedAddress', 0, 500) &&
+        isValidOptionalString('neighborhood', 0, 200) &&
+        isValidOptionalString('city', 0, 200) &&
+        isValidOptionalString('googleMapsUri', 0, 1000) &&
+        isValidOptionalString('primaryTypeDisplay', 0, 200) &&
+        isValidOptionalString('meal', 0, 100) &&
+        isValidOptionalString('notes', 0, 5000) &&
+        (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+        (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+        (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
+        (!('meals' in data) || isValidList(data.meals, 20)) &&
+        (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
+        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
+    }
+
+    function isValidSharedList(data) {
+      return data.keys().size() <= 25 &&
+        hasRequiredFields(['ownerUid']) &&
+        data.ownerUid is string &&
+        data.ownerUid == request.auth.uid &&
+        isValidOptionalString('id', 1, 150) &&
+        isValidOptionalString('shareId', 1, 150) &&
+        isValidOptionalString('ownerName', 0, 200) &&
+        isValidOptionalString('displayName', 0, 200) &&
+        isValidOptionalString('title', 0, 300) &&
+        isValidOptionalString('mealFilter', 0, 100) &&
+        isValidOptionalString('cityFilter', 0, 200) &&
+        isValidOptionalString('cuisineFilter', 0, 200) &&
+        (!('restaurants' in data) || isValidList(data.restaurants, 500)) &&
+        (!('entries' in data) || isValidList(data.entries, 500)) &&
+        (!('items' in data) || isValidList(data.items, 500)) &&
+        (!('bookmarks' in data) || isValidList(data.bookmarks, 500)) &&
+        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
+    }
+
+    function isDocIdUnchanged() {
+      return !('id' in resource.data) ||
+        !('id' in request.resource.data) ||
+        request.resource.data.id == resource.data.id;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUserDoc(request.resource.data);
+
+      match /restaurants/{restaurantId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidRestaurant(request.resource.data);
+        allow update: if isOwner(userId) &&
+          isValidRestaurant(request.resource.data) &&
+          isDocIdUnchanged();
+      }
+
+      match /bookmarks/{bookmarkId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidBookmark(request.resource.data);
+        allow update: if isOwner(userId) &&
+          isValidBookmark(request.resource.data) &&
+          isDocIdUnchanged();
+      }
+    }
+
+    match /sharedLists/{shareId} {
+      allow read: if true;
+      allow create: if isAuthenticated() &&
+        isValidSharedList(request.resource.data);
+      allow update: if isAuthenticated() &&
+        resource.data.ownerUid == request.auth.uid &&
+        isValidSharedList(request.resource.data);
+      allow delete: if isAuthenticated() &&
+        resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Default deny on all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
