@@ -8,6 +8,7 @@ import {
   RestaurantEntry,
 } from '../types';
 import { createManualPlaceCandidate, searchRestaurants } from '../lib/placesService';
+import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { trackEvent } from '../firebase';
 
 interface AddAndRateModalProps {
@@ -18,6 +19,7 @@ interface AddAndRateModalProps {
   reRankingEntry?: RestaurantEntry | null;
   defaultCity?: string;
   customPlacesApiKey?: string;
+  userLocation?: UserCoordinates | null;
   onCompleteQuestions: (
     candidate: PlaceCandidate,
     initialRating: number,
@@ -35,6 +37,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   reRankingEntry,
   defaultCity = '',
   customPlacesApiKey = '',
+  userLocation = null,
   onCompleteQuestions,
   onAddBookmark,
 }) => {
@@ -93,7 +96,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     setIsSearching(true);
 
     const timer = setTimeout(async () => {
-      const { results } = await searchRestaurants(trimmed, customPlacesApiKey, defaultCity);
+      const { results } = await searchRestaurants(
+        trimmed,
+        customPlacesApiKey,
+        defaultCity,
+        userLocation
+      );
       if (!cancelled) {
         setSearchResults(results);
         setIsSearching(false);
@@ -104,7 +112,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity]);
+  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation]);
 
   const finishWithMeal = (candidate: PlaceCandidate, rating: number, meal: MealCategory) => {
     // Check if this exact (placeId + meal) or (name + address + meal) already exists in the list
@@ -276,6 +284,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     const locationShort =
                       [item.neighborhood, item.city].filter(Boolean).join(', ') ||
                       item.formattedAddress;
+                    const distLabel = formatDistanceMiles(
+                      getItemDistanceMiles(item, userLocation)
+                    );
                     const isAlreadyBookmarked = bookmarkedPlaceIds?.has(item.placeId);
 
                     return (
@@ -292,7 +303,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                             {item.name}
                           </div>
                           <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-                            {primaryCuisine} · {locationShort}
+                            {[primaryCuisine, locationShort, distLabel].filter(Boolean).join(' · ')}
                           </div>
                         </button>
 

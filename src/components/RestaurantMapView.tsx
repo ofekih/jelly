@@ -1,7 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Bookmark, ExternalMapLinkIcon, Navigation, Sparkles } from './MapIcons';
+import { Bookmark, ExternalMapLinkIcon, LocateFixed, Navigation, Sparkles } from './MapIcons';
 import { BookmarkEntry, RestaurantEntry } from '../types';
+import {
+  formatDistanceMiles,
+  getItemDistanceMiles,
+  haversineDistanceMiles,
+  resolveItemCoords,
+  UserCoordinates,
+} from '../lib/geo';
 import { ScoreBadge } from './ScoreBadge';
 
 interface RestaurantMapViewProps {
@@ -9,23 +16,12 @@ interface RestaurantMapViewProps {
   restaurants: RestaurantEntry[];
   bookmarks: BookmarkEntry[];
   darkMode: boolean;
+  userLocation?: UserCoordinates | null;
+  selectedCity?: string | 'ALL';
+  onRequestLocation?: () => void;
   onSelectSpot: (spot: RestaurantEntry) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
 }
-
-const CITY_FALLBACK_COORDS: Record<string, [number, number]> = {
-  'san francisco': [37.7749, -122.4194],
-  'new york': [40.7128, -74.006],
-  brooklyn: [40.7181, -73.9571],
-  'los angeles': [34.0522, -118.2437],
-  chicago: [41.8781, -87.6298],
-  seattle: [47.6062, -122.3321],
-  austin: [30.2672, -97.7431],
-  boston: [42.3601, -71.0589],
-  tokyo: [35.6762, 139.6503],
-  london: [51.5072, -0.1276],
-  paris: [48.8566, 2.3522],
-};
 
 function getEntryCoords(
   item: { id: string; lat?: number; lng?: number; city?: string; formattedAddress?: string },
@@ -40,14 +36,12 @@ function getEntryCoords(
     return [item.lat, item.lng];
   }
 
-  const hay = `${item.city || ''} ${item.formattedAddress || ''}`.toLowerCase();
-  for (const [key, coords] of Object.entries(CITY_FALLBACK_COORDS)) {
-    if (hay.includes(key)) {
-      // Deterministic tiny offset so multiple fallback pins in the same city don't overlap
-      const angle = (idx * 137.5 * Math.PI) / 180;
-      const radius = 0.004 * Math.sqrt(idx + 1);
-      return [coords[0] + radius * Math.cos(angle), coords[1] + radius * Math.sin(angle)];
-    }
+  const fallback = resolveItemCoords(item);
+  if (fallback) {
+    // Deterministic tiny offset so multiple fallback pins in the same city don't overlap
+    const angle = (idx * 137.5 * Math.PI) / 180;
+    const radius = 0.004 * Math.sqrt(idx + 1);
+    return [fallback[0] + radius * Math.cos(angle), fallback[1] + radius * Math.sin(angle)];
   }
   return null;
 }
@@ -70,6 +64,9 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
   restaurants,
   bookmarks,
   darkMode,
+  userLocation,
+  selectedCity = 'ALL',
+  onRequestLocation,
   onSelectSpot,
   onRankBookmark,
 }) => {
@@ -103,9 +100,13 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    const initialCenter: [number, number] = userLocation
+      ? [userLocation.lat, userLocation.lng]
+      : [37.7749, -122.4194];
+
     const map = L.map(containerRef.current, {
-      center: [37.7749, -122.4194],
-      zoom: 12,
+      center: initialCenter,
+      zoom: 13,
       zoomControl: false,
       attributionControl: false,
     });
@@ -141,6 +142,47 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
     setSelectedBookmark(null);
 
     const boundsPoints: [number, number][] = [];
+
+    // Render pulsing blue "You Are Here" marker if userLocation is available
+    if (userLocation) {
+      const userHtml = `
+        <div style="
+          position: relative;
+          width: 22px;
+          height: 22px;
+          transform: translate(-50%, -50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        ">
+          <div style="
+            position: absolute;
+            inset: 0;
+            border-radius: 9999px;
+            background: rgba(59, 130, 246, 0.28);
+          "></div>
+          <div style="
+            width: 12px;
+            height: 12px;
+            border-radius: 9999px;
+            background: #3b82f6;
+            border: 2.5px solid #ffffff;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.5);
+          "></div>
+        </div>
+      `;
+      const userIcon = L.divIcon({
+        className: 'jelly-user-location-pin',
+        html: userHtml,
+        iconSize: [0, 0],
+      });
+      L.marker([userLocation.lat, userLocation.lng], {
+        icon: userIcon,
+        zIndexOffset: 20000,
+      })
+        .bindTooltip('You are here', { direction: 'top', offset: [0, -8] })
+        .addTo(markersGroup);
+    }
 
     if (mode === 'ranked') {
       plottedRanked.forEach(({ entry, coords }) => {
@@ -272,13 +314,40 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       });
     }
 
+    if (userLocation && selectedCity === 'ALL') {
+      const nearbyPoints = boundsPoints.filter(
+        (pt) => haversineDistanceMiles(userLocation.lat, userLocation.lng, pt[0], pt[1]) <= 30
+      );
+      if (nearbyPoints.length > 0) {
+        const localBounds = L.latLngBounds([
+          [userLocation.lat, userLocation.lng],
+          ...nearbyPoints,
+        ]);
+        map.fitBounds(localBounds, { padding: [48, 48], maxZoom: 15 });
+        return;
+      }
+      if (boundsPoints.length === 0) {
+        map.setView([userLocation.lat, userLocation.lng], 13);
+        return;
+      }
+    }
+
     if (boundsPoints.length === 1) {
       map.setView(boundsPoints[0], 14);
     } else if (boundsPoints.length > 1) {
       const bounds = L.latLngBounds(boundsPoints);
       map.fitBounds(bounds, { padding: [44, 44], maxZoom: 15 });
     }
-  }, [mode, plottedRanked, plottedBookmarks, darkMode]);
+  }, [mode, plottedRanked, plottedBookmarks, darkMode, userLocation, selectedCity]);
+
+  const handleLocateMeClick = () => {
+    const map = mapRef.current;
+    if (userLocation && map) {
+      map.setView([userLocation.lat, userLocation.lng], 14, { animate: true });
+    } else if (onRequestLocation) {
+      onRequestLocation();
+    }
+  };
 
   const totalCount = mode === 'ranked' ? plottedRanked.length : plottedBookmarks.length;
 
@@ -293,6 +362,21 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
           {totalCount} {totalCount === 1 ? 'spot' : 'spots'} on map
         </span>
       </div>
+
+      {/* Locate Me Button */}
+      <button
+        type="button"
+        onClick={handleLocateMeClick}
+        className={`absolute top-24 right-2.5 z-[400] w-8 h-8 rounded-lg bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex items-center justify-center transition-colors ${
+          userLocation
+            ? 'text-blue-600 dark:text-blue-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+            : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+        }`}
+        title={userLocation ? 'Center on my location' : 'Use my location'}
+        aria-label="Center on my location"
+      >
+        <LocateFixed className="w-4 h-4" />
+      </button>
 
       {/* Selected Ranked Spot Preview Card */}
       {selectedRanked && (
@@ -315,6 +399,10 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
                 selectedRanked.meal,
                 selectedRanked.cuisines[0] || selectedRanked.primaryTypeDisplay,
                 selectedRanked.neighborhood || selectedRanked.city,
+                (() => {
+                  const dist = getItemDistanceMiles(selectedRanked, userLocation);
+                  return dist !== null ? formatDistanceMiles(dist) : null;
+                })(),
               ]
                 .filter(Boolean)
                 .join(' · ')}
@@ -359,6 +447,10 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
                 selectedBookmark.meal,
                 selectedBookmark.cuisines[0] || selectedBookmark.primaryTypeDisplay,
                 selectedBookmark.neighborhood || selectedBookmark.city,
+                (() => {
+                  const dist = getItemDistanceMiles(selectedBookmark, userLocation);
+                  return dist !== null ? formatDistanceMiles(dist) : null;
+                })(),
               ]
                 .filter(Boolean)
                 .join(' · ')}

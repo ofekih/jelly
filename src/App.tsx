@@ -24,6 +24,7 @@ import {
   Map as MapIcon,
   MapPin,
   Moon,
+  Navigation,
   Plus,
   Search,
   Settings,
@@ -41,6 +42,7 @@ import {
   RestaurantEntry,
   SharedListPayload,
 } from './types';
+import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { ratingToBaseElo, recomputeMagicScores } from './lib/rankingEngine';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
@@ -54,114 +56,7 @@ import { SpotDetailModal } from './components/SpotDetailModal';
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
 const LOCAL_SETTINGS_KEY = 'palatelo_settings_v2';
-
-const STARTER_SAMPLE_SPOTS: Omit<RestaurantEntry, 'rankIndex' | 'magicScore'>[] = [
-  {
-    id: 'ChIJBVY2Bxh-j4ARa2zO8Jd6H2A__Breakfast',
-    placeId: 'ChIJBVY2Bxh-j4ARa2zO8Jd6H2A',
-    name: 'Tartine Bakery',
-    formattedAddress: '600 Guerrero St, San Francisco, CA',
-    neighborhood: 'Mission',
-    city: 'San Francisco',
-    lat: 37.7614,
-    lng: -122.4241,
-    googleMapsUri: 'https://www.google.com/maps/search/?api=1&query=Tartine+Bakery+San+Francisco',
-    priceLevel: 2,
-    meal: 'Breakfast',
-    meals: ['Breakfast', 'Coffee', 'Dessert'],
-    cuisines: ['Bakery', 'French'],
-    primaryTypeDisplay: 'Bakery',
-    initialRating: 10,
-    elo: 1920,
-    comparisonsCount: 5,
-    createdAt: Date.now() - 86400000 * 10,
-    updatedAt: Date.now() - 86400000 * 10,
-  },
-  {
-    id: 'sample_lilia__Dinner',
-    placeId: 'sample_lilia',
-    name: 'Lilia',
-    formattedAddress: '567 Union Ave, Brooklyn, NY',
-    neighborhood: 'Williamsburg',
-    city: 'New York',
-    lat: 40.7176,
-    lng: -73.9525,
-    googleMapsUri: 'https://www.google.com/maps/search/?api=1&query=Lilia+Brooklyn+NY',
-    priceLevel: 3,
-    meal: 'Dinner',
-    meals: ['Dinner'],
-    cuisines: ['Italian'],
-    primaryTypeDisplay: 'Italian',
-    initialRating: 9,
-    elo: 1860,
-    comparisonsCount: 5,
-    createdAt: Date.now() - 86400000 * 8,
-    updatedAt: Date.now() - 86400000 * 8,
-  },
-  {
-    id: 'sample_nopa__Dinner',
-    placeId: 'sample_nopa',
-    name: 'Nopa',
-    formattedAddress: '560 Divisadero St, San Francisco, CA',
-    neighborhood: 'NoPa',
-    city: 'San Francisco',
-    lat: 37.7749,
-    lng: -122.4375,
-    googleMapsUri: 'https://www.google.com/maps/search/?api=1&query=Nopa+San+Francisco',
-    priceLevel: 3,
-    meal: 'Dinner',
-    meals: ['Dinner', 'Breakfast', 'Drinks'],
-    cuisines: ['American', 'Mediterranean'],
-    primaryTypeDisplay: 'Californian',
-    initialRating: 9,
-    elo: 1790,
-    comparisonsCount: 4,
-    createdAt: Date.now() - 86400000 * 6,
-    updatedAt: Date.now() - 86400000 * 6,
-  },
-  {
-    id: 'sample_mensho__Dinner',
-    placeId: 'sample_mensho',
-    name: 'Mensho Tokyo SF',
-    formattedAddress: '672 Geary St, San Francisco, CA',
-    neighborhood: 'Tenderloin',
-    city: 'San Francisco',
-    lat: 37.7867,
-    lng: -122.4144,
-    googleMapsUri: 'https://www.google.com/maps/search/?api=1&query=Mensho+Tokyo+San+Francisco',
-    priceLevel: 2,
-    meal: 'Dinner',
-    meals: ['Dinner'],
-    cuisines: ['Japanese', 'Ramen'],
-    primaryTypeDisplay: 'Ramen',
-    initialRating: 8,
-    elo: 1730,
-    comparisonsCount: 4,
-    createdAt: Date.now() - 86400000 * 4,
-    updatedAt: Date.now() - 86400000 * 4,
-  },
-  {
-    id: 'sample_farolito__Lunch',
-    placeId: 'sample_farolito',
-    name: 'El Farolito',
-    formattedAddress: '2779 Mission St, San Francisco, CA',
-    neighborhood: 'Mission',
-    city: 'San Francisco',
-    lat: 37.7527,
-    lng: -122.4184,
-    googleMapsUri: 'https://www.google.com/maps/search/?api=1&query=El+Farolito+Mission+St+San+Francisco',
-    priceLevel: 1,
-    meal: 'Lunch',
-    meals: ['Lunch', 'Dinner'],
-    cuisines: ['Mexican'],
-    primaryTypeDisplay: 'Mexican',
-    initialRating: 8,
-    elo: 1670,
-    comparisonsCount: 3,
-    createdAt: Date.now() - 86400000 * 2,
-    updatedAt: Date.now() - 86400000 * 2,
-  },
-];
+const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
 
 function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
   const meal = normalizeMealCategory(raw.meal || raw.meals?.[0]);
@@ -275,8 +170,25 @@ export const App: React.FC = () => {
   const [selectedMeal, setSelectedMeal] = useState<MealCategory | 'ALL'>('ALL');
   const [selectedCity, setSelectedCity] = useState<string | 'ALL'>('ALL');
   const [selectedCuisine, setSelectedCuisine] = useState<string | 'ALL'>('ALL');
+  const [sortByNearest, setSortByNearest] = useState<boolean>(false);
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState('');
+
+  // User Geolocation State
+  const [userLocation, setUserLocation] = useState<UserCoordinates | null>(() => {
+    try {
+      const cached = sessionStorage.getItem(SESSION_COORDS_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  });
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -295,6 +207,46 @@ export const App: React.FC = () => {
       setToastMessage((prev) => (prev === msg ? null : prev));
     }, 3000);
   };
+
+  const requestUserLocation = (opts?: { enableSortByNearest?: boolean; silent?: boolean }) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      if (!opts?.silent) showToast('Location access is not supported by your browser');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords: UserCoordinates = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        setUserLocation(coords);
+        try {
+          sessionStorage.setItem(SESSION_COORDS_KEY, JSON.stringify(coords));
+        } catch {
+          // Ignore
+        }
+        if (opts?.enableSortByNearest) {
+          setSortByNearest(true);
+        }
+      },
+      () => {
+        if (!opts?.silent) {
+          showToast('Enable location permissions in your browser to sort by nearest');
+        }
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 300000,
+      }
+    );
+  };
+
+  // Automatically request location access on initial load
+  useEffect(() => {
+    requestUserLocation({ silent: true });
+  }, []);
 
   // Check URL for shared list parameter (?list=<shareId>)
   useEffect(() => {
@@ -913,16 +865,6 @@ export const App: React.FC = () => {
     showToast(`Removed ${target.name}`);
   };
 
-  const handleLoadStarterSamples = async () => {
-    const seeded: RestaurantEntry[] = STARTER_SAMPLE_SPOTS.map((s, idx) => ({
-      ...s,
-      rankIndex: idx,
-      magicScore: s.initialRating,
-    }));
-    await persistOrderedRestaurants(seeded);
-    showToast('Loaded sample places');
-  };
-
   const isReadOnly = Boolean(sharedList);
   const activeRestaurants = sharedList ? sharedList.restaurants : restaurants;
   const activeBookmarks = sharedList ? sharedList.bookmarks || [] : bookmarks;
@@ -973,7 +915,7 @@ export const App: React.FC = () => {
   }, [currentSourceItems, selectedMeal, selectedCity]);
 
   const filteredRestaurants = useMemo(() => {
-    return activeRestaurants.filter((r) => {
+    const base = activeRestaurants.filter((r) => {
       if (selectedCity !== 'ALL' && r.city !== selectedCity) return false;
       if (selectedMeal !== 'ALL' && r.meal !== selectedMeal) return false;
       if (selectedCuisine !== 'ALL' && !r.cuisines.includes(selectedCuisine)) return false;
@@ -984,10 +926,31 @@ export const App: React.FC = () => {
       }
       return true;
     });
-  }, [activeRestaurants, selectedCity, selectedMeal, selectedCuisine, listSearchQuery]);
+
+    if (sortByNearest && userLocation) {
+      return [...base].sort((a, b) => {
+        const da = getItemDistanceMiles(a, userLocation);
+        const db = getItemDistanceMiles(b, userLocation);
+        if (da === null && db === null) return a.rankIndex - b.rankIndex;
+        if (da === null) return 1;
+        if (db === null) return -1;
+        return da - db;
+      });
+    }
+
+    return base;
+  }, [
+    activeRestaurants,
+    selectedCity,
+    selectedMeal,
+    selectedCuisine,
+    listSearchQuery,
+    sortByNearest,
+    userLocation,
+  ]);
 
   const filteredBookmarks = useMemo(() => {
-    return activeBookmarks.filter((b) => {
+    const base = activeBookmarks.filter((b) => {
       if (selectedCity !== 'ALL' && b.city !== selectedCity) return false;
       if (selectedMeal !== 'ALL' && b.meal !== selectedMeal) return false;
       if (selectedCuisine !== 'ALL' && !b.cuisines.includes(selectedCuisine)) return false;
@@ -998,7 +961,27 @@ export const App: React.FC = () => {
       }
       return true;
     });
-  }, [activeBookmarks, selectedCity, selectedMeal, selectedCuisine, listSearchQuery]);
+
+    if (userLocation) {
+      return [...base].sort((a, b) => {
+        const da = getItemDistanceMiles(a, userLocation);
+        const db = getItemDistanceMiles(b, userLocation);
+        if (da === null && db === null) return b.createdAt - a.createdAt;
+        if (da === null) return 1;
+        if (db === null) return -1;
+        return da - db;
+      });
+    }
+
+    return base;
+  }, [
+    activeBookmarks,
+    selectedCity,
+    selectedMeal,
+    selectedCuisine,
+    listSearchQuery,
+    userLocation,
+  ]);
 
   const isFiltered =
     selectedCity !== 'ALL' ||
@@ -1288,10 +1271,45 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Clean Filters: Meal Tabs + City Filter Pill + Cuisine Chips */}
+        {/* Clean Filters: Meal Tabs + Near Me Toggle + City Filter Pill + Cuisine Chips */}
         {currentSourceItems.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {/* Near Me / Sort by Nearest Pill */}
+              {viewMode === 'list' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!userLocation) {
+                      requestUserLocation({ enableSortByNearest: true });
+                      return;
+                    }
+                    if (activeTab === 'ranked') {
+                      const next = !sortByNearest;
+                      setSortByNearest(next);
+                      trackEvent('toggle_sort_nearest', { sort_by_nearest: next });
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 rounded-full text-xs font-semibold shrink-0 flex items-center gap-1 transition-colors ${
+                    (activeTab === 'ranked' ? sortByNearest && Boolean(userLocation) : Boolean(userLocation))
+                      ? 'bg-blue-600 text-white dark:bg-blue-500 dark:text-zinc-950'
+                      : 'bg-zinc-200/70 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                  title={
+                    !userLocation
+                      ? 'Use my location to sort by nearest'
+                      : activeTab === 'ranked'
+                      ? sortByNearest
+                        ? 'Sorted by nearest · Click to sort by rank'
+                        : 'Sort by nearest to me'
+                      : 'Sorted by nearest to me'
+                  }
+                >
+                  <Navigation className="w-3 h-3" />
+                  <span>Near Me</span>
+                </button>
+              )}
+
               {/* City Filter Pill (shown when 2+ cities exist or a city filter is active) */}
               {(cityCounts.length > 1 || selectedCity !== 'ALL') && (
                 <div className="relative shrink-0 flex items-center">
@@ -1400,6 +1418,9 @@ export const App: React.FC = () => {
             restaurants={filteredRestaurants}
             bookmarks={filteredBookmarks}
             darkMode={darkMode}
+            userLocation={userLocation}
+            selectedCity={selectedCity}
+            onRequestLocation={() => requestUserLocation({ silent: false })}
             onSelectSpot={(spot) => {
               trackEvent('view_spot_detail', {
                 restaurant_name: spot.name,
@@ -1416,6 +1437,8 @@ export const App: React.FC = () => {
           <RestaurantList
             restaurants={filteredRestaurants}
             isFiltered={isFiltered}
+            sortByNearest={sortByNearest && Boolean(userLocation)}
+            userLocation={userLocation}
             readOnly={isReadOnly}
             selectedMealFilter={selectedMeal}
             totalUnfilteredCount={activeRestaurants.length}
@@ -1440,6 +1463,7 @@ export const App: React.FC = () => {
           <BookmarkList
             bookmarks={filteredBookmarks}
             isFiltered={isFiltered}
+            userLocation={userLocation}
             selectedMealFilter={selectedMeal}
             totalUnfilteredCount={activeBookmarks.length}
             readOnly={isReadOnly}
@@ -1467,6 +1491,7 @@ export const App: React.FC = () => {
         bookmarkedPlaceIds={bookmarkedPlaceIds}
         reRankingEntry={reRankingEntry}
         defaultCity={defaultCity}
+        userLocation={userLocation}
         onCompleteQuestions={handleCompleteQuestions}
         onAddBookmark={handleAddBookmark}
       />
@@ -1563,19 +1588,6 @@ export const App: React.FC = () => {
                   <Download className="w-3.5 h-3.5" />
                   <span>Export JSON</span>
                 </button>
-
-                {restaurants.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleLoadStarterSamples();
-                      setIsSettingsOpen(false);
-                    }}
-                    className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 text-xs font-medium"
-                  >
-                    Load 5 Sample Spots
-                  </button>
-                )}
               </div>
 
               {user && (

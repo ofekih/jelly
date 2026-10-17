@@ -1,6 +1,7 @@
 import React from 'react';
 import { Bookmark, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, MealCategory } from '../types';
+import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { JellyBeanIcon } from './JellyBeanIcon';
 
 interface BookmarkListProps {
@@ -8,6 +9,7 @@ interface BookmarkListProps {
   isFiltered: boolean;
   selectedMealFilter: MealCategory | 'ALL';
   totalUnfilteredCount: number;
+  userLocation?: UserCoordinates | null;
   readOnly?: boolean;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
   onDeleteBookmark: (id: string) => void;
@@ -19,6 +21,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   isFiltered,
   selectedMealFilter,
   totalUnfilteredCount,
+  userLocation = null,
   readOnly = false,
   onRankBookmark,
   onDeleteBookmark,
@@ -72,10 +75,13 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
       {bookmarks.map((item) => {
         const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
         const locationLabel = item.neighborhood || item.city;
+        const rawMiles = getItemDistanceMiles(item, userLocation);
+        const distLabel = formatDistanceMiles(rawMiles);
         const subtitleParts = [
           selectedMealFilter === 'ALL' ? item.meal : null,
           primaryCuisine,
           locationLabel,
+          distLabel,
         ].filter(Boolean);
 
         return (

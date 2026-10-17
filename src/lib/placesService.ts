@@ -1,6 +1,7 @@
 import { DEFAULT_PLACES_API_KEY } from '../firebase';
 import { PlaceCandidate } from '../types';
 import { autoCategorizePlace } from './categorizer';
+import { UserCoordinates } from './geo';
 
 const GOOGLE_PRICE_MAP: Record<string, number> = {
   PRICE_LEVEL_INEXPENSIVE: 1,
@@ -33,7 +34,8 @@ function extractNeighborhoodAndCity(formattedAddress: string): {
 export async function searchRestaurants(
   query: string,
   customApiKey?: string,
-  defaultCity?: string
+  defaultCity?: string,
+  userLocation?: UserCoordinates | null
 ): Promise<{ results: PlaceCandidate[]; providerUsed: 'google_places' | 'osm_photon' }> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -71,6 +73,23 @@ export async function searchRestaurants(
       'places.servesBeer',
     ].join(',');
 
+    const requestBody: Record<string, any> = {
+      textQuery: effectiveQuery,
+      maxResultCount: 8,
+    };
+
+    if (userLocation) {
+      requestBody.locationBias = {
+        circle: {
+          center: {
+            latitude: userLocation.lat,
+            longitude: userLocation.lng,
+          },
+          radius: 25000.0,
+        },
+      };
+    }
+
     const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
       headers: {
@@ -78,10 +97,7 @@ export async function searchRestaurants(
         'X-Goog-Api-Key': apiKey,
         'X-Goog-FieldMask': fieldMask,
       },
-      body: JSON.stringify({
-        textQuery: effectiveQuery,
-        maxResultCount: 8,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (response.ok) {
@@ -138,7 +154,10 @@ export async function searchRestaurants(
 
   // 2. Automatic Fallback: OpenStreetMap Photon API (100% free, zero-billing fallback)
   try {
-    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(effectiveQuery)}&limit=12`;
+    const locParams = userLocation
+      ? `&lat=${userLocation.lat}&lon=${userLocation.lng}`
+      : '';
+    const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(effectiveQuery)}&limit=12${locParams}`;
     const res = await fetch(url);
     if (res.ok) {
       const data = await res.json();

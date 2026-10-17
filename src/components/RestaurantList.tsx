@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Plus } from 'lucide-react';
 import { MealCategory, RestaurantEntry } from '../types';
+import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -25,8 +26,10 @@ interface SortableRestaurantRowProps {
   restaurant: RestaurantEntry;
   displayPosition: number;
   isFiltered: boolean;
+  sortByNearest?: boolean;
   readOnly?: boolean;
   selectedMealFilter: MealCategory | 'ALL';
+  userLocation?: UserCoordinates | null;
   onSelectSpot: (restaurant: RestaurantEntry) => void;
 }
 
@@ -34,8 +37,10 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   restaurant,
   displayPosition,
   isFiltered,
+  sortByNearest = false,
   readOnly = false,
   selectedMealFilter,
+  userLocation = null,
   onSelectSpot,
 }) => {
   const {
@@ -45,7 +50,10 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: restaurant.id, disabled: isFiltered || readOnly });
+  } = useSortable({
+    id: restaurant.id,
+    disabled: isFiltered || sortByNearest || readOnly,
+  });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -53,10 +61,13 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     zIndex: isDragging ? 30 : 1,
   };
 
-  const rankNum = isFiltered ? displayPosition : restaurant.rankIndex + 1;
+  const rankNum =
+    sortByNearest
+      ? restaurant.rankIndex + 1
+      : isFiltered
+      ? displayPosition
+      : restaurant.rankIndex + 1;
 
-  // Build one clean, concise Beli-style subtitle line:
-  // e.g. "Dinner · Italian · Williamsburg" (or if already filtering by Dinner: "Italian · Williamsburg")
   const primaryCuisine = restaurant.cuisines[0] || restaurant.primaryTypeDisplay;
   const locationLabel =
     restaurant.neighborhood ||
@@ -64,10 +75,19 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     restaurant.formattedAddress.split(',')[1]?.trim() ||
     restaurant.formattedAddress.split(',')[0]?.trim();
 
+  const rawMiles = getItemDistanceMiles(restaurant, userLocation);
+  const distLabel =
+    rawMiles !== null
+      ? sortByNearest && rawMiles >= 100
+        ? `${Math.round(rawMiles)} mi`
+        : formatDistanceMiles(rawMiles)
+      : null;
+
   const subtitleParts = [
     selectedMealFilter === 'ALL' ? restaurant.meal : null,
     primaryCuisine,
     locationLabel,
+    distLabel,
   ].filter(Boolean);
 
   return (
@@ -83,7 +103,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     >
       {/* Left: Drag Handle + Rank Number + Name/Subtitle */}
       <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
-        {!isFiltered && !readOnly && (
+        {!isFiltered && !sortByNearest && !readOnly && (
           <button
             type="button"
             {...attributes}
@@ -97,8 +117,11 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
           </button>
         )}
 
-        <span className="w-6 text-right font-bold text-sm tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">
-          {rankNum}
+        <span
+          className="w-6 text-right font-bold text-sm tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0"
+          title={sortByNearest ? `Overall Rank #${rankNum}` : undefined}
+        >
+          {sortByNearest ? `#${rankNum}` : rankNum}
         </span>
 
         <div className="min-w-0 flex-1">
@@ -120,9 +143,11 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
 interface RestaurantListProps {
   restaurants: RestaurantEntry[];
   isFiltered: boolean;
+  sortByNearest?: boolean;
   readOnly?: boolean;
   selectedMealFilter: MealCategory | 'ALL';
   totalUnfilteredCount: number;
+  userLocation?: UserCoordinates | null;
   onReorderDragEnd: (activeId: string, overId: string) => void;
   onSelectSpot: (restaurant: RestaurantEntry) => void;
   onOpenAddModal: () => void;
@@ -131,9 +156,11 @@ interface RestaurantListProps {
 export const RestaurantList: React.FC<RestaurantListProps> = ({
   restaurants,
   isFiltered,
+  sortByNearest = false,
   readOnly = false,
   selectedMealFilter,
   totalUnfilteredCount,
+  userLocation = null,
   onReorderDragEnd,
   onSelectSpot,
   onOpenAddModal,
@@ -195,8 +222,10 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
               restaurant={restaurant}
               displayPosition={idx + 1}
               isFiltered={isFiltered}
+              sortByNearest={sortByNearest}
               readOnly={readOnly}
               selectedMealFilter={selectedMealFilter}
+              userLocation={userLocation}
               onSelectSpot={onSelectSpot}
             />
           ))}
