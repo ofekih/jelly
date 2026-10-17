@@ -7,20 +7,21 @@ import {
   recomputeMagicScores,
   recordSxSComparison,
 } from './rankingEngine';
-import { RestaurantEntry } from '../types';
+import { MealCategory, RestaurantEntry } from '../types';
 
 function makeDummySpot(
   id: string,
   name: string,
   initialRating: number,
-  rankIndex: number
+  rankIndex: number,
+  meal: MealCategory = 'Dinner'
 ): RestaurantEntry {
   return {
     id,
     name,
     formattedAddress: '123 Main St',
-    meal: 'Dinner',
-    meals: ['Dinner'],
+    meal,
+    meals: [meal],
     cuisines: ['Italian'],
     initialRating,
     elo: ratingToBaseElo(initialRating),
@@ -77,5 +78,37 @@ describe('rankingEngine (ELO-based)', () => {
     const { insertIndex } = getBestInsertionIndex(state);
     expect(insertIndex).toBe(0);
     expect(state.candidateElo).toBeGreaterThan(initialElo);
+  });
+
+  it('always compares against at least one same-meal spot above and one same-meal spot below when they exist', () => {
+    // Mixed-meal list where Dinner spots are separated by Breakfast, Coffee, and Lunch spots
+    const existing = recomputeMagicScores([
+      makeDummySpot('1', 'Top Dinner', 9.6, 0, 'Dinner'),
+      makeDummySpot('2', 'Top Breakfast', 9.2, 1, 'Breakfast'),
+      makeDummySpot('3', 'Great Coffee', 8.8, 2, 'Coffee'),
+      makeDummySpot('4', 'Good Lunch', 8.4, 3, 'Lunch'),
+      makeDummySpot('5', 'Mid Dinner', 8.0, 4, 'Dinner'),
+      makeDummySpot('6', 'Lower Dinner', 7.2, 5, 'Dinner'),
+    ]);
+
+    // Candidate is a Dinner spot with gut rating 8.6 (sits between Top Dinner at 0 and Mid Dinner at 4)
+    let state = initSxSSearch(existing, 8.6, 'Dinner', ['Italian']);
+
+    while (true) {
+      const next = pickNextOpponent(state, existing);
+      if (!next) break;
+      // Candidate loses to spots ranked 0..2 and beats spots ranked 3..5
+      const outcome = next.opponentIndex <= 2 ? 'opponent_wins' : 'new_wins';
+      state = recordSxSComparison(state, next.opponentIndex, next.opponent, outcome);
+    }
+
+    const { insertIndex } = getBestInsertionIndex(state);
+    expect(insertIndex).toBe(3);
+
+    const comparedSet = new Set(state.comparedIndices);
+    // Must have compared against the Dinner spot above insertIndex (index 0: Top Dinner)
+    expect(comparedSet.has(0)).toBe(true);
+    // Must have compared against the Dinner spot below insertIndex (index 4: Mid Dinner)
+    expect(comparedSet.has(4)).toBe(true);
   });
 });

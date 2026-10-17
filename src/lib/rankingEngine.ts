@@ -6,6 +6,8 @@ export interface SxSHistoryStep {
   opponentIndex: number;
   outcome: 'new_wins' | 'opponent_wins' | 'tie' | 'skip';
   weightsBefore: number[];
+  minValidSlotBefore: number;
+  maxValidSlotBefore: number;
   candidateEloBefore: number;
   eloFloorBefore: number;
   eloCeilingBefore: number;
@@ -14,6 +16,8 @@ export interface SxSHistoryStep {
 
 export interface SxSSearchState {
   slotWeights: number[]; // Length N + 1 (slots 0..N)
+  minValidSlot: number; // Inclusive lower slot bound (0..N)
+  maxValidSlot: number; // Inclusive upper slot bound (0..N)
   comparedIndices: number[];
   skippedIndices: number[];
   completedComparisons: number;
@@ -222,6 +226,8 @@ export function initSxSSearch(
   if (n === 0) {
     return {
       slotWeights: [1],
+      minValidSlot: 0,
+      maxValidSlot: 0,
       comparedIndices: [],
       skippedIndices: [],
       completedComparisons: 0,
@@ -262,6 +268,8 @@ export function initSxSSearch(
 
   return {
     slotWeights,
+    minValidSlot: 0,
+    maxValidSlot: n,
     comparedIndices: [],
     skippedIndices: [],
     completedComparisons: 0,
@@ -278,7 +286,8 @@ export function initSxSSearch(
 }
 
 /**
- * Computes the current best insertion slot (0..N), final calibrated ELO, and 0-100 confidence.
+ * Computes the current best insertion slot (0..N), final calibrated ELO, and 0-100 confidence,
+ * respecting the active [minValidSlot, maxValidSlot] bounds from direct comparisons.
  */
 export function getBestInsertionIndex(state: SxSSearchState): {
   insertIndex: number;
@@ -290,9 +299,12 @@ export function getBestInsertionIndex(state: SxSSearchState): {
     return { insertIndex: 0, confidence: 100 };
   }
 
-  let bestSlot = 0;
+  const lo = clamp(state.minValidSlot ?? 0, 0, numSlots - 1);
+  const hi = clamp(state.maxValidSlot ?? numSlots - 1, lo, numSlots - 1);
+
+  let bestSlot = lo;
   let bestWeight = -1;
-  for (let i = 0; i < numSlots; i++) {
+  for (let i = lo; i <= hi; i++) {
     if (weights[i] > bestWeight) {
       bestWeight = weights[i];
       bestSlot = i;
@@ -311,8 +323,54 @@ export function getBestInsertionIndex(state: SxSSearchState): {
 }
 
 /**
+ * Checks whether there is an uncompared spot of the same meal immediately above
+ * (`index < insertIndex`) or immediately below (`index >= insertIndex`) the candidate's
+ * current projected insertion slot.
+ */
+function getMissingSameMealNeighbors(
+  state: SxSSearchState,
+  existingRanked: RestaurantEntry[],
+  insertIndex: number
+): { missingAbove: number; missingBelow: number } {
+  const n = existingRanked.length;
+  const comparedSet = new Set(state.comparedIndices);
+  const skippedSet = new Set(state.skippedIndices);
+
+  let nearestSameMealAbove = -1;
+  for (let i = Math.min(n - 1, insertIndex - 1); i >= 0; i--) {
+    if (skippedSet.has(i)) continue;
+    if (existingRanked[i].meal === state.candidateMeal) {
+      nearestSameMealAbove = i;
+      break;
+    }
+  }
+
+  let nearestSameMealBelow = -1;
+  for (let i = Math.max(0, insertIndex); i < n; i++) {
+    if (skippedSet.has(i)) continue;
+    if (existingRanked[i].meal === state.candidateMeal) {
+      nearestSameMealBelow = i;
+      break;
+    }
+  }
+
+  const missingAbove =
+    nearestSameMealAbove !== -1 && !comparedSet.has(nearestSameMealAbove)
+      ? nearestSameMealAbove
+      : -1;
+  const missingBelow =
+    nearestSameMealBelow !== -1 && !comparedSet.has(nearestSameMealBelow)
+      ? nearestSameMealBelow
+      : -1;
+
+  return { missingAbove, missingBelow };
+}
+
+/**
  * Picks the next restaurant opponent for a side-by-side comparison,
- * or returns null when the search has converged or hit maxComparisons.
+ * guaranteeing that if same-meal spots exist above and/or below the candidate's
+ * position, we compare against at least the adjacent same-meal spot above and below
+ * before concluding.
  */
 export function pickNextOpponent(
   state: SxSSearchState,
@@ -320,19 +378,46 @@ export function pickNextOpponent(
 ): { opponentIndex: number; opponent: RestaurantEntry } | null {
   const n = existingRanked.length;
   if (n === 0) return null;
-  if (state.completedComparisons >= state.maxComparisons) return null;
+
+  const usedSet = new Set([...state.comparedIndices, ...state.skippedIndices]);
+  if (usedSet.size >= n) return null;
+
+  const { insertIndex } = getBestInsertionIndex(state);
+  const { missingAbove, missingBelow } = getMissingSameMealNeighbors(
+    state,
+    existingRanked,
+    insertIndex
+  );
+  const hasMissingSameMealNeighbor = missingAbove !== -1 || missingBelow !== -1;
+
+  // Allow up to 2 extra comparisons beyond base maxComparisons if needed to verify same-meal above/below
+  const hardMaxComparisons = Math.min(n, state.maxComparisons + 2);
+  if (state.completedComparisons >= hardMaxComparisons) return null;
 
   const maxWeight = Math.max(...state.slotWeights);
-  if (maxWeight >= 0.66 && (state.completedComparisons >= 2 || n <= 2)) {
+  const baseConverged =
+    state.completedComparisons >= state.maxComparisons ||
+    state.minValidSlot >= state.maxValidSlot ||
+    (maxWeight >= 0.66 && (state.completedComparisons >= 2 || n <= 2));
+
+  if (baseConverged && !hasMissingSameMealNeighbor) {
     return null;
   }
 
-  // Find median of current slot distribution
+  // Find median of current slot distribution within [minValidSlot, maxValidSlot]
+  const loSlot = clamp(state.minValidSlot ?? 0, 0, n);
+  const hiSlot = clamp(state.maxValidSlot ?? n, loSlot, n);
+  let windowMass = 0;
+  for (let k = loSlot; k <= hiSlot; k++) {
+    windowMass += state.slotWeights[k];
+  }
+
   let cumulative = 0;
-  let medianSlot = 0;
-  for (let k = 0; k < state.slotWeights.length; k++) {
+  let medianSlot = insertIndex;
+  const halfMass = windowMass > 0 ? windowMass * 0.5 : 0.5;
+  for (let k = loSlot; k <= hiSlot; k++) {
     cumulative += state.slotWeights[k];
-    if (cumulative >= 0.5) {
+    if (cumulative >= halfMass) {
       medianSlot = k;
       break;
     }
@@ -344,12 +429,62 @@ export function pickNextOpponent(
     n - 1
   );
 
-  const usedSet = new Set([...state.comparedIndices, ...state.skippedIndices]);
+  // 1. If there are uncompared same-meal spots inside the active window [loSlot, hiSlot - 1],
+  //    pivot on the same-meal spot closest to targetOpponentIdx so we bracket within the meal first!
+  if (loSlot < hiSlot) {
+    let bestSameMealInWindow = -1;
+    let bestSameMealDist = Infinity;
+    for (let i = loSlot; i <= hiSlot - 1; i++) {
+      if (usedSet.has(i)) continue;
+      if (existingRanked[i].meal === state.candidateMeal) {
+        const dist = Math.abs(i - targetOpponentIdx);
+        if (dist < bestSameMealDist) {
+          bestSameMealDist = dist;
+          bestSameMealInWindow = i;
+        }
+      }
+    }
+    if (bestSameMealInWindow !== -1) {
+      return {
+        opponentIndex: bestSameMealInWindow,
+        opponent: existingRanked[bestSameMealInWindow],
+      };
+    }
+  }
 
+  // 2. If the adjacent same-meal spot above or below `insertIndex` hasn't been compared yet,
+  //    compare against it now so both same-meal neighbors are guaranteed to be tested.
+  if (missingAbove !== -1 && missingBelow !== -1) {
+    const distAbove = Math.abs(missingAbove - targetOpponentIdx);
+    const distBelow = Math.abs(missingBelow - targetOpponentIdx);
+    const chosenIdx = distAbove <= distBelow ? missingAbove : missingBelow;
+    return {
+      opponentIndex: chosenIdx,
+      opponent: existingRanked[chosenIdx],
+    };
+  }
+  if (missingAbove !== -1) {
+    return {
+      opponentIndex: missingAbove,
+      opponent: existingRanked[missingAbove],
+    };
+  }
+  if (missingBelow !== -1) {
+    return {
+      opponentIndex: missingBelow,
+      opponent: existingRanked[missingBelow],
+    };
+  }
+
+  // 3. Otherwise (same-meal neighbors above & below are already verified),
+  //    refine exact placement within the active window [loSlot, hiSlot - 1]
   let bestCandidateIdx = -1;
   let bestCandidateScore = -Infinity;
 
-  for (let i = 0; i < n; i++) {
+  const searchStart = loSlot < hiSlot ? loSlot : 0;
+  const searchEnd = loSlot < hiSlot ? hiSlot - 1 : n - 1;
+
+  for (let i = searchStart; i <= searchEnd; i++) {
     if (usedSet.has(i)) continue;
 
     const item = existingRanked[i];
@@ -357,8 +492,7 @@ export function pickNextOpponent(
 
     let score = -dist * 1.45;
 
-    // Gentle preference for same-meal or same-cuisine opponents when close in rank
-    if (item.meal === state.candidateMeal && dist <= 3) score += 0.5;
+    if (item.meal === state.candidateMeal && dist <= 3) score += 0.75;
     if (item.cuisines.some((c) => state.candidateCuisines.includes(c)) && dist <= 3) {
       score += 0.45;
     }
@@ -390,6 +524,8 @@ export function recordSxSComparison(
   outcome: 'new_wins' | 'opponent_wins' | 'tie' | 'skip'
 ): SxSSearchState {
   const prevWeights = [...state.slotWeights];
+  const prevMinSlot = state.minValidSlot;
+  const prevMaxSlot = state.maxValidSlot;
   const prevAdjustments = { ...state.opponentEloAdjustments };
 
   if (outcome === 'skip') {
@@ -404,6 +540,8 @@ export function recordSxSComparison(
           opponentIndex,
           outcome,
           weightsBefore: prevWeights,
+          minValidSlotBefore: prevMinSlot,
+          maxValidSlotBefore: prevMaxSlot,
           candidateEloBefore: state.candidateElo,
           eloFloorBefore: state.eloFloor,
           eloCeilingBefore: state.eloCeiling,
@@ -428,21 +566,37 @@ export function recordSxSComparison(
 
   let nextFloor = state.eloFloor;
   let nextCeiling = state.eloCeiling;
+  let nextMinSlot = state.minValidSlot;
+  let nextMaxSlot = state.maxValidSlot;
 
   if (outcome === 'new_wins') {
     nextFloor = Math.max(nextFloor, oppElo + oppDelta + 10);
     if (nextCeiling < nextFloor) nextCeiling = nextFloor + 24;
     nextCandidateElo = clamp(Math.max(nextCandidateElo, oppElo + 16), nextFloor, nextCeiling);
+
+    // Candidate beat opponent at `opponentIndex`, so candidate belongs at or above `opponentIndex`
+    nextMaxSlot = Math.min(nextMaxSlot, opponentIndex);
+    if (nextMinSlot > nextMaxSlot) {
+      nextMinSlot = nextMaxSlot;
+    }
   } else if (outcome === 'opponent_wins') {
     nextCeiling = Math.min(nextCeiling, oppElo + oppDelta - 10);
     if (nextFloor > nextCeiling) nextFloor = nextCeiling - 24;
     nextCandidateElo = clamp(Math.min(nextCandidateElo, oppElo - 16), nextFloor, nextCeiling);
+
+    // Opponent at `opponentIndex` beat candidate, so candidate belongs below `opponentIndex`
+    nextMinSlot = Math.max(nextMinSlot, opponentIndex + 1);
+    if (nextMaxSlot < nextMinSlot) {
+      nextMaxSlot = nextMinSlot;
+    }
   } else {
     nextCandidateElo = Math.round(0.5 * (state.candidateElo + oppElo));
+    nextMinSlot = clamp(opponentIndex, 0, state.slotWeights.length - 1);
+    nextMaxSlot = clamp(opponentIndex + 1, nextMinSlot, state.slotWeights.length - 1);
   }
 
-  const winMultiplier = 0.88;
-  const loseMultiplier = 0.12;
+  const winMultiplier = 0.92;
+  const loseMultiplier = 0.05;
 
   const nextWeights = state.slotWeights.map((w, slotIdx) => {
     if (outcome === 'new_wins') {
@@ -464,6 +618,8 @@ export function recordSxSComparison(
   return {
     ...state,
     slotWeights: normalizeWeights(nextWeights),
+    minValidSlot: nextMinSlot,
+    maxValidSlot: nextMaxSlot,
     comparedIndices: [...state.comparedIndices, opponentIndex],
     completedComparisons: state.completedComparisons + 1,
     candidateElo: nextCandidateElo,
@@ -478,6 +634,8 @@ export function recordSxSComparison(
         opponentIndex,
         outcome,
         weightsBefore: prevWeights,
+        minValidSlotBefore: prevMinSlot,
+        maxValidSlotBefore: prevMaxSlot,
         candidateEloBefore: state.candidateElo,
         eloFloorBefore: state.eloFloor,
         eloCeilingBefore: state.eloCeiling,
@@ -506,6 +664,8 @@ export function undoLastSxSStep(state: SxSSearchState): SxSSearchState {
   return {
     ...state,
     slotWeights: lastStep.weightsBefore,
+    minValidSlot: lastStep.minValidSlotBefore,
+    maxValidSlot: lastStep.maxValidSlotBefore,
     comparedIndices: state.comparedIndices.filter((i) => i !== lastStep.opponentIndex),
     completedComparisons: Math.max(0, state.completedComparisons - 1),
     candidateElo: lastStep.candidateEloBefore,
