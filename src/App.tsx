@@ -228,6 +228,16 @@ export const App: React.FC = () => {
     return '';
   });
 
+  const [linearRatingScale, setLinearRatingScale] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      if (raw) return Boolean(JSON.parse(raw).linearRatingScale);
+    } catch {
+      // Ignore
+    }
+    return false;
+  });
+
   // View & Filter State
   const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try'>('ranked');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
@@ -1501,7 +1511,12 @@ export const App: React.FC = () => {
     e.preventDefault();
     localStorage.setItem(
       LOCAL_SETTINGS_KEY,
-      JSON.stringify({ defaultCity: defaultCity.trim(), darkMode, handle: userHandle })
+      JSON.stringify({
+        defaultCity: defaultCity.trim(),
+        darkMode,
+        handle: userHandle,
+        linearRatingScale,
+      })
     );
     if (user) {
       setDoc(
@@ -2204,6 +2219,7 @@ export const App: React.FC = () => {
         friendLists={friendLists}
         reRankingEntry={reRankingEntry}
         defaultCity={defaultCity}
+        linearRatingScale={linearRatingScale}
         userLocation={userLocation}
         onCompleteQuestions={handleCompleteQuestions}
         onAddBookmark={(candidate) => handleAddBookmark(candidate)}
@@ -2349,6 +2365,41 @@ export const App: React.FC = () => {
                   placeholder="e.g. San Francisco, New York"
                   className="w-full text-xs px-3 py-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 focus:outline-none"
                 />
+              </div>
+
+              <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block">
+                  Gut-Feeling Spectrum Scale
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => setLinearRatingScale(false)}
+                    className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all ${
+                      !linearRatingScale
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    5 Equal Tiers
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLinearRatingScale(true)}
+                    className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all ${
+                      linearRatingScale
+                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
+                    }`}
+                  >
+                    Linear (1–10)
+                  </button>
+                </div>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug">
+                  {linearRatingScale
+                    ? 'Proportional 1–10 spacing across the bar.'
+                    : 'Equal width for Skip, Mid (5.0 centered), Good, Great, and Incredible so 5+ gets more room.'}
+                </p>
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">

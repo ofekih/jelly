@@ -11,6 +11,7 @@ import {
 import { createManualPlaceCandidate, searchRestaurants } from '../lib/placesService';
 import { getFriendMatchesForSpot } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
+import { pctToSpectrumRating, spectrumRatingToPct } from '../lib/rankingEngine';
 import { trackEvent } from '../firebase';
 
 interface AddAndRateModalProps {
@@ -22,6 +23,7 @@ interface AddAndRateModalProps {
   reRankingEntry?: RestaurantEntry | null;
   defaultCity?: string;
   customPlacesApiKey?: string;
+  linearRatingScale?: boolean;
   userLocation?: UserCoordinates | null;
   onCompleteQuestions: (
     candidate: PlaceCandidate,
@@ -41,6 +43,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   reRankingEntry,
   defaultCity = '',
   customPlacesApiKey = '',
+  linearRatingScale = false,
   userLocation = null,
   onCompleteQuestions,
   onAddBookmark,
@@ -168,7 +171,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
   const computeRatingFromClientX = (clientX: number, rect: DOMRect): number => {
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
-    return Math.max(1.0, Math.min(10.0, Math.round((1 + pct * 9) * 10) / 10));
+    return pctToSpectrumRating(pct, linearRatingScale);
   };
 
   const getGutVibeMeta = (rating: number | null) => {
@@ -188,7 +191,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         thumbBorder: '#f43f5e',
       };
     }
-    if (rating < 6.5) {
+    if (rating < 6.0) {
       return {
         label: 'Mid · It was okay',
         pillClass:
@@ -196,7 +199,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         thumbBorder: '#f59e0b',
       };
     }
-    if (rating < 7.6) {
+    if (rating < 7.5) {
       return {
         label: 'Good · Liked it',
         pillClass:
@@ -512,20 +515,23 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     }}
                     className="relative h-14 w-full rounded-2xl cursor-pointer select-none touch-none shadow-inner ring-1 ring-inset ring-black/10 dark:ring-white/15 bg-no-repeat flex items-center transition-transform active:scale-[0.995]"
                     style={{
-                      backgroundImage:
-                        'linear-gradient(90deg, #f43f5e 0%, #fb7185 24%, #f59e0b 45%, #14b8a6 68%, #10b981 84%, #059669 100%)',
+                      backgroundImage: linearRatingScale
+                        ? 'linear-gradient(90deg, #f43f5e 0%, #fb7185 24%, #f59e0b 45%, #14b8a6 68%, #10b981 84%, #059669 100%)'
+                        : 'linear-gradient(90deg, #f43f5e 0%, #fb7185 18%, #f59e0b 30%, #14b8a6 50%, #10b981 70%, #059669 100%)',
                       backgroundOrigin: 'border-box',
                       backgroundRepeat: 'no-repeat',
                     }}
                   >
-                    {/* Subtle Zone Boundary Dividers along the number line (<4 | 4-6 Mid | 7 Good | 8 Great | 9-10 Incredible) */}
-                    {[33.3, 61.1, 73.3, 86.7].map((leftPct) => (
-                      <div
-                        key={leftPct}
-                        className="absolute top-2 bottom-2 w-px bg-white/35 dark:bg-black/25 pointer-events-none"
-                        style={{ left: `${leftPct}%` }}
-                      />
-                    ))}
+                    {/* Subtle Zone Boundary Dividers along the number line (5 equal 20% divisions by default, or linear 1-10) */}
+                    {(linearRatingScale ? [33.3, 55.6, 72.2, 86.7] : [20, 40, 60, 80]).map(
+                      (leftPct) => (
+                        <div
+                          key={leftPct}
+                          className="absolute top-2 bottom-2 w-px bg-white/35 dark:bg-black/25 pointer-events-none"
+                          style={{ left: `${leftPct}%` }}
+                        />
+                      )
+                    )}
 
                     {/* Center baseline axis line */}
                     <div className="w-full h-0.5 bg-white/30 mx-3 rounded-full pointer-events-none" />
@@ -535,7 +541,10 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                       <div
                         className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white shadow-lg pointer-events-none flex items-center justify-center transition-transform duration-75"
                         style={{
-                          left: `${Math.max(4, Math.min(96, ((previewRating - 1) / 9) * 100))}%`,
+                          left: `${Math.max(
+                            4,
+                            Math.min(96, spectrumRatingToPct(previewRating, linearRatingScale))
+                          )}%`,
                           borderWidth: '3px',
                           borderStyle: 'solid',
                           borderColor: getGutVibeMeta(previewRating).thumbBorder,
@@ -551,13 +560,22 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
                   {/* Vibe Zone Labels aligned under the spectrum line */}
                   <div className="relative h-6 mt-2 select-none text-[11px] font-semibold">
-                    {[
-                      { label: 'Skip', rating: 2.5, leftPct: '16%', color: 'text-rose-500 dark:text-rose-400' },
-                      { label: 'Mid', rating: 5.2, leftPct: '47%', color: 'text-amber-600 dark:text-amber-400' },
-                      { label: 'Good', rating: 7.0, leftPct: '67%', color: 'text-teal-600 dark:text-teal-400' },
-                      { label: 'Great', rating: 8.1, leftPct: '80%', color: 'text-emerald-600 dark:text-emerald-400' },
-                      { label: 'Incredible', rating: 9.5, leftPct: '93%', color: 'text-emerald-700 dark:text-emerald-300' },
-                    ].map((zone) => (
+                    {(linearRatingScale
+                      ? [
+                          { label: 'Skip', rating: 2.5, leftPct: '16.7%', color: 'text-rose-500 dark:text-rose-400' },
+                          { label: 'Mid', rating: 5.0, leftPct: '44.4%', color: 'text-amber-600 dark:text-amber-400' },
+                          { label: 'Good', rating: 6.8, leftPct: '63.9%', color: 'text-teal-600 dark:text-teal-400' },
+                          { label: 'Great', rating: 8.2, leftPct: '79.4%', color: 'text-emerald-600 dark:text-emerald-400' },
+                          { label: 'Incredible', rating: 9.4, leftPct: '93.3%', color: 'text-emerald-700 dark:text-emerald-300' },
+                        ]
+                      : [
+                          { label: 'Skip', rating: 2.5, leftPct: '10%', color: 'text-rose-500 dark:text-rose-400' },
+                          { label: 'Mid', rating: 5.0, leftPct: '30%', color: 'text-amber-600 dark:text-amber-400' },
+                          { label: 'Good', rating: 6.8, leftPct: '50%', color: 'text-teal-600 dark:text-teal-400' },
+                          { label: 'Great', rating: 8.2, leftPct: '70%', color: 'text-emerald-600 dark:text-emerald-400' },
+                          { label: 'Incredible', rating: 9.4, leftPct: '90%', color: 'text-emerald-700 dark:text-emerald-300' },
+                        ]
+                    ).map((zone) => (
                       <button
                         key={zone.label}
                         type="button"

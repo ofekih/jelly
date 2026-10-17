@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   getBestInsertionIndex,
   initSxSSearch,
+  pctToSpectrumRating,
   pickNextOpponent,
   ratingToBaseElo,
   recomputeMagicScores,
   recordSxSComparison,
+  spectrumRatingToPct,
 } from './rankingEngine';
 import { MealCategory, RestaurantEntry } from '../types';
 
@@ -110,5 +112,23 @@ describe('rankingEngine (ELO-based)', () => {
     expect(comparedSet.has(0)).toBe(true);
     // Must have compared against the Dinner spot below insertIndex (index 4: Mid Dinner)
     expect(comparedSet.has(4)).toBe(true);
+  });
+
+  it('maps 5 equal visual divisions with 5.0 at the center of Mid (30%), and supports linear fallback', () => {
+    // 5 equal 20% divisions: Skip (0-20%), Mid (20-40%), Good (40-60%), Great (60-80%), Incredible (80-100%)
+    expect(pctToSpectrumRating(0.0, false)).toBe(1.0);
+    expect(pctToSpectrumRating(0.2, false)).toBe(4.0);
+    expect(pctToSpectrumRating(0.3, false)).toBe(5.0); // Center of Mid!
+    expect(pctToSpectrumRating(0.4, false)).toBe(6.0);
+    expect(pctToSpectrumRating(0.6, false)).toBe(7.5);
+    expect(pctToSpectrumRating(0.8, false)).toBe(8.8);
+    expect(pctToSpectrumRating(1.0, false)).toBe(10.0);
+
+    expect(spectrumRatingToPct(5.0, false)).toBeCloseTo(30, 1);
+    expect(spectrumRatingToPct(7.5, false)).toBeCloseTo(60, 1);
+
+    // Linear mode
+    expect(pctToSpectrumRating(0.5, true)).toBe(5.5);
+    expect(spectrumRatingToPct(5.5, true)).toBeCloseTo(50, 1);
   });
 });

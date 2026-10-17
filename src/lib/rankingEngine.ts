@@ -44,6 +44,57 @@ export function ratingToBaseElo(initialRating: number): number {
   return Math.round(950 + clamp(initialRating, 1, 10) * 100);
 }
 
+/**
+ * 5 Equal Visual Divisions (20% each):
+ * - 0.00..0.20: Skip (1.0..4.0)
+ * - 0.20..0.40: Mid (4.0..6.0) -> 5.0 is at 0.30 (exact middle of Mid)
+ * - 0.40..0.60: Good (6.0..7.5)
+ * - 0.60..0.80: Great (7.5..8.8)
+ * - 0.80..1.00: Incredible (8.8..10.0)
+ */
+const BALANCED_SPECTRUM_STOPS: Array<{ pct: number; rating: number }> = [
+  { pct: 0.0, rating: 1.0 },
+  { pct: 0.2, rating: 4.0 },
+  { pct: 0.4, rating: 6.0 },
+  { pct: 0.6, rating: 7.5 },
+  { pct: 0.8, rating: 8.8 },
+  { pct: 1.0, rating: 10.0 },
+];
+
+export function pctToSpectrumRating(pct: number, linear = false): number {
+  const p = clamp(pct, 0, 1);
+  if (linear) {
+    return round1(clamp(1.0 + p * 9.0, 1.0, 10.0));
+  }
+  for (let i = 0; i < BALANCED_SPECTRUM_STOPS.length - 1; i++) {
+    const s0 = BALANCED_SPECTRUM_STOPS[i];
+    const s1 = BALANCED_SPECTRUM_STOPS[i + 1];
+    if (p <= s1.pct || i === BALANCED_SPECTRUM_STOPS.length - 2) {
+      const localT = (p - s0.pct) / (s1.pct - s0.pct);
+      const val = s0.rating + localT * (s1.rating - s0.rating);
+      return round1(clamp(val, 1.0, 10.0));
+    }
+  }
+  return 10.0;
+}
+
+export function spectrumRatingToPct(rating: number, linear = false): number {
+  const r = clamp(rating, 1.0, 10.0);
+  if (linear) {
+    return ((r - 1.0) / 9.0) * 100;
+  }
+  for (let i = 0; i < BALANCED_SPECTRUM_STOPS.length - 1; i++) {
+    const s0 = BALANCED_SPECTRUM_STOPS[i];
+    const s1 = BALANCED_SPECTRUM_STOPS[i + 1];
+    if (r <= s1.rating || i === BALANCED_SPECTRUM_STOPS.length - 2) {
+      const localT = (r - s0.rating) / (s1.rating - s0.rating);
+      const pct = s0.pct + localT * (s1.pct - s0.pct);
+      return clamp(pct * 100, 0, 100);
+    }
+  }
+  return 100;
+}
+
 export function expectedEloWinProbability(eloA: number, eloB: number): number {
   return 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
 }
