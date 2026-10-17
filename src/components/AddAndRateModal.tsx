@@ -203,16 +203,16 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       return {
         label: 'Good · Liked it',
         pillClass:
-          'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70',
-        thumbBorder: '#14b8a6',
+          'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800/70',
+        thumbBorder: '#06b6d4',
       };
     }
     if (rating < 8.8) {
       return {
         label: 'Great · Really liked it',
         pillClass:
-          'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/70',
-        thumbBorder: '#10b981',
+          'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70',
+        thumbBorder: '#14b8a6',
       };
     }
     return {
@@ -516,8 +516,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     className="relative h-14 w-full rounded-2xl cursor-pointer select-none touch-none shadow-inner ring-1 ring-inset ring-black/10 dark:ring-white/15 bg-no-repeat flex items-center transition-transform active:scale-[0.995]"
                     style={{
                       backgroundImage: linearRatingScale
-                        ? 'linear-gradient(90deg, #f43f5e 0%, #fb7185 24%, #f59e0b 45%, #14b8a6 68%, #10b981 84%, #059669 100%)'
-                        : 'linear-gradient(90deg, #f43f5e 0%, #fb7185 18%, #f59e0b 30%, #14b8a6 50%, #10b981 70%, #059669 100%)',
+                        ? 'linear-gradient(90deg, #f43f5e 0%, #fb7185 22%, #f59e0b 44%, #06b6d4 60%, #14b8a6 73%, #10b981 86%, #047857 100%)'
+                        : 'linear-gradient(90deg, #f43f5e 0%, #fb7185 16%, #f59e0b 30%, #06b6d4 47%, #14b8a6 63%, #10b981 80%, #047857 100%)',
                       backgroundOrigin: 'border-box',
                       backgroundRepeat: 'no-repeat',
                     }}
@@ -564,16 +564,16 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                       ? [
                           { label: 'Skip', rating: 2.5, leftPct: '16.7%', color: 'text-rose-500 dark:text-rose-400' },
                           { label: 'Mid', rating: 5.0, leftPct: '44.4%', color: 'text-amber-600 dark:text-amber-400' },
-                          { label: 'Good', rating: 6.8, leftPct: '63.9%', color: 'text-teal-600 dark:text-teal-400' },
-                          { label: 'Great', rating: 8.2, leftPct: '79.4%', color: 'text-emerald-600 dark:text-emerald-400' },
-                          { label: 'Incredible', rating: 9.4, leftPct: '93.3%', color: 'text-emerald-700 dark:text-emerald-300' },
+                          { label: 'Good', rating: 6.8, leftPct: '63.9%', color: 'text-cyan-600 dark:text-cyan-400' },
+                          { label: 'Great', rating: 8.2, leftPct: '79.4%', color: 'text-teal-600 dark:text-teal-400' },
+                          { label: 'Incredible', rating: 9.4, leftPct: '93.3%', color: 'text-emerald-600 dark:text-emerald-400' },
                         ]
                       : [
                           { label: 'Skip', rating: 2.5, leftPct: '10%', color: 'text-rose-500 dark:text-rose-400' },
                           { label: 'Mid', rating: 5.0, leftPct: '30%', color: 'text-amber-600 dark:text-amber-400' },
-                          { label: 'Good', rating: 6.8, leftPct: '50%', color: 'text-teal-600 dark:text-teal-400' },
-                          { label: 'Great', rating: 8.2, leftPct: '70%', color: 'text-emerald-600 dark:text-emerald-400' },
-                          { label: 'Incredible', rating: 9.4, leftPct: '90%', color: 'text-emerald-700 dark:text-emerald-300' },
+                          { label: 'Good', rating: 6.8, leftPct: '50%', color: 'text-cyan-600 dark:text-cyan-400' },
+                          { label: 'Great', rating: 8.2, leftPct: '70%', color: 'text-teal-600 dark:text-teal-400' },
+                          { label: 'Incredible', rating: 9.4, leftPct: '90%', color: 'text-emerald-600 dark:text-emerald-400' },
                         ]
                     ).map((zone) => (
                       <button
