@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
+import { ArrowLeft, Bookmark, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
 import {
   ALL_MEAL_CATEGORIES,
   MEAL_EMOJI,
@@ -14,6 +14,7 @@ interface AddAndRateModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingRestaurants: RestaurantEntry[];
+  bookmarkedPlaceIds?: Set<string>;
   reRankingEntry?: RestaurantEntry | null;
   defaultCity?: string;
   customPlacesApiKey?: string;
@@ -23,16 +24,19 @@ interface AddAndRateModalProps {
     selectedMeal: MealCategory,
     existingIdToReplace?: string
   ) => void;
+  onAddBookmark?: (candidate: PlaceCandidate) => void;
 }
 
 export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   isOpen,
   onClose,
   existingRestaurants,
+  bookmarkedPlaceIds,
   reRankingEntry,
   defaultCity = '',
   customPlacesApiKey = '',
   onCompleteQuestions,
+  onAddBookmark,
 }) => {
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_meal'>('search');
   const [searchQuery, setSearchQuery] = useState('');
@@ -272,24 +276,59 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     const locationShort =
                       [item.neighborhood, item.city].filter(Boolean).join(', ') ||
                       item.formattedAddress;
+                    const isAlreadyBookmarked = bookmarkedPlaceIds?.has(item.placeId);
 
                     return (
-                      <button
+                      <div
                         key={item.placeId}
-                        type="button"
-                        onClick={() => handleSelectCandidate(item)}
-                        className="w-full text-left py-3 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors flex items-center justify-between gap-3 group"
+                        className="w-full py-2.5 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors flex items-center justify-between gap-2 group"
                       >
-                        <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCandidate(item)}
+                          className="min-w-0 flex-1 text-left"
+                        >
                           <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                             {item.name}
                           </div>
                           <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
                             {primaryCuisine} · {locationShort}
                           </div>
+                        </button>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {onAddBookmark && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onAddBookmark(item);
+                              }}
+                              className={`p-2 rounded-full transition-colors ${
+                                isAlreadyBookmarked
+                                  ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
+                                  : 'text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                              }`}
+                              title="Save to Want to Try"
+                              aria-label="Save to Want to Try"
+                            >
+                              <Bookmark
+                                className={`w-4 h-4 ${isAlreadyBookmarked ? 'fill-rose-500' : ''}`}
+                              />
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleSelectCandidate(item)}
+                            className="p-2 rounded-full text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            title="Rate & Rank"
+                            aria-label="Rate & Rank"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
                         </div>
-                        <Plus className="w-4 h-4 text-zinc-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 shrink-0" />
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -308,7 +347,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
               {searchQuery.trim().length < 2 && (
                 <div className="py-10 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                  Type a restaurant name to rate &amp; rank it.
+                  Type a restaurant name to rate &amp; rank it, or tap the bookmark icon to save for later.
                 </div>
               )}
             </div>
@@ -361,6 +400,19 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   <span>10 · All-time favorite</span>
                 </div>
               </div>
+
+              {!reRankingEntry && onAddBookmark && (
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => onAddBookmark(selectedCandidate)}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
+                  >
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>Haven&rsquo;t been yet? Save to Want to Try</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

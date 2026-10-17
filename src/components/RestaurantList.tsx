@@ -18,12 +18,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { GripVertical, Plus } from 'lucide-react';
 import { MealCategory, RestaurantEntry } from '../types';
+import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 
 interface SortableRestaurantRowProps {
   restaurant: RestaurantEntry;
   displayPosition: number;
   isFiltered: boolean;
+  readOnly?: boolean;
   selectedMealFilter: MealCategory | 'ALL';
   onSelectSpot: (restaurant: RestaurantEntry) => void;
 }
@@ -32,6 +34,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   restaurant,
   displayPosition,
   isFiltered,
+  readOnly = false,
   selectedMealFilter,
   onSelectSpot,
 }) => {
@@ -42,7 +45,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: restaurant.id, disabled: isFiltered });
+  } = useSortable({ id: restaurant.id, disabled: isFiltered || readOnly });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -80,7 +83,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     >
       {/* Left: Drag Handle + Rank Number + Name/Subtitle */}
       <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
-        {!isFiltered && (
+        {!isFiltered && !readOnly && (
           <button
             type="button"
             {...attributes}
@@ -117,6 +120,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
 interface RestaurantListProps {
   restaurants: RestaurantEntry[];
   isFiltered: boolean;
+  readOnly?: boolean;
   selectedMealFilter: MealCategory | 'ALL';
   totalUnfilteredCount: number;
   onReorderDragEnd: (activeId: string, overId: string) => void;
@@ -127,6 +131,7 @@ interface RestaurantListProps {
 export const RestaurantList: React.FC<RestaurantListProps> = ({
   restaurants,
   isFiltered,
+  readOnly = false,
   selectedMealFilter,
   totalUnfilteredCount,
   onReorderDragEnd,
@@ -154,13 +159,16 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
 
   if (restaurants.length === 0) {
     return (
-      <div className="py-16 px-6 text-center space-y-4">
+      <div className="py-16 px-6 text-center bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 space-y-4">
+        <div className="flex justify-center">
+          <JellyBeanIcon size={36} />
+        </div>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {totalUnfilteredCount === 0
             ? 'No places ranked yet.'
             : 'No places match this filter.'}
         </p>
-        {totalUnfilteredCount === 0 && (
+        {totalUnfilteredCount === 0 && !readOnly && (
           <button
             type="button"
             onClick={onOpenAddModal}
@@ -187,6 +195,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
               restaurant={restaurant}
               displayPosition={idx + 1}
               isFiltered={isFiltered}
+              readOnly={readOnly}
               selectedMealFilter={selectedMealFilter}
               onSelectSpot={onSelectSpot}
             />
@@ -196,3 +205,4 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
     </DndContext>
   );
 };
+

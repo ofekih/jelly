@@ -23,6 +23,7 @@ function formatRankedDate(ts: number): string {
 
 interface SpotDetailModalProps {
   restaurant: RestaurantEntry | null;
+  readOnly?: boolean;
   onClose: () => void;
   onReRank: (restaurant: RestaurantEntry) => void;
   onSaveEdits: (
@@ -39,6 +40,7 @@ interface SpotDetailModalProps {
 
 export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   restaurant,
+  readOnly = false,
   onClose,
   onReRank,
   onSaveEdits,
@@ -191,57 +193,73 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
               </p>
             )}
 
-            {/* Primary Action: Beli-style Re-Rank */}
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onReRank(restaurant);
-                }}
-                className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>Re-rank {restaurant.name}</span>
-              </button>
-
-              <div className="grid grid-cols-3 gap-2 pt-1">
+            {/* Primary Action: Beli-style Re-Rank (or Maps link in Read-Only mode) */}
+            {!readOnly ? (
+              <div className="space-y-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setIsEditMode(true)}
-                  className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  onClick={() => {
+                    onClose();
+                    onReRank(restaurant);
+                  }}
+                  className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
                 >
-                  <Pencil className="w-3.5 h-3.5" />
-                  <span>Edit Details</span>
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Re-rank {restaurant.name}</span>
                 </button>
 
-                {restaurant.googleMapsUri ? (
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditMode(true)}
+                    className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Edit Details</span>
+                  </button>
+
+                  {restaurant.googleMapsUri ? (
+                    <a
+                      href={restaurant.googleMapsUri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Maps</span>
+                    </a>
+                  ) : (
+                    <div />
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDelete(restaurant.id);
+                      onClose();
+                    }}
+                    className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-rose-50 dark:bg-zinc-800 dark:hover:bg-rose-950/40 text-zinc-500 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              restaurant.googleMapsUri && (
+                <div className="pt-1">
                   <a
                     href={restaurant.googleMapsUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                    className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Maps</span>
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Open in Google Maps</span>
                   </a>
-                ) : (
-                  <div />
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onDelete(restaurant.id);
-                    onClose();
-                  }}
-                  className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-rose-50 dark:bg-zinc-800 dark:hover:bg-rose-950/40 text-zinc-500 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Remove</span>
-                </button>
-              </div>
-            </div>
+                </div>
+              )
+            )}
           </div>
         ) : (
           /* Hidden Edit Menu — Only visible when user explicitly clicks "Edit Details" */
