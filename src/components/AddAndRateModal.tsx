@@ -489,10 +489,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                         );
                       }
                     }}
-                    className="relative h-14 w-full rounded-2xl cursor-pointer select-none touch-none shadow-inner border border-black/10 dark:border-white/10 flex items-center transition-transform active:scale-[0.995]"
+                    className="relative h-14 w-full rounded-2xl cursor-pointer select-none touch-none shadow-inner ring-1 ring-inset ring-black/10 dark:ring-white/15 bg-no-repeat flex items-center transition-transform active:scale-[0.995]"
                     style={{
-                      background:
+                      backgroundImage:
                         'linear-gradient(90deg, #f43f5e 0%, #fb7185 24%, #f59e0b 45%, #14b8a6 68%, #10b981 84%, #059669 100%)',
+                      backgroundOrigin: 'border-box',
+                      backgroundRepeat: 'no-repeat',
                     }}
                   >
                     {/* Subtle Zone Boundary Dividers along the number line (<4 | 4-6 Mid | 7 Good | 8 Great | 9-10 Incredible) */}
