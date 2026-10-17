@@ -32,6 +32,11 @@ interface RestaurantMapViewProps {
 
 const GOOGLE_LIGHT_MAP_STYLES = [
   {
+    featureType: 'poi',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
     featureType: 'poi.business',
     stylers: [{ visibility: 'off' }],
   },
@@ -45,6 +50,11 @@ const GOOGLE_LIGHT_MAP_STYLES = [
   },
   {
     featureType: 'poi.school',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'labels.icon',
     stylers: [{ visibility: 'off' }],
   },
   {
@@ -68,6 +78,11 @@ const GOOGLE_DARK_MAP_STYLES = [
     stylers: [{ color: '#a1a1aa' }],
   },
   {
+    featureType: 'poi',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
     featureType: 'poi.business',
     stylers: [{ visibility: 'off' }],
   },
@@ -88,6 +103,11 @@ const GOOGLE_DARK_MAP_STYLES = [
     featureType: 'poi.park',
     elementType: 'labels.text.fill',
     stylers: [{ color: '#6ee7b7' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
   },
   {
     featureType: 'road',
@@ -550,7 +570,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
 
     if (userLocation && selectedCity === 'ALL') {
       const nearbyPoints = boundsPoints.filter(
-        (pt) => haversineDistanceMiles(userLocation.lat, userLocation.lng, pt[0], pt[1]) <= 30
+        (pt) => haversineDistanceMiles(userLocation.lat, userLocation.lng, pt[0], pt[1]) <= 50
       );
       if (nearbyPoints.length > 0) {
         fitPoints([[userLocation.lat, userLocation.lng], ...nearbyPoints]);
@@ -559,6 +579,25 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       if (boundsPoints.length === 0) {
         map.setCenter({ lat: userLocation.lat, lng: userLocation.lng });
         map.setZoom(13);
+        return;
+      }
+    }
+
+    // If All Cities is selected and spots span multiple distant cities (>100 miles apart),
+    // start framed around the primary/closest city cluster rather than zooming out to a continent view
+    if (selectedCity === 'ALL' && boundsPoints.length > 1) {
+      const anchor = userLocation
+        ? [...boundsPoints].sort(
+            (a, b) =>
+              haversineDistanceMiles(userLocation.lat, userLocation.lng, a[0], a[1]) -
+              haversineDistanceMiles(userLocation.lat, userLocation.lng, b[0], b[1])
+          )[0]
+        : boundsPoints[0];
+      const cluster = boundsPoints.filter(
+        (pt) => haversineDistanceMiles(anchor[0], anchor[1], pt[0], pt[1]) <= 50
+      );
+      if (cluster.length > 0 && cluster.length < boundsPoints.length) {
+        fitPoints(cluster);
         return;
       }
     }
@@ -607,7 +646,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
 
       {/* Selected Ranked Spot Preview Card */}
       {selectedRanked && (
-        <div className="absolute bottom-3 left-3 right-3 z-[400] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl p-3.5 border border-zinc-200/80 dark:border-zinc-800 shadow-xl flex items-center justify-between gap-3">
+        <div className="absolute bottom-6 left-3 right-3 z-[400] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl p-3.5 border border-zinc-200/80 dark:border-zinc-800 shadow-xl flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={() => onSelectSpot(selectedRanked)}
@@ -661,7 +700,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
 
       {/* Selected Bookmark Spot Preview Card */}
       {selectedBookmark && (
-        <div className="absolute bottom-3 left-3 right-3 z-[400] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl p-3.5 border border-zinc-200/80 dark:border-zinc-800 shadow-xl flex items-center justify-between gap-3">
+        <div className="absolute bottom-6 left-3 right-3 z-[400] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl p-3.5 border border-zinc-200/80 dark:border-zinc-800 shadow-xl flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Bookmark className="w-3.5 h-3.5 text-rose-500 fill-rose-500 shrink-0" />
