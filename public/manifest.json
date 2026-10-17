@@ -1,6 +1,6 @@
 {
-  "name": "Jelly",
-  "short_name": "Jelly",
+  "name": "jelly",
+  "short_name": "jelly",
   "description": "Personal ELO-based restaurant rankings.",
   "start_url": "/",
   "display": "standalone",

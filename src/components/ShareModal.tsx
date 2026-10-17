@@ -70,7 +70,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const handleCopyTextSummary = async () => {
     const lines = [
-      `🍬 ${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on Jelly`,
+      `🍬 ${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`,
       ...topSpots.map(
         (r, i) =>
           `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) — ${[
@@ -215,7 +215,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           <div className="flex items-center gap-2">
             <Share2 className="w-4 h-4 text-emerald-500" />
             <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
-              Share Your Jelly List
+              Share your jelly list
             </h2>
           </div>
           <button

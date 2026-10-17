@@ -778,7 +778,7 @@ export const App: React.FC = () => {
     try {
       const snap = await getDoc(doc(db, 'sharedLists', shareId));
       if (!snap.exists()) {
-        showToast('Could not find a Jelly list for that link');
+        showToast('Could not find a jelly list for that link');
         return false;
       }
       const parsed = parseSharedListDoc(snap.id, snap.data());

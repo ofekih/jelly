@@ -87,6 +87,13 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
       setSwipeX(0);
       setIsTouchTracking(false);
       touchStateRef.current = null;
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        try {
+          navigator.vibrate(10);
+        } catch {
+          // Ignore vibration errors on unsupported browsers
+        }
+      }
       return;
     }
     if (openSwipeId !== restaurant.id && swipeX !== 0 && !isTouchTracking) {
@@ -140,7 +147,11 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
       `${restaurant.name} ${restaurant.formattedAddress || restaurant.city || ''}`
     )}`;
 
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    // Always invoke @dnd-kit TouchSensor's onTouchStart first so drag-to-reorder works on iOS & Android
+    if (!isDragDisabled && listeners?.onTouchStart) {
+      listeners.onTouchStart(e);
+    }
     if (readOnly || e.touches.length !== 1) return;
     const t = e.touches[0];
     touchStateRef.current = {
@@ -155,7 +166,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     }
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (readOnly || isDragging || !touchStateRef.current || e.touches.length !== 1) return;
     const t = e.touches[0];
     const state = touchStateRef.current;
@@ -163,11 +174,12 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     const dy = t.clientY - state.startY;
 
     if (state.mode === 'undecided') {
-      if (Math.abs(dx) > 11 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+      // Require >14px horizontal movement (>10px TouchSensor tolerance) before entering swipe mode
+      if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.4) {
         state.mode = 'horizontal';
         state.didSwipe = true;
         setIsTouchTracking(true);
-      } else if (Math.abs(dy) > 11) {
+      } else if (Math.abs(dy) > 12) {
         state.mode = 'vertical';
       }
     }
@@ -295,6 +307,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
         onClick={() => {
           if (isDragging) return;
           if (swipeX !== 0) {
@@ -307,30 +320,40 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
         style={{
           transform: swipeX !== 0 && !isDragging ? `translate3d(${swipeX}px, 0, 0)` : undefined,
           transition: isTouchTracking ? 'none' : 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+          WebkitTouchCallout: 'none',
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
         }}
         className={`group relative flex items-center justify-between gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/60 transition-colors ${
           !isDragDisabled
             ? 'cursor-grab active:cursor-grabbing touch-manipulation'
             : 'cursor-pointer'
-        } ${isDragging ? 'scale-[1.01] opacity-95' : ''}`}
+        } ${isDragging ? 'scale-[1.01] opacity-95 touch-none' : ''}`}
       >
         {/* Left: Subtle Grip Indicator + Rank Number + Name/Subtitle */}
         <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
-          {!isDragDisabled && (
-            <span
-              className="p-1 -ml-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 group-hover:text-zinc-400 dark:group-hover:text-zinc-500 transition-colors pointer-events-none"
-              aria-hidden="true"
-            >
-              <GripVertical className="w-4 h-4" />
-            </span>
-          )}
-
-          <span
-            className="w-6 text-right font-bold text-sm tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0"
-            title={sortByNearest ? `Overall Rank #${rankNum}` : undefined}
+          <div
+            data-drag-handle={!isDragDisabled ? 'true' : undefined}
+            className={`flex items-center gap-2 sm:gap-2.5 shrink-0 py-1 -my-1 ${
+              !isDragDisabled ? 'touch-none' : ''
+            }`}
           >
-            {sortByNearest ? `#${rankNum}` : rankNum}
-          </span>
+            {!isDragDisabled && (
+              <span
+                className="p-1 -ml-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 group-hover:text-zinc-400 dark:group-hover:text-zinc-500 transition-colors pointer-events-none"
+                aria-hidden="true"
+              >
+                <GripVertical className="w-4 h-4" />
+              </span>
+            )}
+
+            <span
+              className="w-6 text-right font-bold text-sm tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0"
+              title={sortByNearest ? `Overall Rank #${rankNum}` : undefined}
+            >
+              {sortByNearest ? `#${rankNum}` : rankNum}
+            </span>
+          </div>
 
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-[15px] sm:text-base text-zinc-900 dark:text-zinc-100 truncate leading-snug">
@@ -420,7 +443,11 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
       activationConstraint: { distance: 6 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 160, tolerance: 8 },
+      activationConstraint: { delay: 130, tolerance: 10 },
+      bypassActivationConstraint: ({ event }) => {
+        const target = event.target as HTMLElement | null;
+        return Boolean(target?.closest?.('[data-drag-handle="true"]'));
+      },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,

@@ -159,7 +159,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
         <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Friends on Jelly</h2>
+            <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Friends on jelly</h2>
           </div>
           <button
             type="button"
@@ -178,7 +178,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                    Your Jelly Handle
+                    Your jelly handle
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400">
                     Friends can search you by @{userHandle || 'handle'} or use your link
@@ -272,7 +272,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
             {isSearching && (
               <div className="py-4 flex items-center justify-center gap-2 text-xs text-zinc-400">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Searching Jelly users...</span>
+                <span>Searching jelly users...</span>
               </div>
             )}
 
