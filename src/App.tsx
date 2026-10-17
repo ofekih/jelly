@@ -200,12 +200,26 @@ export const App: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastAction, setToastAction] = useState<{ label: string; onClick: () => void } | null>(
+    null
+  );
 
-  const showToast = (msg: string) => {
+  const showToast = (
+    msg: string,
+    action?: { label: string; onClick: () => void },
+    durationMs = 3200
+  ) => {
     setToastMessage(msg);
+    setToastAction(action || null);
     setTimeout(() => {
-      setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 3000);
+      setToastMessage((prev) => {
+        if (prev === msg) {
+          setToastAction(null);
+          return null;
+        }
+        return prev;
+      });
+    }, durationMs);
   };
 
   const requestUserLocation = (opts?: { enableSortByNearest?: boolean; silent?: boolean }) => {
@@ -507,6 +521,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteBookmark = async (bookmarkId: string) => {
+    const prevBookmarks = [...bookmarks];
     const target = bookmarks.find((b) => b.id === bookmarkId);
     const nextBookmarks = bookmarks.filter((b) => b.id !== bookmarkId);
     setBookmarks(nextBookmarks);
@@ -517,7 +532,25 @@ export const App: React.FC = () => {
     }
     if (target) {
       trackEvent('delete_bookmark', { restaurant_name: target.name });
-      showToast(`Removed ${target.name}`);
+      showToast(
+        `Removed ${target.name}`,
+        {
+          label: 'Undo',
+          onClick: () => {
+            setBookmarks(prevBookmarks);
+            localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(prevBookmarks));
+            if (user) {
+              const cleanDoc: Record<string, any> = {};
+              Object.entries(target).forEach(([k, v]) => {
+                if (v !== undefined) cleanDoc[k] = v;
+              });
+              setDoc(doc(db, 'users', user.uid, 'bookmarks', target.id), cleanDoc).catch(() => {});
+            }
+            showToast(`Restored ${target.name}`);
+          },
+        },
+        5000
+      );
     }
   };
 
@@ -854,6 +887,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteRestaurant = async (id: string) => {
+    const prevRestaurants = [...restaurants];
     const target = restaurants.find((r) => r.id === id);
     if (!target) return;
     const remaining = restaurants.filter((r) => r.id !== id);
@@ -862,7 +896,17 @@ export const App: React.FC = () => {
       meal: target.meal,
     });
     await persistOrderedRestaurants(remaining, id);
-    showToast(`Removed ${target.name}`);
+    showToast(
+      `Removed ${target.name}`,
+      {
+        label: 'Undo',
+        onClick: () => {
+          persistOrderedRestaurants(prevRestaurants);
+          showToast(`Restored ${target.name}`);
+        },
+      },
+      5500
+    );
   };
 
   const isReadOnly = Boolean(sharedList);
@@ -1452,6 +1496,16 @@ export const App: React.FC = () => {
               });
               setActiveDetailSpot(spot);
             }}
+            onReRankSpot={(spot) => {
+              trackEvent('open_rerank_modal', {
+                restaurant_name: spot.name,
+                meal: spot.meal,
+                from_swipe: true,
+              });
+              setReRankingEntry(spot);
+              setIsAddModalOpen(true);
+            }}
+            onDeleteSpot={handleDeleteRestaurant}
             onOpenAddModal={() => {
               trackEvent('open_add_modal');
               setReRankingEntry(null);
@@ -1620,10 +1674,19 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Subtle Toast */}
+      {/* Subtle Toast (with optional Undo action) */}
       {toastMessage && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-lg">
-          {toastMessage}
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-xl flex items-center gap-3 whitespace-nowrap">
+          <span>{toastMessage}</span>
+          {toastAction && (
+            <button
+              type="button"
+              onClick={toastAction.onClick}
+              className="px-2.5 py-0.5 -mr-1 rounded-full bg-emerald-500 text-zinc-950 font-bold hover:bg-emerald-400 transition-colors"
+            >
+              {toastAction.label}
+            </button>
+          )}
         </div>
       )}
     </div>

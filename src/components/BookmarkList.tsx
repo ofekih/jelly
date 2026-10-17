@@ -1,8 +1,270 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, MealCategory } from '../types';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { JellyBeanIcon } from './JellyBeanIcon';
+
+interface SwipeableBookmarkRowProps {
+  item: BookmarkEntry;
+  selectedMealFilter: MealCategory | 'ALL';
+  userLocation: UserCoordinates | null;
+  readOnly: boolean;
+  openSwipeId: string | null;
+  onSetOpenSwipeId: (id: string | null) => void;
+  onRankBookmark: (bookmark: BookmarkEntry) => void;
+  onDeleteBookmark: (id: string) => void;
+}
+
+const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
+  item,
+  selectedMealFilter,
+  userLocation,
+  readOnly,
+  openSwipeId,
+  onSetOpenSwipeId,
+  onRankBookmark,
+  onDeleteBookmark,
+}) => {
+  const [swipeX, setSwipeX] = useState(0);
+  const [isTouchTracking, setIsTouchTracking] = useState(false);
+  const touchStateRef = useRef<{
+    startX: number;
+    startY: number;
+    baseSwipeX: number;
+    mode: 'undecided' | 'horizontal' | 'vertical';
+  } | null>(null);
+
+  useEffect(() => {
+    if (openSwipeId !== item.id && swipeX !== 0 && !isTouchTracking) {
+      setSwipeX(0);
+    }
+  }, [openSwipeId, item.id, swipeX, isTouchTracking]);
+
+  const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
+  const locationLabel = item.neighborhood || item.city;
+  const rawMiles = getItemDistanceMiles(item, userLocation);
+  const distLabel = formatDistanceMiles(rawMiles);
+  const subtitleParts = [
+    selectedMealFilter === 'ALL' ? item.meal : null,
+    primaryCuisine,
+    locationLabel,
+    distLabel,
+  ].filter(Boolean);
+
+  const mapsHref =
+    item.googleMapsUri ||
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${item.name} ${item.formattedAddress || item.city || ''}`
+    )}`;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (readOnly || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    touchStateRef.current = {
+      startX: t.clientX,
+      startY: t.clientY,
+      baseSwipeX: openSwipeId === item.id ? swipeX : 0,
+      mode: 'undecided',
+    };
+    if (openSwipeId && openSwipeId !== item.id) {
+      onSetOpenSwipeId(null);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (readOnly || !touchStateRef.current || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const state = touchStateRef.current;
+    const dx = t.clientX - state.startX;
+    const dy = t.clientY - state.startY;
+
+    if (state.mode === 'undecided') {
+      if (Math.abs(dx) > 11 && Math.abs(dx) > Math.abs(dy) * 1.25) {
+        state.mode = 'horizontal';
+        setIsTouchTracking(true);
+      } else if (Math.abs(dy) > 11) {
+        state.mode = 'vertical';
+      }
+    }
+
+    if (state.mode === 'horizontal') {
+      const rawNext = state.baseSwipeX + dx;
+      const clamped = Math.max(-156, Math.min(128, rawNext));
+      setSwipeX(clamped);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStateRef.current) return;
+    const state = touchStateRef.current;
+    touchStateRef.current = null;
+    setIsTouchTracking(false);
+
+    if (state.mode !== 'horizontal') return;
+
+    // Full swipe right -> trigger Rank It Now immediately
+    if (swipeX >= 96) {
+      setSwipeX(0);
+      onSetOpenSwipeId(null);
+      onRankBookmark(item);
+      return;
+    }
+
+    // Partial swipe right -> snap open Rank It button
+    if (swipeX >= 44) {
+      setSwipeX(88);
+      onSetOpenSwipeId(item.id);
+      return;
+    }
+
+    // Swipe left -> snap open Maps + Remove buttons
+    if (swipeX <= -44) {
+      setSwipeX(-144);
+      onSetOpenSwipeId(item.id);
+      return;
+    }
+
+    setSwipeX(0);
+    if (openSwipeId === item.id) {
+      onSetOpenSwipeId(null);
+    }
+  };
+
+  return (
+    <div className="relative overflow-hidden select-none">
+      {/* Background Swipe Actions Layer */}
+      {!readOnly && swipeX !== 0 && (
+        <div className="absolute inset-0 flex items-stretch justify-between pointer-events-auto">
+          {/* Left Action (Swipe Right): Rank It Now */}
+          <div
+            className={`flex items-center pl-3 pr-4 bg-emerald-600 text-white transition-opacity ${
+              swipeX > 0 ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+            style={{ width: Math.max(88, swipeX) }}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSwipeX(0);
+                onSetOpenSwipeId(null);
+                onRankBookmark(item);
+              }}
+              className="flex flex-col items-center justify-center gap-1 w-full h-full text-[11px] font-bold tracking-tight"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Rank It</span>
+            </button>
+          </div>
+
+          {/* Right Actions (Swipe Left): Google Maps + Remove */}
+          <div
+            className={`flex items-stretch ml-auto transition-opacity ${
+              swipeX < 0 ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+            style={{ width: Math.max(144, Math.abs(swipeX)) }}
+          >
+            <a
+              href={mapsHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSwipeX(0);
+                onSetOpenSwipeId(null);
+              }}
+              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[11px] font-bold tracking-tight"
+            >
+              <ExternalLink className="w-4 h-4" />
+              <span>Maps</span>
+            </a>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSwipeX(0);
+                onSetOpenSwipeId(null);
+                onDeleteBookmark(item.id);
+              }}
+              className="flex-1 bg-rose-600 hover:bg-rose-500 text-white flex flex-col items-center justify-center gap-1 text-[11px] font-bold tracking-tight"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Remove</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Foreground Card Content */}
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onClick={() => {
+          if (swipeX !== 0) {
+            setSwipeX(0);
+            onSetOpenSwipeId(null);
+          }
+        }}
+        style={{
+          transform: swipeX !== 0 ? `translate3d(${swipeX}px, 0, 0)` : undefined,
+          transition: isTouchTracking ? 'none' : 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        }}
+        className="relative flex items-center gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors"
+      >
+        <div className="w-6 flex items-center justify-center shrink-0">
+          <JellyBeanIcon size={18} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-[15px] truncate leading-snug">
+            {item.name}
+          </div>
+          <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
+            {subtitleParts.length > 0 ? subtitleParts.join(' · ') : item.formattedAddress}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {item.googleMapsUri && (
+            <a
+              href={item.googleMapsUri}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              title="Open in Google Maps"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                onClick={() => onRankBookmark(item)}
+                className="px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                title="Been here! Rate & rank it now"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Rank</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onDeleteBookmark(item.id)}
+                className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                title="Remove from Want to Try"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface BookmarkListProps {
   bookmarks: BookmarkEntry[];
@@ -27,6 +289,8 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   onDeleteBookmark,
   onOpenAddModal,
 }) => {
+  const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+
   if (totalUnfilteredCount === 0) {
     return (
       <div className="py-16 px-6 text-center bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 space-y-4">
@@ -72,75 +336,19 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
-      {bookmarks.map((item) => {
-        const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
-        const locationLabel = item.neighborhood || item.city;
-        const rawMiles = getItemDistanceMiles(item, userLocation);
-        const distLabel = formatDistanceMiles(rawMiles);
-        const subtitleParts = [
-          selectedMealFilter === 'ALL' ? item.meal : null,
-          primaryCuisine,
-          locationLabel,
-          distLabel,
-        ].filter(Boolean);
-
-        return (
-          <div
-            key={item.id}
-            className="flex items-center gap-3 px-3.5 sm:px-4 py-3.5 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors"
-          >
-            <div className="w-6 flex items-center justify-center shrink-0">
-              <JellyBeanIcon size={18} />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-[15px] truncate leading-snug">
-                {item.name}
-              </div>
-              <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-                {subtitleParts.length > 0 ? subtitleParts.join(' · ') : item.formattedAddress}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              {item.googleMapsUri && (
-                <a
-                  href={item.googleMapsUri}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                  title="Open in Google Maps"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
-
-              {!readOnly && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => onRankBookmark(item)}
-                    className="px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-                    title="Been here! Rate & rank it now"
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    <span>Rank</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onDeleteBookmark(item.id)}
-                    className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                    title="Remove from Want to Try"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })}
+      {bookmarks.map((item) => (
+        <SwipeableBookmarkRow
+          key={item.id}
+          item={item}
+          selectedMealFilter={selectedMealFilter}
+          userLocation={userLocation}
+          readOnly={readOnly}
+          openSwipeId={openSwipeId}
+          onSetOpenSwipeId={setOpenSwipeId}
+          onRankBookmark={onRankBookmark}
+          onDeleteBookmark={onDeleteBookmark}
+        />
+      ))}
     </div>
   );
 };
