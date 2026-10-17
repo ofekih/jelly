@@ -47,7 +47,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const [isSearching, setIsSearching] = useState(false);
 
   const [selectedCandidate, setSelectedCandidate] = useState<PlaceCandidate | null>(null);
-  const [selectedRating, setSelectedRating] = useState<number>(8);
+  const [selectedRating, setSelectedRating] = useState<number>(8.0);
+  const [previewRating, setPreviewRating] = useState<number | null>(null);
+  const [isDraggingLine, setIsDraggingLine] = useState(false);
   const [showAllMeals, setShowAllMeals] = useState(false);
 
   useEffect(() => {
@@ -69,7 +71,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         primaryTypeDisplay: reRankingEntry.primaryTypeDisplay,
         source: 'google_places',
       });
-      setSelectedRating(Math.round(reRankingEntry.initialRating));
+      const roundedPrev = Math.round(reRankingEntry.initialRating * 10) / 10;
+      setSelectedRating(roundedPrev);
+      setPreviewRating(roundedPrev);
       setStep('q1_rating');
       setShowAllMeals(false);
     } else {
@@ -77,7 +81,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       setSearchQuery('');
       setSearchResults([]);
       setSelectedCandidate(null);
-      setSelectedRating(8);
+      setSelectedRating(8.0);
+      setPreviewRating(null);
       setShowAllMeals(false);
     }
   }, [isOpen, reRankingEntry]);
@@ -129,8 +134,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     onCompleteQuestions(candidate, rating, meal, existingMatch?.id);
   };
 
-  const handlePickRating = (rating: number) => {
+  const handlePickRating = (rawRating: number) => {
     if (!selectedCandidate) return;
+    const rating = Math.max(1.0, Math.min(10.0, Math.round(rawRating * 10) / 10));
     setSelectedRating(rating);
     trackEvent('rate_initial_score', {
       restaurant_name: selectedCandidate.name,
@@ -156,21 +162,59 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     setStep('q2_meal');
   };
 
-  // Keyboard support for Q1 (keys 1-9, 0 for 10)
-  useEffect(() => {
-    if (!isOpen || step !== 'q1_rating') return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key >= '1' && e.key <= '9') {
-        e.preventDefault();
-        handlePickRating( Number(e.key) );
-      } else if (e.key === '0') {
-        e.preventDefault();
-        handlePickRating(10);
-      }
+  const computeRatingFromClientX = (clientX: number, rect: DOMRect): number => {
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    return Math.max(1.0, Math.min(10.0, Math.round((1 + pct * 9) * 10) / 10));
+  };
+
+  const getGutVibeMeta = (rating: number | null) => {
+    if (rating === null) {
+      return {
+        label: 'Tap anywhere on the line',
+        pillClass:
+          'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+        thumbBorder: '#10b981',
+      };
+    }
+    if (rating < 4.0) {
+      return {
+        label: 'Skip · Not good',
+        pillClass:
+          'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/70',
+        thumbBorder: '#f43f5e',
+      };
+    }
+    if (rating < 6.5) {
+      return {
+        label: 'Mid · It was okay',
+        pillClass:
+          'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70',
+        thumbBorder: '#f59e0b',
+      };
+    }
+    if (rating < 7.6) {
+      return {
+        label: 'Good · Liked it',
+        pillClass:
+          'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70',
+        thumbBorder: '#14b8a6',
+      };
+    }
+    if (rating < 8.8) {
+      return {
+        label: 'Great · Really liked it',
+        pillClass:
+          'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/70',
+        thumbBorder: '#10b981',
+      };
+    }
+    return {
+      label: 'Incredible · Loved it',
+      pillClass:
+        'bg-emerald-100/90 text-emerald-800 border-emerald-300 dark:bg-emerald-900/70 dark:text-emerald-200 dark:border-emerald-700',
+      thumbBorder: '#059669',
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  });
+  };
 
   if (!isOpen) return null;
 
@@ -181,6 +225,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       source: candidate.source,
     });
     setSelectedCandidate(candidate);
+    setPreviewRating(null);
     setShowAllMeals(false);
     setStep('q1_rating');
   };
@@ -364,9 +409,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
             </div>
           )}
 
-          {/* Q1: Rate 1 to 10 (Integer only, zero clutter) */}
+          {/* Q1: Numberless Red-to-Green Gut-Feeling Spectrum Line */}
           {step === 'q1_rating' && selectedCandidate && (
-            <div className="py-3 space-y-6">
+            <div className="py-3 space-y-5">
               <div className="text-center space-y-1">
                 <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                   {selectedCandidate.name}
@@ -381,34 +426,134 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <p className="text-center text-sm font-medium text-zinc-600 dark:text-zinc-300">
-                  How would you rate it from 1 to 10?
-                </p>
-
-                <div className="grid grid-cols-5 gap-2.5 pt-1">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
-                    const isCurrent = reRankingEntry && Math.round(selectedRating) === num;
-                    return (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => handlePickRating(num)}
-                        className={`h-13 rounded-2xl font-bold text-base transition-all active:scale-95 ${
-                          isCurrent
-                            ? 'bg-emerald-600 text-white ring-2 ring-emerald-500/40'
-                            : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-900 hover:text-white dark:hover:bg-emerald-500 dark:hover:text-zinc-950 text-zinc-800 dark:text-zinc-100'
-                        }`}
-                      >
-                        {num}
-                      </button>
-                    );
-                  })}
+              <div className="space-y-3.5 pt-1">
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                    What&rsquo;s your quick gut feeling?
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-xs mx-auto">
+                    Don&rsquo;t sweat it—just tap a spot on the line. Side-by-side comparisons will figure out the true rank.
+                  </p>
                 </div>
 
-                <div className="flex justify-between px-1 text-[11px] text-zinc-400 dark:text-zinc-500">
-                  <span>1 · Skip it</span>
-                  <span>10 · All-time favorite</span>
+                {/* Live Vibe Indicator Pill */}
+                <div className="flex justify-center pt-0.5">
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                      getGutVibeMeta(previewRating).pillClass
+                    }`}
+                  >
+                    {getGutVibeMeta(previewRating).label}
+                  </span>
+                </div>
+
+                {/* Continuous Red-to-Green Spectrum Number Line (No 1-10 numbers shown) */}
+                <div className="pt-1 pb-1 px-1">
+                  <div
+                    role="slider"
+                    aria-label="Gut feeling spectrum"
+                    aria-valuemin={1}
+                    aria-valuemax={10}
+                    aria-valuenow={previewRating ?? selectedRating}
+                    tabIndex={0}
+                    onPointerDown={(e) => {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      setIsDraggingLine(true);
+                      const val = computeRatingFromClientX(
+                        e.clientX,
+                        e.currentTarget.getBoundingClientRect()
+                      );
+                      setPreviewRating(val);
+                    }}
+                    onPointerMove={(e) => {
+                      const val = computeRatingFromClientX(
+                        e.clientX,
+                        e.currentTarget.getBoundingClientRect()
+                      );
+                      setPreviewRating(val);
+                    }}
+                    onPointerUp={(e) => {
+                      const val = computeRatingFromClientX(
+                        e.clientX,
+                        e.currentTarget.getBoundingClientRect()
+                      );
+                      setIsDraggingLine(false);
+                      handlePickRating(val);
+                    }}
+                    onPointerLeave={() => {
+                      if (!isDraggingLine) {
+                        setPreviewRating(
+                          reRankingEntry
+                            ? Math.round(reRankingEntry.initialRating * 10) / 10
+                            : null
+                        );
+                      }
+                    }}
+                    className="relative h-14 w-full rounded-2xl cursor-pointer select-none touch-none shadow-inner border border-black/10 dark:border-white/10 flex items-center transition-transform active:scale-[0.995]"
+                    style={{
+                      background:
+                        'linear-gradient(90deg, #f43f5e 0%, #fb7185 24%, #f59e0b 45%, #14b8a6 68%, #10b981 84%, #059669 100%)',
+                    }}
+                  >
+                    {/* Subtle Zone Boundary Dividers along the number line (<4 | 4-6 Mid | 7 Good | 8 Great | 9-10 Incredible) */}
+                    {[33.3, 61.1, 73.3, 86.7].map((leftPct) => (
+                      <div
+                        key={leftPct}
+                        className="absolute top-2 bottom-2 w-px bg-white/35 dark:bg-black/25 pointer-events-none"
+                        style={{ left: `${leftPct}%` }}
+                      />
+                    ))}
+
+                    {/* Center baseline axis line */}
+                    <div className="w-full h-0.5 bg-white/30 mx-3 rounded-full pointer-events-none" />
+
+                    {/* Active / Preview Thumb Marker */}
+                    {previewRating !== null && (
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white shadow-lg pointer-events-none flex items-center justify-center transition-transform duration-75"
+                        style={{
+                          left: `${Math.max(4, Math.min(96, ((previewRating - 1) / 9) * 100))}%`,
+                          borderWidth: '3px',
+                          borderStyle: 'solid',
+                          borderColor: getGutVibeMeta(previewRating).thumbBorder,
+                        }}
+                      >
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: getGutVibeMeta(previewRating).thumbBorder }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Vibe Zone Labels aligned under the spectrum line */}
+                  <div className="relative h-6 mt-2 select-none text-[11px] font-semibold">
+                    {[
+                      { label: 'Skip', rating: 2.5, leftPct: '16%', color: 'text-rose-500 dark:text-rose-400' },
+                      { label: 'Mid', rating: 5.2, leftPct: '47%', color: 'text-amber-600 dark:text-amber-400' },
+                      { label: 'Good', rating: 7.0, leftPct: '67%', color: 'text-teal-600 dark:text-teal-400' },
+                      { label: 'Great', rating: 8.1, leftPct: '80%', color: 'text-emerald-600 dark:text-emerald-400' },
+                      { label: 'Incredible', rating: 9.5, leftPct: '93%', color: 'text-emerald-700 dark:text-emerald-300' },
+                    ].map((zone) => (
+                      <button
+                        key={zone.label}
+                        type="button"
+                        onMouseEnter={() => setPreviewRating(zone.rating)}
+                        onMouseLeave={() =>
+                          setPreviewRating(
+                            reRankingEntry
+                              ? Math.round(reRankingEntry.initialRating * 10) / 10
+                              : null
+                          )
+                        }
+                        onClick={() => handlePickRating(zone.rating)}
+                        style={{ left: zone.leftPct }}
+                        className={`absolute -translate-x-1/2 px-1 py-0.5 rounded hover:opacity-100 transition-opacity ${zone.color} opacity-85 hover:underline`}
+                      >
+                        {zone.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

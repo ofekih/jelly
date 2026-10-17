@@ -151,7 +151,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                 </span>
               ))}
               <span className="px-2.5 py-1 rounded-lg bg-zinc-100/70 dark:bg-zinc-800/60 text-zinc-400 dark:text-zinc-500">
-                {restaurant.elo} ELO · Rated {Math.round(restaurant.initialRating)}/10
+                {restaurant.elo} ELO · Gut {Number(restaurant.initialRating).toFixed(1)}/10
               </span>
             </div>
 
@@ -180,7 +180,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400"
                     >
                       <span>{formatRankedDate(ev.timestamp)}</span>
-                      <span>Rated {Math.round(ev.initialRating)}/10</span>
+                      <span>Gut {Number(ev.initialRating).toFixed(1)}/10</span>
                     </div>
                   ))}
                 </div>
