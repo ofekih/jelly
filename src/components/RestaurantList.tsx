@@ -16,8 +16,9 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { ExternalLink, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { MealCategory, RestaurantEntry } from '../types';
+import { Bookmark, ExternalLink, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { MealCategory, RestaurantEntry, SharedListPayload } from '../types';
+import { getFriendMatchesForSpot } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
@@ -30,6 +31,9 @@ interface SortableRestaurantRowProps {
   readOnly?: boolean;
   selectedMealFilter: MealCategory | 'ALL';
   userLocation?: UserCoordinates | null;
+  friendLists?: SharedListPayload[];
+  isBookmarkedInMyList?: boolean;
+  onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   openSwipeId: string | null;
   onSetOpenSwipeId: (id: string | null) => void;
   onSelectSpot: (restaurant: RestaurantEntry) => void;
@@ -45,6 +49,9 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   readOnly = false,
   selectedMealFilter,
   userLocation = null,
+  friendLists = [],
+  isBookmarkedInMyList = false,
+  onBookmarkFromFriend,
   openSwipeId,
   onSetOpenSwipeId,
   onSelectSpot,
@@ -121,6 +128,11 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     locationLabel,
     distLabel,
   ].filter(Boolean);
+
+  const rankedFriends =
+    !readOnly && friendLists.length > 0
+      ? getFriendMatchesForSpot(restaurant, friendLists).filter((f) => f.status === 'ranked')
+      : [];
 
   const mapsHref =
     restaurant.googleMapsUri ||
@@ -324,14 +336,43 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
             <div className="font-semibold text-[15px] sm:text-base text-zinc-900 dark:text-zinc-100 truncate leading-snug">
               {restaurant.name}
             </div>
-            <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-              {subtitleParts.join(' · ')}
+            <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5 flex items-center gap-1.5">
+              <span className="truncate">{subtitleParts.join(' · ')}</span>
+              {rankedFriends.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0">
+                  {rankedFriends
+                    .slice(0, 2)
+                    .map((rf) => `${rf.friendName} ${rf.magicScore?.toFixed(1)}`)
+                    .join(' · ')}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Right: Clean Beli-style circular score badge */}
-        <ScoreBadge score={restaurant.magicScore} size="md" />
+        {/* Right: 1-tap Bookmark when viewing a friend's list + Circular Score Badge */}
+        <div className="flex items-center gap-2 shrink-0">
+          {readOnly && onBookmarkFromFriend && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onBookmarkFromFriend(restaurant);
+              }}
+              className={`p-2 rounded-full transition-colors ${
+                isBookmarkedInMyList
+                  ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
+                  : 'text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+              title={isBookmarkedInMyList ? 'Saved in your Want to Try' : 'Save to Want to Try'}
+              aria-label="Save to Want to Try"
+            >
+              <Bookmark className={`w-4 h-4 ${isBookmarkedInMyList ? 'fill-rose-500' : ''}`} />
+            </button>
+          )}
+
+          <ScoreBadge score={restaurant.magicScore} size="md" />
+        </div>
       </div>
     </div>
   );
@@ -345,6 +386,9 @@ interface RestaurantListProps {
   selectedMealFilter: MealCategory | 'ALL';
   totalUnfilteredCount: number;
   userLocation?: UserCoordinates | null;
+  friendLists?: SharedListPayload[];
+  bookmarkedPlaceIds?: Set<string>;
+  onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   onReorderDragEnd: (activeId: string, overId: string) => void;
   onSelectSpot: (restaurant: RestaurantEntry) => void;
   onReRankSpot?: (restaurant: RestaurantEntry) => void;
@@ -360,6 +404,9 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   selectedMealFilter,
   totalUnfilteredCount,
   userLocation = null,
+  friendLists = [],
+  bookmarkedPlaceIds,
+  onBookmarkFromFriend,
   onReorderDragEnd,
   onSelectSpot,
   onReRankSpot,
@@ -420,23 +467,31 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
         strategy={verticalListSortingStrategy}
       >
         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/90 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
-          {restaurants.map((restaurant, idx) => (
-            <SortableRestaurantRow
-              key={restaurant.id}
-              restaurant={restaurant}
-              displayPosition={idx + 1}
-              isFiltered={isFiltered}
-              sortByNearest={sortByNearest}
-              readOnly={readOnly}
-              selectedMealFilter={selectedMealFilter}
-              userLocation={userLocation}
-              openSwipeId={openSwipeId}
-              onSetOpenSwipeId={setOpenSwipeId}
-              onSelectSpot={onSelectSpot}
-              onReRankSpot={onReRankSpot}
-              onDeleteSpot={onDeleteSpot}
-            />
-          ))}
+          {restaurants.map((restaurant, idx) => {
+            const isBookmarked = Boolean(
+              restaurant.placeId && bookmarkedPlaceIds?.has(restaurant.placeId)
+            );
+            return (
+              <SortableRestaurantRow
+                key={restaurant.id}
+                restaurant={restaurant}
+                displayPosition={idx + 1}
+                isFiltered={isFiltered}
+                sortByNearest={sortByNearest}
+                readOnly={readOnly}
+                selectedMealFilter={selectedMealFilter}
+                userLocation={userLocation}
+                friendLists={friendLists}
+                isBookmarkedInMyList={isBookmarked}
+                onBookmarkFromFriend={onBookmarkFromFriend}
+                openSwipeId={openSwipeId}
+                onSetOpenSwipeId={setOpenSwipeId}
+                onSelectSpot={onSelectSpot}
+                onReRankSpot={onReRankSpot}
+                onDeleteSpot={onDeleteSpot}
+              />
+            );
+          })}
         </div>
       </SortableContext>
     </DndContext>

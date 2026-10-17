@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -10,6 +10,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   setDoc,
   writeBatch,
@@ -17,6 +18,7 @@ import {
 import { arrayMove } from '@dnd-kit/sortable';
 import {
   Bookmark,
+  Check,
   Download,
   List,
   LogIn,
@@ -29,13 +31,17 @@ import {
   Search,
   Settings,
   Share2,
+  Sparkles,
   Sun,
+  UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { auth, db, googleProvider, setAnalyticsUser, trackEvent } from './firebase';
 import {
   ALL_MEAL_CATEGORIES,
   BookmarkEntry,
+  FriendProfile,
   MealCategory,
   normalizeMealCategory,
   PlaceCandidate,
@@ -44,8 +50,15 @@ import {
 } from './types';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { ratingToBaseElo, recomputeMagicScores } from './lib/rankingEngine';
+import {
+  deriveDefaultHandle,
+  getFriendMatchesForSpot,
+  sanitizeHandle,
+} from './lib/friendsService';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
+import { EatTogetherModal } from './components/EatTogetherModal';
+import { FriendsModal } from './components/FriendsModal';
 import { JellyBeanIcon } from './components/JellyBeanIcon';
 import { PendingPlacement, SxSArenaModal } from './components/SxSArenaModal';
 import { RestaurantList } from './components/RestaurantList';
@@ -56,6 +69,7 @@ import { SpotDetailModal } from './components/SpotDetailModal';
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
 const LOCAL_SETTINGS_KEY = 'palatelo_settings_v2';
+const LOCAL_FRIENDS_KEY = 'jelly_friends_v1';
 const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
 
 function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
@@ -96,9 +110,33 @@ function sanitizeLoadedBookmark(raw: any): BookmarkEntry {
   };
 }
 
+function parseSharedListDoc(id: string, data: any): SharedListPayload {
+  const loadedRestaurants: RestaurantEntry[] = Array.isArray(data.restaurants)
+    ? data.restaurants.map(sanitizeLoadedRestaurant)
+    : [];
+  loadedRestaurants.sort((a, b) => a.rankIndex - b.rankIndex);
+  const loadedBookmarks: BookmarkEntry[] = Array.isArray(data.bookmarks)
+    ? data.bookmarks.map(sanitizeLoadedBookmark)
+    : [];
+  return {
+    id,
+    ownerUid: data.ownerUid || id,
+    ownerName: data.ownerName || 'Friend',
+    displayName: data.displayName || data.ownerName || 'Friend',
+    handle: data.handle || undefined,
+    photoURL: data.photoURL || undefined,
+    title: data.title,
+    restaurants: recomputeMagicScores(loadedRestaurants),
+    bookmarks: loadedBookmarks,
+    createdAt: data.createdAt || Date.now(),
+    updatedAt: data.updatedAt || Date.now(),
+  };
+}
+
 export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const cloudLoadedRef = useRef(false);
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
@@ -147,7 +185,33 @@ export const App: React.FC = () => {
     return [];
   });
 
-  // Shared List Read-Only Mode (?list=<shareId>)
+  // Friends State (localStorage + Firestore sync)
+  const [friends, setFriends] = useState<FriendProfile[]>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_FRIENDS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // Ignore
+    }
+    return [];
+  });
+
+  const [userHandle, setUserHandle] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      if (raw) return JSON.parse(raw).handle || '';
+    } catch {
+      // Ignore
+    }
+    return '';
+  });
+
+  const [friendListsMap, setFriendListsMap] = useState<Record<string, SharedListPayload>>({});
+
+  // Shared List Read-Only Mode (?list=<shareId> or Friend Switcher)
   const [sharedList, setSharedList] = useState<SharedListPayload | null>(null);
   const [sharedListLoading, setSharedListLoading] = useState<boolean>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -198,6 +262,9 @@ export const App: React.FC = () => {
   const [isSxSOpen, setIsSxSOpen] = useState(false);
   const [activeDetailSpot, setActiveDetailSpot] = useState<RestaurantEntry | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isFriendsOpen, setIsFriendsOpen] = useState(false);
+  const [isEatTogetherOpen, setIsEatTogetherOpen] = useState(false);
+  const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastAction, setToastAction] = useState<{ label: string; onClick: () => void } | null>(
@@ -277,24 +344,12 @@ export const App: React.FC = () => {
       .then((snap) => {
         if (cancelled) return;
         if (snap.exists()) {
-          const data = snap.data();
-          const loadedRestaurants = Array.isArray(data.restaurants)
-            ? data.restaurants.map(sanitizeLoadedRestaurant)
-            : [];
-          loadedRestaurants.sort((a, b) => a.rankIndex - b.rankIndex);
-          const loadedBookmarks = Array.isArray(data.bookmarks)
-            ? data.bookmarks.map(sanitizeLoadedBookmark)
-            : [];
-          setSharedList({
-            id: snap.id,
-            ownerUid: data.ownerUid || '',
-            ownerName: data.ownerName || 'Friend',
-            title: data.title,
-            restaurants: recomputeMagicScores(loadedRestaurants),
-            bookmarks: loadedBookmarks,
-            createdAt: data.createdAt || Date.now(),
-            updatedAt: data.updatedAt || Date.now(),
-          });
+          const parsed = parseSharedListDoc(snap.id, snap.data());
+          setSharedList(parsed);
+          setFriendListsMap((prev) => ({
+            ...prev,
+            [parsed.ownerUid || parsed.id]: parsed,
+          }));
           trackEvent('view_shared_list', { share_id: shareId });
         } else {
           showToast('Shared list not found');
@@ -314,8 +369,10 @@ export const App: React.FC = () => {
 
   const exitSharedListView = () => {
     const url = new URL(window.location.href);
-    url.searchParams.delete('list');
-    window.history.replaceState({}, '', url.toString());
+    if (url.searchParams.has('list')) {
+      url.searchParams.delete('list');
+      window.history.replaceState({}, '', url.toString());
+    }
     setSharedList(null);
   };
 
@@ -325,7 +382,7 @@ export const App: React.FC = () => {
       trackEvent('toggle_dark_mode', { dark_mode: next });
       localStorage.setItem(
         LOCAL_SETTINGS_KEY,
-        JSON.stringify({ defaultCity, darkMode: next })
+        JSON.stringify({ defaultCity, darkMode: next, handle: userHandle })
       );
       if (user) {
         setDoc(
@@ -340,12 +397,72 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
+      cloudLoadedRef.current = false;
       setUser(u);
       setAnalyticsUser(u?.uid ?? null);
       setAuthLoading(false);
+      if (u) {
+        setUserHandle((prev) => prev || deriveDefaultHandle(u.displayName, u.email));
+      }
     });
     return () => unsub();
   }, []);
+
+  // Load user profile doc (friends, handle, defaultCity) when signed in
+  useEffect(() => {
+    if (!user) return;
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsub = onSnapshot(
+      userDocRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        if (typeof data.handle === 'string' && data.handle.trim()) {
+          setUserHandle(data.handle.trim());
+        }
+        if (Array.isArray(data.friends)) {
+          setFriends((prev) => {
+            // Merge local and cloud friends by uid
+            const mergedMap = new Map<string, FriendProfile>();
+            for (const f of prev) mergedMap.set(f.uid, f);
+            for (const f of data.friends) {
+              if (f && typeof f.uid === 'string') {
+                mergedMap.set(f.uid, f as FriendProfile);
+              }
+            }
+            const next = Array.from(mergedMap.values()).sort((a, b) => b.addedAt - a.addedAt);
+            localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(next));
+            return next;
+          });
+        }
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, [user]);
+
+  // Live-fetch SharedListPayload for each followed friend
+  useEffect(() => {
+    if (friends.length === 0) return;
+    let cancelled = false;
+    friends.forEach((friend) => {
+      const shareDocId = friend.shareId || friend.uid;
+      if (!shareDocId) return;
+      getDoc(doc(db, 'sharedLists', shareDocId))
+        .then((snap) => {
+          if (cancelled || !snap.exists()) return;
+          const parsed = parseSharedListDoc(snap.id, snap.data());
+          setFriendListsMap((prev) => ({
+            ...prev,
+            [friend.uid]: parsed,
+          }));
+        })
+        .catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [friends]);
 
   // Firestore subscription for Ranked Restaurants
   useEffect(() => {
@@ -376,6 +493,7 @@ export const App: React.FC = () => {
               // Ignore
             }
           }
+          cloudLoadedRef.current = true;
           setRestaurants([]);
           return;
         }
@@ -386,6 +504,7 @@ export const App: React.FC = () => {
         });
         loaded.sort((a, b) => a.rankIndex - b.rankIndex);
         const normalized = recomputeMagicScores(loaded);
+        cloudLoadedRef.current = true;
         setRestaurants(normalized);
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
       },
@@ -446,6 +565,50 @@ export const App: React.FC = () => {
     return () => unsub();
   }, [user]);
 
+  // Auto-sync signed-in user's public sharedLists/{uid} document so friends & @handle search stay live
+  useEffect(() => {
+    if (!user || !cloudLoadedRef.current) return;
+    if (restaurants.length === 0 && bookmarks.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const shareId = user.uid;
+      const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'Friend';
+      const effectiveHandle =
+        sanitizeHandle(userHandle) || deriveDefaultHandle(user.displayName, user.email);
+      const cleanRestaurants = restaurants.slice(0, 500).map((r) => {
+        const clean: Record<string, any> = {};
+        Object.entries(r).forEach(([k, v]) => {
+          if (v !== undefined) clean[k] = v;
+        });
+        return clean;
+      });
+      const cleanBookmarks = bookmarks.slice(0, 500).map((b) => {
+        const clean: Record<string, any> = {};
+        Object.entries(b).forEach(([k, v]) => {
+          if (v !== undefined) clean[k] = v;
+        });
+        return clean;
+      });
+
+      const payload: Record<string, any> = {
+        id: shareId,
+        ownerUid: user.uid,
+        ownerName,
+        displayName: user.displayName || ownerName,
+        handle: effectiveHandle,
+        restaurants: cleanRestaurants,
+        bookmarks: cleanBookmarks,
+        updatedAt: Date.now(),
+        createdAt: Date.now(),
+      };
+      if (user.photoURL) payload.photoURL = user.photoURL;
+
+      setDoc(doc(db, 'sharedLists', shareId), payload, { merge: true }).catch(() => {});
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [user, restaurants, bookmarks, userHandle]);
+
   const persistOrderedRestaurants = async (ordered: RestaurantEntry[], deletedId?: string) => {
     const recomputed = recomputeMagicScores(ordered);
     setRestaurants(recomputed);
@@ -471,7 +634,10 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleAddBookmark = async (candidate: PlaceCandidate) => {
+  const handleAddBookmark = async (
+    candidate: PlaceCandidate,
+    recommendedBy?: { name: string; uid?: string }
+  ) => {
     const primaryMeal: MealCategory =
       candidate.meals && candidate.meals.length > 0 ? candidate.meals[0] : 'Dinner';
     const bookmarkId = candidate.placeId || `bm_${Date.now()}`;
@@ -492,6 +658,8 @@ export const App: React.FC = () => {
       meals: candidate.meals?.length ? candidate.meals : [primaryMeal],
       cuisines: candidate.cuisines || [],
       primaryTypeDisplay: candidate.primaryTypeDisplay,
+      recommendedBy: recommendedBy?.name,
+      recommendedByUid: recommendedBy?.uid,
       createdAt: now,
       updatedAt: now,
     };
@@ -515,9 +683,246 @@ export const App: React.FC = () => {
       restaurant_name: candidate.name,
       city: candidate.city || '',
       meal: primaryMeal,
+      recommended_by: recommendedBy?.name || '',
     });
     setIsAddModalOpen(false);
-    showToast(`Saved ${candidate.name} to Want to Try`);
+    showToast(
+      recommendedBy?.name
+        ? `Saved ${candidate.name} (Rec by ${recommendedBy.name})`
+        : `Saved ${candidate.name} to Want to Try`
+    );
+  };
+
+  const handleBookmarkSpotFromFriend = (
+    spot: RestaurantEntry | BookmarkEntry | PlaceCandidate,
+    friendName: string,
+    friendUid?: string
+  ) => {
+    const alreadySaved = bookmarks.some(
+      (b) =>
+        (spot.placeId && b.placeId === spot.placeId) ||
+        b.name.trim().toLowerCase() === spot.name.trim().toLowerCase()
+    );
+    if (alreadySaved) {
+      showToast(`${spot.name} is already in your Want to Try`);
+      return;
+    }
+    const fallbackMeal: MealCategory = 'meal' in spot && spot.meal ? spot.meal : 'Dinner';
+    const candidate: PlaceCandidate = {
+      placeId: spot.placeId || ('id' in spot ? spot.id : `bm_${Date.now()}`),
+      name: spot.name,
+      formattedAddress: spot.formattedAddress,
+      neighborhood: spot.neighborhood,
+      city: spot.city,
+      lat: spot.lat,
+      lng: spot.lng,
+      googleMapsUri: spot.googleMapsUri,
+      priceLevel: spot.priceLevel,
+      meals: spot.meals?.length ? spot.meals : [fallbackMeal],
+      cuisines: spot.cuisines || [],
+      primaryTypeDisplay: spot.primaryTypeDisplay,
+      source: 'source' in spot ? spot.source : 'google_places',
+    };
+    handleAddBookmark(candidate, { name: friendName, uid: friendUid });
+  };
+
+  const handleFollowFriend = async (listPayload: SharedListPayload) => {
+    const friendUid = listPayload.ownerUid || listPayload.id;
+    if (!friendUid) return;
+    const newFriend: FriendProfile = {
+      uid: friendUid,
+      name: listPayload.ownerName || 'Friend',
+      handle: listPayload.handle,
+      photoURL: listPayload.photoURL,
+      shareId: listPayload.id,
+      addedAt: Date.now(),
+    };
+    const nextFriends = [newFriend, ...friends.filter((f) => f.uid !== friendUid)];
+    setFriends(nextFriends);
+    localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(nextFriends));
+    setFriendListsMap((prev) => ({
+      ...prev,
+      [friendUid]: listPayload,
+    }));
+
+    if (user) {
+      setDoc(
+        doc(db, 'users', user.uid),
+        {
+          friends: nextFriends,
+          followingIds: nextFriends.map((f) => f.uid),
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      ).catch(() => {});
+    }
+
+    trackEvent('follow_friend', {
+      friend_uid: friendUid,
+      friend_name: newFriend.name,
+    });
+    showToast(`Following ${newFriend.name}`);
+  };
+
+  const handleFollowByShareId = async (shareId: string): Promise<boolean> => {
+    try {
+      const snap = await getDoc(doc(db, 'sharedLists', shareId));
+      if (!snap.exists()) {
+        showToast('Could not find a Jelly list for that link');
+        return false;
+      }
+      const parsed = parseSharedListDoc(snap.id, snap.data());
+      await handleFollowFriend(parsed);
+      return true;
+    } catch {
+      showToast('Could not load friend list');
+      return false;
+    }
+  };
+
+  const handleUnfollowFriend = async (friendUid: string) => {
+    const prevFriends = [...friends];
+    const removed = friends.find((f) => f.uid === friendUid);
+    const nextFriends = friends.filter((f) => f.uid !== friendUid);
+    setFriends(nextFriends);
+    localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(nextFriends));
+
+    if (user) {
+      setDoc(
+        doc(db, 'users', user.uid),
+        {
+          friends: nextFriends,
+          followingIds: nextFriends.map((f) => f.uid),
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      ).catch(() => {});
+    }
+
+    if (removed) {
+      trackEvent('unfollow_friend', { friend_uid: friendUid });
+      showToast(
+        `Unfollowed ${removed.name}`,
+        {
+          label: 'Undo',
+          onClick: () => {
+            setFriends(prevFriends);
+            localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(prevFriends));
+            if (user) {
+              setDoc(
+                doc(db, 'users', user.uid),
+                {
+                  friends: prevFriends,
+                  followingIds: prevFriends.map((f) => f.uid),
+                  updatedAt: Date.now(),
+                },
+                { merge: true }
+              ).catch(() => {});
+            }
+          },
+        },
+        5000
+      );
+    }
+  };
+
+  const handleUpdateUserHandle = async (nextHandle: string) => {
+    const clean = sanitizeHandle(nextHandle);
+    if (!clean) return;
+    setUserHandle(clean);
+    localStorage.setItem(
+      LOCAL_SETTINGS_KEY,
+      JSON.stringify({ defaultCity, darkMode, handle: clean })
+    );
+    if (user) {
+      setDoc(
+        doc(db, 'users', user.uid),
+        { handle: clean, updatedAt: Date.now() },
+        { merge: true }
+      ).catch(() => {});
+      await handlePublishShareLink(clean);
+    }
+    showToast(`Saved handle @${clean}`);
+  };
+
+  const handleSearchPublicLists = async (rawQuery: string): Promise<SharedListPayload[]> => {
+    const trimmed = rawQuery.trim();
+    if (!trimmed) return [];
+
+    // Support pasting a full share link (?list=<shareId>)
+    let extractedListId: string | null = null;
+    try {
+      if (trimmed.includes('list=')) {
+        const u = new URL(trimmed.startsWith('http') ? trimmed : `https://eatwithjelly.com/${trimmed}`);
+        extractedListId = u.searchParams.get('list');
+      }
+    } catch {
+      // Ignore URL parse error
+    }
+
+    const qLower = trimmed.replace(/^@/, '').toLowerCase();
+    const results: SharedListPayload[] = [];
+    const seenIds = new Set<string>();
+
+    if (extractedListId) {
+      try {
+        const directSnap = await getDoc(doc(db, 'sharedLists', extractedListId));
+        if (directSnap.exists()) {
+          const parsed = parseSharedListDoc(directSnap.id, directSnap.data());
+          results.push(parsed);
+          seenIds.add(parsed.id);
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
+    try {
+      const snap = await getDocs(collection(db, 'sharedLists'));
+      snap.forEach((docSnap) => {
+        if (seenIds.has(docSnap.id)) return;
+        if (user && docSnap.id === user.uid) return;
+        const parsed = parseSharedListDoc(docSnap.id, docSnap.data());
+        const handleMatch = parsed.handle?.toLowerCase().includes(qLower);
+        const nameMatch =
+          parsed.ownerName.toLowerCase().includes(qLower) ||
+          parsed.displayName?.toLowerCase().includes(qLower);
+        const idMatch = parsed.id.toLowerCase() === qLower;
+        if (handleMatch || nameMatch || idMatch) {
+          results.push(parsed);
+          seenIds.add(parsed.id);
+        }
+      });
+    } catch (err) {
+      console.error('Error searching sharedLists:', err);
+    }
+
+    return results;
+  };
+
+  const handleSelectFriendToView = async (friend: FriendProfile) => {
+    const cached = friendListsMap[friend.uid];
+    if (cached) {
+      setSharedList(cached);
+      trackEvent('switch_friend_list', { friend_uid: friend.uid, friend_name: friend.name });
+      return;
+    }
+    const shareDocId = friend.shareId || friend.uid;
+    setSharedListLoading(true);
+    try {
+      const snap = await getDoc(doc(db, 'sharedLists', shareDocId));
+      if (snap.exists()) {
+        const parsed = parseSharedListDoc(snap.id, snap.data());
+        setFriendListsMap((prev) => ({ ...prev, [friend.uid]: parsed }));
+        setSharedList(parsed);
+      } else {
+        showToast(`Could not load ${friend.name}'s list`);
+      }
+    } catch {
+      showToast(`Could not load ${friend.name}'s list`);
+    } finally {
+      setSharedListLoading(false);
+    }
   };
 
   const handleDeleteBookmark = async (bookmarkId: string) => {
@@ -583,7 +988,7 @@ export const App: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handlePublishShareLink = async (): Promise<string | null> => {
+  const handlePublishShareLink = async (overrideHandle?: string): Promise<string | null> => {
     if (!user) {
       showToast('Sign in with Google to create a live share link');
       return null;
@@ -591,6 +996,9 @@ export const App: React.FC = () => {
 
     const shareId = user.uid;
     const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'My';
+    const effectiveHandle =
+      sanitizeHandle(overrideHandle || userHandle) ||
+      deriveDefaultHandle(user.displayName, user.email);
     const cleanRestaurants = restaurants.slice(0, 500).map((r) => {
       const clean: Record<string, any> = {};
       Object.entries(r).forEach(([k, v]) => {
@@ -606,15 +1014,20 @@ export const App: React.FC = () => {
       return clean;
     });
 
-    await setDoc(doc(db, 'sharedLists', shareId), {
+    const payload: Record<string, any> = {
       id: shareId,
       ownerUid: user.uid,
       ownerName,
+      displayName: user.displayName || ownerName,
+      handle: effectiveHandle,
       restaurants: cleanRestaurants,
       bookmarks: cleanBookmarks,
       updatedAt: Date.now(),
       createdAt: Date.now(),
-    });
+    };
+    if (user.photoURL) payload.photoURL = user.photoURL;
+
+    await setDoc(doc(db, 'sharedLists', shareId), payload, { merge: true });
 
     trackEvent('publish_share_link', {
       restaurants_count: cleanRestaurants.length,
@@ -913,6 +1326,22 @@ export const App: React.FC = () => {
   const activeRestaurants = sharedList ? sharedList.restaurants : restaurants;
   const activeBookmarks = sharedList ? sharedList.bookmarks || [] : bookmarks;
 
+  const myBookmarkedPlaceIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of bookmarks) {
+      if (b.placeId) set.add(b.placeId);
+    }
+    return set;
+  }, [bookmarks]);
+
+  const myBookmarkedNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of bookmarks) {
+      set.add(b.name.trim().toLowerCase());
+    }
+    return set;
+  }, [bookmarks]);
+
   const bookmarkedPlaceIds = useMemo(() => {
     const set = new Set<string>();
     for (const b of activeBookmarks) {
@@ -920,6 +1349,41 @@ export const App: React.FC = () => {
     }
     return set;
   }, [activeBookmarks]);
+
+  const friendLists = useMemo(() => {
+    const list: SharedListPayload[] = [];
+    const seen = new Set<string>();
+    for (const f of friends) {
+      const payload = friendListsMap[f.uid];
+      if (payload && !seen.has(payload.id)) {
+        list.push(payload);
+        seen.add(payload.id);
+      }
+    }
+    if (sharedList && !seen.has(sharedList.id) && sharedList.ownerUid !== user?.uid) {
+      list.push(sharedList);
+    }
+    return list;
+  }, [friends, friendListsMap, sharedList, user]);
+
+  const isViewingSharedOwnerFollowed = useMemo(() => {
+    if (!sharedList) return false;
+    const ownerUid = sharedList.ownerUid || sharedList.id;
+    return friends.some((f) => f.uid === ownerUid || f.shareId === sharedList.id);
+  }, [sharedList, friends]);
+
+  const activeDetailFriendMatches = useMemo(() => {
+    if (!activeDetailSpot) return [];
+    return getFriendMatchesForSpot(activeDetailSpot, friendLists);
+  }, [activeDetailSpot, friendLists]);
+
+  const isDetailSpotBookmarkedByMe = useMemo(() => {
+    if (!activeDetailSpot) return false;
+    return Boolean(
+      (activeDetailSpot.placeId && myBookmarkedPlaceIds.has(activeDetailSpot.placeId)) ||
+        myBookmarkedNames.has(activeDetailSpot.name.trim().toLowerCase())
+    );
+  }, [activeDetailSpot, myBookmarkedPlaceIds, myBookmarkedNames]);
 
   const currentSourceItems = activeTab === 'ranked' ? activeRestaurants : activeBookmarks;
 
@@ -1037,12 +1501,12 @@ export const App: React.FC = () => {
     e.preventDefault();
     localStorage.setItem(
       LOCAL_SETTINGS_KEY,
-      JSON.stringify({ defaultCity: defaultCity.trim(), darkMode })
+      JSON.stringify({ defaultCity: defaultCity.trim(), darkMode, handle: userHandle })
     );
     if (user) {
       setDoc(
         doc(db, 'users', user.uid),
-        { defaultCity: defaultCity.trim(), darkMode, updatedAt: Date.now() },
+        { defaultCity: defaultCity.trim(), darkMode, handle: userHandle, updatedAt: Date.now() },
         { merge: true }
       ).catch(() => {});
     }
@@ -1065,20 +1529,76 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 pb-24 transition-colors duration-200">
-      {/* Shared List Banner (when viewing ?list=<shareId>) */}
+      {/* Shared List / Friend List Banner */}
       {sharedList && (
-        <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between">
-          <div className="max-w-xl mx-auto w-full flex items-center justify-between gap-2">
-            <span>
-              Viewing {sharedList.ownerName}&rsquo;s Jelly List ({sharedList.restaurants.length} ranked)
-            </span>
-            <button
-              type="button"
-              onClick={exitSharedListView}
-              className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-colors"
-            >
-              Exit to My List
-            </button>
+        <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-semibold">
+          <div className="max-w-xl mx-auto w-full flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="truncate">
+                Viewing {sharedList.ownerName}&rsquo;s List ({sharedList.restaurants.length} ranked)
+              </span>
+              {sharedList.handle && (
+                <span className="text-emerald-100/90 text-[11px] font-medium hidden sm:inline">
+                  @{sharedList.handle}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {sharedList.ownerUid !== user?.uid && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isViewingSharedOwnerFollowed) {
+                      handleUnfollowFriend(sharedList.ownerUid || sharedList.id);
+                    } else {
+                      handleFollowFriend(sharedList);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 transition-colors ${
+                    isViewingSharedOwnerFollowed
+                      ? 'bg-white/20 hover:bg-white/30 text-white'
+                      : 'bg-white text-emerald-700 hover:bg-emerald-50 shadow-2xs'
+                  }`}
+                >
+                  {isViewingSharedOwnerFollowed ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>Following</span>
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="w-3 h-3" />
+                      <span>Follow {sharedList.ownerName}</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const friendUid = sharedList.ownerUid || sharedList.id;
+                  if (!isViewingSharedOwnerFollowed && friendUid !== user?.uid) {
+                    handleFollowFriend(sharedList);
+                  }
+                  setEatTogetherFriendUid(friendUid);
+                  setIsEatTogetherOpen(true);
+                }}
+                className="px-2.5 py-1 rounded-full bg-zinc-950/30 hover:bg-zinc-950/45 text-white text-[11px] font-bold inline-flex items-center gap-1 transition-colors"
+                title={`Compare & blend lists with ${sharedList.ownerName}`}
+              >
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                <span>Blend</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={exitSharedListView}
+                className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-colors"
+              >
+                My List
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1087,12 +1607,18 @@ export const App: React.FC = () => {
       <header className="sticky top-0 z-30 bg-zinc-50/85 dark:bg-zinc-950/85 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800/80">
         <div className="max-w-xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
           {/* Clean Wordmark with Jelly Bean Emblem */}
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (sharedList) exitSharedListView();
+            }}
+            className="flex items-center gap-2 text-left"
+          >
             <JellyBeanIcon size={22} />
             <span className="font-display font-extrabold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">
               jelly
             </span>
-          </div>
+          </button>
 
           {/* Minimal Controls */}
           <div className="flex items-center gap-1">
@@ -1116,6 +1642,25 @@ export const App: React.FC = () => {
                 <Search className="w-4 h-4" />
               </button>
             )}
+
+            {/* Friends Modal Trigger */}
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent('open_friends_modal');
+                setIsFriendsOpen(true);
+              }}
+              className="relative p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+              aria-label="Friends"
+              title="Friends & Eat Together"
+            >
+              <Users className="w-4 h-4" />
+              {friends.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-emerald-500 text-zinc-950 text-[9px] font-extrabold flex items-center justify-center">
+                  {friends.length}
+                </span>
+              )}
+            </button>
 
             {activeRestaurants.length > 0 && (
               <button
@@ -1207,6 +1752,94 @@ export const App: React.FC = () => {
 
       {/* Main Centered Feed */}
       <main className="max-w-xl mx-auto px-4 pt-3.5 space-y-3">
+        {/* Friend Switcher Bar + Eat Together Pill (shown whenever user follows 1+ friends or is viewing a shared list) */}
+        {(friends.length > 0 || sharedList) && (
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            <button
+              type="button"
+              onClick={exitSharedListView}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 ${
+                !sharedList
+                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-2xs'
+                  : 'bg-zinc-200/70 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
+              }`}
+            >
+              <span>My List</span>
+            </button>
+
+            {friends.map((friend) => {
+              const isSelected =
+                Boolean(sharedList) &&
+                (sharedList?.ownerUid === friend.uid ||
+                  sharedList?.id === friend.shareId ||
+                  sharedList?.id === friend.uid);
+              return (
+                <button
+                  key={friend.uid}
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      exitSharedListView();
+                    } else {
+                      handleSelectFriendToView(friend);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold shrink-0 transition-all flex items-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-zinc-950 shadow-2xs'
+                      : 'bg-zinc-200/70 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  {friend.photoURL ? (
+                    <img
+                      src={friend.photoURL}
+                      alt={friend.name}
+                      className="w-4 h-4 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span
+                      className={`w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center ${
+                        isSelected
+                          ? 'bg-white/20 text-white dark:bg-zinc-950/20 dark:text-zinc-950'
+                          : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {friend.name[0]?.toUpperCase() || 'F'}
+                    </span>
+                  )}
+                  <span className="max-w-[96px] truncate">{friend.name}</span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent('open_eat_together');
+                setEatTogetherFriendUid(
+                  sharedList ? sharedList.ownerUid || sharedList.id : null
+                );
+                setIsEatTogetherOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-full text-xs font-bold shrink-0 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/25 flex items-center gap-1 transition-colors"
+              title="Blend your list with friends to decide where to eat together"
+            >
+              <Sparkles className="w-3 h-3 text-amber-500" />
+              <span>Eat Together</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFriendsOpen(true)}
+              className="px-2.5 py-1.5 rounded-full text-xs font-semibold shrink-0 bg-zinc-200/60 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 flex items-center gap-1 transition-colors"
+              title="Add or manage friends"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>Friends</span>
+            </button>
+          </div>
+        )}
+
         {/* Top Row: Ranked vs. Want to Try Segmented Control + List/Map Toggle */}
         <div className="flex items-center justify-between gap-2">
           <div className="inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80">
@@ -1486,6 +2119,18 @@ export const App: React.FC = () => {
             readOnly={isReadOnly}
             selectedMealFilter={selectedMeal}
             totalUnfilteredCount={activeRestaurants.length}
+            friendLists={isReadOnly ? undefined : friendLists}
+            bookmarkedPlaceIds={myBookmarkedPlaceIds}
+            onBookmarkFromFriend={
+              sharedList
+                ? (spot) =>
+                    handleBookmarkSpotFromFriend(
+                      spot,
+                      sharedList.ownerName,
+                      sharedList.ownerUid || sharedList.id
+                    )
+                : undefined
+            }
             onReorderDragEnd={handleReorderDragEnd}
             onSelectSpot={(spot) => {
               trackEvent('view_spot_detail', {
@@ -1521,6 +2166,19 @@ export const App: React.FC = () => {
             selectedMealFilter={selectedMeal}
             totalUnfilteredCount={activeBookmarks.length}
             readOnly={isReadOnly}
+            myBookmarkedPlaceIds={myBookmarkedPlaceIds}
+            myBookmarkedNames={myBookmarkedNames}
+            friendName={sharedList?.ownerName}
+            onSaveFromFriendBookmark={
+              sharedList
+                ? (bm) =>
+                    handleBookmarkSpotFromFriend(
+                      bm,
+                      sharedList.ownerName,
+                      sharedList.ownerUid || sharedList.id
+                    )
+                : undefined
+            }
             onRankBookmark={handleStartRankFromBookmark}
             onDeleteBookmark={handleDeleteBookmark}
             onOpenAddModal={() => {
@@ -1542,12 +2200,13 @@ export const App: React.FC = () => {
           setRankingBookmark(null);
         }}
         existingRestaurants={restaurants}
-        bookmarkedPlaceIds={bookmarkedPlaceIds}
+        bookmarkedPlaceIds={myBookmarkedPlaceIds}
+        friendLists={friendLists}
         reRankingEntry={reRankingEntry}
         defaultCity={defaultCity}
         userLocation={userLocation}
         onCompleteQuestions={handleCompleteQuestions}
-        onAddBookmark={handleAddBookmark}
+        onAddBookmark={(candidate) => handleAddBookmark(candidate)}
       />
 
       {/* Q3+: SxS Comparison Modal */}
@@ -1566,6 +2225,19 @@ export const App: React.FC = () => {
       <SpotDetailModal
         restaurant={activeDetailSpot}
         readOnly={isReadOnly}
+        friendOwnerName={sharedList?.ownerName}
+        isBookmarkedInMyList={isDetailSpotBookmarkedByMe}
+        friendMatches={activeDetailFriendMatches}
+        onSaveFromFriendToBookmark={
+          sharedList
+            ? (spot: RestaurantEntry) =>
+                handleBookmarkSpotFromFriend(
+                  spot,
+                  sharedList.ownerName,
+                  sharedList.ownerUid || sharedList.id
+                )
+            : undefined
+        }
         onClose={() => setActiveDetailSpot(null)}
         onReRank={(spot) => {
           trackEvent('open_rerank_modal', {
@@ -1577,6 +2249,52 @@ export const App: React.FC = () => {
         }}
         onSaveEdits={handleSaveSpotEdits}
         onDelete={handleDeleteRestaurant}
+      />
+
+      {/* Friends Directory & @Handle Modal */}
+      <FriendsModal
+        isOpen={isFriendsOpen}
+        onClose={() => setIsFriendsOpen(false)}
+        isSignedIn={Boolean(user)}
+        userUid={user?.uid}
+        userHandle={userHandle}
+        onUpdateHandle={handleUpdateUserHandle}
+        friends={friends}
+        friendListsMap={friendListsMap}
+        onSearchDirectory={handleSearchPublicLists}
+        onFollowFriend={handleFollowFriend}
+        onFollowByShareId={handleFollowByShareId}
+        onUnfollowFriend={handleUnfollowFriend}
+        onViewFriendList={(friendUid: string) => {
+          const found = friends.find((f) => f.uid === friendUid);
+          if (found) {
+            handleSelectFriendToView(found);
+          } else if (friendListsMap[friendUid]) {
+            setSharedList(friendListsMap[friendUid]);
+          }
+        }}
+        onOpenBlendWithFriend={(friendUid: string) => {
+          setEatTogetherFriendUid(friendUid);
+          setIsEatTogetherOpen(true);
+        }}
+        onPublishMyProfile={() => handlePublishShareLink()}
+      />
+
+      {/* Eat Together / Group Blend Modal */}
+      <EatTogetherModal
+        isOpen={isEatTogetherOpen}
+        onClose={() => setIsEatTogetherOpen(false)}
+        myRestaurants={restaurants}
+        myBookmarks={bookmarks}
+        friends={friends}
+        friendListsMap={friendListsMap}
+        initialSelectedFriendUid={eatTogetherFriendUid}
+        userLocation={userLocation}
+        bookmarkedPlaceIds={myBookmarkedPlaceIds}
+        onSaveFriendSpotToBookmarks={(candidate, recByLabel, recByUid) =>
+          handleBookmarkSpotFromFriend(candidate, recByLabel, recByUid)
+        }
+        onOpenFriendsModal={() => setIsFriendsOpen(true)}
       />
 
       {/* Share List & Top 10 Snapshot Card Modal */}
@@ -1596,7 +2314,7 @@ export const App: React.FC = () => {
             : ''
         }
         isSignedIn={Boolean(user)}
-        onPublishShareLink={handlePublishShareLink}
+        onPublishShareLink={() => handlePublishShareLink()}
       />
 
       {/* Minimal Settings Modal */}

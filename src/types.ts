@@ -135,6 +135,8 @@ export interface BookmarkEntry {
   cuisines: string[];
   primaryTypeDisplay?: string;
   notes?: string;
+  recommendedBy?: string; // e.g. "Sarah (9.4)"
+  recommendedByUid?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -143,10 +145,35 @@ export interface SharedListPayload {
   id: string;
   ownerUid: string;
   ownerName: string;
+  displayName?: string;
+  handle?: string;
+  photoURL?: string;
   title?: string;
   restaurants: RestaurantEntry[];
   bookmarks?: BookmarkEntry[];
   createdAt: number;
   updatedAt: number;
 }
+
+export interface FriendProfile {
+  uid: string; // matches sharedLists/{uid} doc ID
+  name: string;
+  handle?: string;
+  photoURL?: string;
+  shareId?: string;
+  addedAt: number;
+}
+
+export interface FriendSpotMatch {
+  friendUid: string;
+  friendName: string;
+  friendPhotoURL?: string;
+  status: 'ranked' | 'want_to_try';
+  magicScore?: number;
+  rankIndex?: number;
+  meal: MealCategory;
+  notes?: string;
+  favoriteDishes?: string;
+}
+
 

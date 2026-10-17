@@ -13,6 +13,9 @@ interface SwipeableBookmarkRowProps {
   onSetOpenSwipeId: (id: string | null) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
   onDeleteBookmark: (id: string) => void;
+  onSaveFromFriendBookmark?: (bookmark: BookmarkEntry) => void;
+  isAlreadySavedByMe?: boolean;
+  friendName?: string;
 }
 
 const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
@@ -24,6 +27,9 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   onSetOpenSwipeId,
   onRankBookmark,
   onDeleteBookmark,
+  onSaveFromFriendBookmark,
+  isAlreadySavedByMe = false,
+  friendName,
 }) => {
   const [swipeX, setSwipeX] = useState(0);
   const [isTouchTracking, setIsTouchTracking] = useState(false);
@@ -217,8 +223,15 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-[15px] truncate leading-snug">
-            {item.name}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-[15px] truncate leading-snug">
+              {item.name}
+            </div>
+            {item.recommendedBy && (
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0">
+                Rec by {item.recommendedBy}
+              </span>
+            )}
           </div>
           <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
             {subtitleParts.length > 0 ? subtitleParts.join(' · ') : item.formattedAddress}
@@ -236,6 +249,25 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
+          )}
+
+          {readOnly && onSaveFromFriendBookmark && (
+            <button
+              type="button"
+              onClick={() => onSaveFromFriendBookmark(item)}
+              className={`p-1.5 rounded-full transition-colors ${
+                isAlreadySavedByMe
+                  ? 'text-rose-500 bg-rose-500/10'
+                  : 'text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10'
+              }`}
+              title={
+                isAlreadySavedByMe
+                  ? 'Saved in your Want to Try'
+                  : `Save to your Want to Try${friendName ? ` (Rec by ${friendName})` : ''}`
+              }
+            >
+              <Bookmark className={`w-4 h-4 ${isAlreadySavedByMe ? 'fill-rose-500' : ''}`} />
+            </button>
           )}
 
           {!readOnly && (
@@ -276,6 +308,10 @@ interface BookmarkListProps {
   onRankBookmark: (bookmark: BookmarkEntry) => void;
   onDeleteBookmark: (id: string) => void;
   onOpenAddModal: () => void;
+  onSaveFromFriendBookmark?: (bookmark: BookmarkEntry) => void;
+  myBookmarkedPlaceIds?: Set<string>;
+  myBookmarkedNames?: Set<string>;
+  friendName?: string;
 }
 
 export const BookmarkList: React.FC<BookmarkListProps> = ({
@@ -288,6 +324,10 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   onRankBookmark,
   onDeleteBookmark,
   onOpenAddModal,
+  onSaveFromFriendBookmark,
+  myBookmarkedPlaceIds,
+  myBookmarkedNames,
+  friendName,
 }) => {
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
 
@@ -336,19 +376,28 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
-      {bookmarks.map((item) => (
-        <SwipeableBookmarkRow
-          key={item.id}
-          item={item}
-          selectedMealFilter={selectedMealFilter}
-          userLocation={userLocation}
-          readOnly={readOnly}
-          openSwipeId={openSwipeId}
-          onSetOpenSwipeId={setOpenSwipeId}
-          onRankBookmark={onRankBookmark}
-          onDeleteBookmark={onDeleteBookmark}
-        />
-      ))}
+      {bookmarks.map((item) => {
+        const isAlreadySavedByMe = Boolean(
+          (item.placeId && myBookmarkedPlaceIds?.has(item.placeId)) ||
+            myBookmarkedNames?.has(item.name.trim().toLowerCase())
+        );
+        return (
+          <SwipeableBookmarkRow
+            key={item.id}
+            item={item}
+            selectedMealFilter={selectedMealFilter}
+            userLocation={userLocation}
+            readOnly={readOnly}
+            openSwipeId={openSwipeId}
+            onSetOpenSwipeId={setOpenSwipeId}
+            onRankBookmark={onRankBookmark}
+            onDeleteBookmark={onDeleteBookmark}
+            onSaveFromFriendBookmark={onSaveFromFriendBookmark}
+            isAlreadySavedByMe={isAlreadySavedByMe}
+            friendName={friendName}
+          />
+        );
+      })}
     </div>
   );
 };

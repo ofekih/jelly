@@ -18,6 +18,9 @@ rules_version = '2';
 //   - photoURL: string (optional, <= 1000 chars) - user avatar URL
 //   - defaultCity: string (optional, <= 200 chars) - default search city preference
 //   - darkMode: bool (optional) - dark mode theme preference
+//   - handle: string (optional, <= 60 chars) - user handle for friend discovery
+//   - followingIds: list<string> (optional, <= 200 items) - followed friend UIDs/shareIds
+//   - friends: list<map> (optional, <= 200 items) - lightweight friend metadata objects
 //
 // Collection: users/{userId}/restaurants
 // Document ID: {restaurantId}
@@ -67,14 +70,27 @@ rules_version = '2';
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
 //   - notes: string (optional, <= 5000 chars) - personal notes / why want to try
+//   - recommendedBy: string (optional, <= 120 chars) - friend recommendation badge
+//   - recommendedByUid: string (optional, <= 150 chars) - recommending friend UID/shareId
 //   - createdAt: number | timestamp (optional) - creation timestamp
 //   - updatedAt: number | timestamp (optional) - last update timestamp
+//
+// Collection: users/{userId}/friends
+// Document ID: {friendId}
+// Fields:
+//   - id / shareId / ownerUid: string (optional, <= 150 chars) - friend identifier
+//   - ownerName / displayName: string (optional, <= 200 chars) - friend display name
+//   - handle: string (optional, <= 60 chars) - friend handle
+//   - photoURL: string (optional, <= 1000 chars) - friend avatar URL
+//   - createdAt / updatedAt: number | timestamp (optional) - timestamps
 //
 // Collection: sharedLists
 // Document ID: {shareId}
 // Fields:
 //   - ownerUid: string (required, immutable, matches request.auth.uid) - creator UID
 //   - ownerName: string (optional, <= 200 chars) - display name of creator
+//   - handle: string (optional, <= 60 chars) - lowercase handle for searching friends
+//   - photoURL: string (optional, <= 1000 chars) - creator avatar URL
 //   - title: string (optional, <= 300 chars) - shared list title
 //   - restaurants: list (optional, <= 500 items) - snapshot of shared restaurants
 //   - bookmarks: list (optional, <= 500 items) - optional snapshot of bookmarks
@@ -140,6 +156,9 @@ service cloud.firestore {
         isValidOptionalString('email', 0, 254) &&
         isValidOptionalString('photoURL', 0, 1000) &&
         isValidOptionalString('defaultCity', 0, 200) &&
+        isValidOptionalString('handle', 0, 60) &&
+        (!('followingIds' in data) || data.followingIds == null || isValidList(data.followingIds, 200)) &&
+        (!('friends' in data) || data.friends == null || isValidList(data.friends, 200)) &&
         (!('darkMode' in data) || data.darkMode == null || data.darkMode is bool) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp);
@@ -189,11 +208,26 @@ service cloud.firestore {
         isValidOptionalString('primaryTypeDisplay', 0, 200) &&
         isValidOptionalString('meal', 0, 100) &&
         isValidOptionalString('notes', 0, 5000) &&
+        isValidOptionalString('recommendedBy', 0, 120) &&
+        isValidOptionalString('recommendedByUid', 0, 150) &&
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
         (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
         (!('meals' in data) || isValidList(data.meals, 20)) &&
         (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
+        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
+        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
+    }
+
+    function isValidFriendDoc(data) {
+      return data.keys().size() <= 20 &&
+        isValidOptionalString('id', 0, 150) &&
+        isValidOptionalString('shareId', 0, 150) &&
+        isValidOptionalString('ownerUid', 0, 150) &&
+        isValidOptionalString('ownerName', 0, 200) &&
+        isValidOptionalString('displayName', 0, 200) &&
+        isValidOptionalString('handle', 0, 60) &&
+        isValidOptionalString('photoURL', 0, 1000) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
     }
@@ -207,6 +241,8 @@ service cloud.firestore {
         isValidOptionalString('shareId', 1, 150) &&
         isValidOptionalString('ownerName', 0, 200) &&
         isValidOptionalString('displayName', 0, 200) &&
+        isValidOptionalString('handle', 0, 60) &&
+        isValidOptionalString('photoURL', 0, 1000) &&
         isValidOptionalString('title', 0, 300) &&
         isValidOptionalString('mealFilter', 0, 100) &&
         isValidOptionalString('cityFilter', 0, 200) &&
@@ -247,6 +283,11 @@ service cloud.firestore {
         allow update: if isOwner(userId) &&
           isValidBookmark(request.resource.data) &&
           isDocIdUnchanged();
+      }
+
+      match /friends/{friendId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidFriendDoc(request.resource.data);
       }
     }
 

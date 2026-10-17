@@ -1,8 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, ExternalLink, MapPin, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
+import {
+  Bookmark,
+  Calendar,
+  ExternalLink,
+  MapPin,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react';
 import {
   ALL_MEAL_CATEGORIES,
   COMMON_CUISINES,
+  FriendSpotMatch,
   MealCategory,
   RankedHistoryEvent,
   RestaurantEntry,
@@ -24,6 +35,10 @@ function formatRankedDate(ts: number): string {
 interface SpotDetailModalProps {
   restaurant: RestaurantEntry | null;
   readOnly?: boolean;
+  friendOwnerName?: string;
+  friendMatches?: FriendSpotMatch[];
+  isBookmarkedInMyList?: boolean;
+  onSaveFromFriendToBookmark?: (restaurant: RestaurantEntry) => void;
   onClose: () => void;
   onReRank: (restaurant: RestaurantEntry) => void;
   onSaveEdits: (
@@ -41,6 +56,10 @@ interface SpotDetailModalProps {
 export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   restaurant,
   readOnly = false,
+  friendOwnerName,
+  friendMatches = [],
+  isBookmarkedInMyList = false,
+  onSaveFromFriendToBookmark,
   onClose,
   onReRank,
   onSaveEdits,
@@ -134,7 +153,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
         </div>
 
         {!isEditMode ? (
-          <div className="px-5 pb-6 space-y-4">
+          <div className="px-5 pb-6 space-y-4 overflow-y-auto">
             {/* Subtle Metadata Row */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
               {restaurant.priceLevel && (
@@ -193,7 +212,51 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
               </p>
             )}
 
-            {/* Primary Action: Beli-style Re-Rank (or Maps link in Read-Only mode) */}
+            {/* Friends Who Ranked or Saved This Spot */}
+            {friendMatches.length > 0 && (
+              <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-3.5 space-y-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Friends ({friendMatches.length})</span>
+                </div>
+                <div className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
+                  {friendMatches.map((fm) => (
+                    <div key={fm.friendUid} className="py-2 first:pt-0 last:pb-0 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-6 h-6 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold flex items-center justify-center shrink-0">
+                            {fm.friendName.slice(0, 1).toUpperCase()}
+                          </div>
+                          <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 truncate">
+                            {fm.friendName}
+                          </span>
+                          <span className="text-[11px] text-zinc-400">
+                            {fm.status === 'ranked' && fm.rankIndex !== undefined
+                              ? `#${fm.rankIndex + 1} · ${fm.meal}`
+                              : `Want to Try · ${fm.meal}`}
+                          </span>
+                        </div>
+
+                        {fm.status === 'ranked' && fm.magicScore !== undefined ? (
+                          <ScoreBadge score={fm.magicScore} size="sm" />
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 text-[10px] font-semibold">
+                            Bookmarked
+                          </span>
+                        )}
+                      </div>
+                      {fm.notes && (
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 pl-8 italic">
+                          &ldquo;{fm.notes}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Primary Action: Beli-style Re-Rank (or Save to Want to Try + Maps in Friend Read-Only mode) */}
             {!readOnly ? (
               <div className="space-y-2 pt-1">
                 <button
@@ -246,19 +309,45 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                 </div>
               </div>
             ) : (
-              restaurant.googleMapsUri && (
-                <div className="pt-1">
+              <div className="space-y-2 pt-1">
+                {onSaveFromFriendToBookmark && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSaveFromFriendToBookmark(restaurant);
+                      onClose();
+                    }}
+                    className={`w-full py-3 px-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${
+                      isBookmarkedInMyList
+                        ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                    }`}
+                  >
+                    <Bookmark
+                      className={`w-4 h-4 ${isBookmarkedInMyList ? 'fill-current' : ''}`}
+                    />
+                    <span>
+                      {isBookmarkedInMyList
+                        ? 'Saved in Your Want to Try'
+                        : `Save to Want to Try${
+                            friendOwnerName ? ` (Rec by ${friendOwnerName})` : ''
+                          }`}
+                    </span>
+                  </button>
+                )}
+
+                {restaurant.googleMapsUri && (
                   <a
                     href={restaurant.googleMapsUri}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+                    className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
                   >
-                    <ExternalLink className="w-4 h-4" />
+                    <ExternalLink className="w-3.5 h-3.5" />
                     <span>Open in Google Maps</span>
                   </a>
-                </div>
-              )
+                )}
+              </div>
             )}
           </div>
         ) : (
