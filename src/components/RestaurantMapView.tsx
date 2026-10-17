@@ -112,13 +112,8 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    const tileUrl = darkMode
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-
-    const tileLayer = L.tileLayer(tileUrl, {
+    const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
     }).addTo(map);
 
     const markersGroup = L.layerGroup().addTo(map);
@@ -134,15 +129,6 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       markersLayerRef.current = null;
     };
   }, []);
-
-  // Update tile layer when dark mode changes
-  useEffect(() => {
-    if (!tileLayerRef.current) return;
-    const tileUrl = darkMode
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-    tileLayerRef.current.setUrl(tileUrl);
-  }, [darkMode]);
 
   // Render markers and fit bounds
   useEffect(() => {
@@ -211,7 +197,10 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
           iconSize: [0, 0],
         });
 
-        const marker = L.marker(coords, { icon });
+        const marker = L.marker(coords, {
+          icon,
+          zIndexOffset: Math.max(0, 1000 - entry.rankIndex) * 10,
+        });
         marker.on('click', () => {
           setSelectedBookmark(null);
           setSelectedRanked(entry);
@@ -294,7 +283,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
   const totalCount = mode === 'ranked' ? plottedRanked.length : plottedBookmarks.length;
 
   return (
-    <div className="relative w-full h-[64vh] min-h-[400px] max-h-[620px] rounded-2xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900 shadow-2xs">
+    <div className="relative isolate z-0 w-full h-[64vh] min-h-[400px] max-h-[620px] rounded-2xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900 shadow-2xs">
       <div ref={containerRef} className="w-full h-full z-0" />
 
       {/* Count Pill */}
