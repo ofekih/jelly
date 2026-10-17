@@ -92,6 +92,154 @@ function extractNeighborhoodAndCity(
   return {};
 }
 
+const PLACES_FIELD_MASK = [
+  'id',
+  'displayName',
+  'formattedAddress',
+  'shortFormattedAddress',
+  'addressComponents',
+  'location',
+  'types',
+  'primaryType',
+  'primaryTypeDisplayName',
+  'priceLevel',
+  'googleMapsUri',
+  'servesBreakfast',
+  'servesBrunch',
+  'servesLunch',
+  'servesDinner',
+  'servesCoffee',
+  'servesDessert',
+  'servesCocktails',
+  'servesWine',
+  'servesBeer',
+];
+
+function normalizeForMatch(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Scores how strongly a candidate restaurant's name matches the user's raw search query.
+ * Returns > 0 if the query matches the restaurant's name, or 0 if it only matched
+ * unrelated review/category text (e.g. shabu-shabu places appearing for "boil").
+ */
+export function computeNameMatchScore(candidateName: string, rawQuery: string): number {
+  const normName = normalizeForMatch(candidateName);
+  const normQuery = normalizeForMatch(rawQuery);
+  if (!normName || !normQuery) return 0;
+
+  if (normName === normQuery) return 120;
+  if (normName.startsWith(normQuery)) return 100;
+
+  // Also check raw lowercase prefix (preserving '&', e.g. "boil & bake")
+  const rawLowerName = candidateName.toLowerCase().trim();
+  const rawLowerQuery = rawQuery.toLowerCase().trim();
+  if (rawLowerName.startsWith(rawLowerQuery)) return 105;
+
+  const nameWords = normName.split(' ').filter(Boolean);
+  const queryWords = normQuery
+    .split(' ')
+    .filter((w) => w.length > 0 && w !== 'and' && w !== 'the');
+
+  if (queryWords.length === 0) return 0;
+
+  // Check if every query word matches the prefix of some word in the restaurant name
+  const allWordsMatchPrefix = queryWords.every((qw) =>
+    nameWords.some((nw) => nw.startsWith(qw))
+  );
+  if (allWordsMatchPrefix) {
+    // Higher score if the very first word of the restaurant name starts with the first query word
+    return nameWords[0]?.startsWith(queryWords[0]) ? 95 : 85;
+  }
+
+  if (normName.includes(normQuery) || rawLowerName.includes(rawLowerQuery)) {
+    return 75;
+  }
+
+  // Partial word-prefix match (e.g. user typed "boil costa mesa" where "boil" is in the name)
+  const matchedWordCount = queryWords.filter((qw) =>
+    nameWords.some((nw) => nw.startsWith(qw) || (qw.length >= 3 && nw.includes(qw)))
+  ).length;
+
+  if (matchedWordCount > 0) {
+    return 40 + Math.round((matchedWordCount / queryWords.length) * 30);
+  }
+
+  return 0;
+}
+
+function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate {
+  const name = p.displayName?.text || fallbackName;
+  const formattedAddress = p.formattedAddress || p.shortFormattedAddress || '';
+  const { neighborhood, city } = extractNeighborhoodAndCity(
+    formattedAddress,
+    p.addressComponents
+  );
+
+  const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
+    name,
+    types: p.types,
+    primaryType: p.primaryType,
+    primaryTypeDisplayName: p.primaryTypeDisplayName?.text,
+    servesBreakfast: p.servesBreakfast,
+    servesBrunch: p.servesBrunch,
+    servesLunch: p.servesLunch,
+    servesDinner: p.servesDinner,
+    servesCoffee: p.servesCoffee,
+    servesDessert: p.servesDessert,
+    servesCocktails: p.servesCocktails,
+    servesWine: p.servesWine,
+    servesBeer: p.servesBeer,
+  });
+
+  return {
+    placeId: p.id || `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    formattedAddress,
+    neighborhood,
+    city,
+    lat: p.location?.latitude,
+    lng: p.location?.longitude,
+    googleMapsUri:
+      p.googleMapsUri ||
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${name} ${formattedAddress}`
+      )}`,
+    priceLevel: p.priceLevel ? GOOGLE_PRICE_MAP[p.priceLevel] : undefined,
+    meals,
+    cuisines,
+    primaryTypeDisplay,
+    source: 'google_places',
+  };
+}
+
+async function fetchPlaceDetailsById(
+  placeId: string,
+  apiKey: string,
+  fallbackName: string
+): Promise<PlaceCandidate | null> {
+  try {
+    const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+      method: 'GET',
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': PLACES_FIELD_MASK.join(','),
+      },
+    });
+    if (!res.ok) return null;
+    const p = await res.json();
+    return mapGooglePlaceToCandidate(p, fallbackName);
+  } catch {
+    return null;
+  }
+}
+
 export async function searchRestaurants(
   query: string,
   customApiKey?: string,
@@ -110,108 +258,161 @@ export async function searchRestaurants(
 
   const apiKey = (customApiKey && customApiKey.trim()) || DEFAULT_PLACES_API_KEY;
 
-  // 1. Try Google Places API (New) first
+  // 1. Query Google Places Autocomplete (for fast prefix/name matching like "boil" -> "Boil & Bake")
+  //    AND Google Places Text Search in parallel, then prioritize name matches.
   try {
-    const fieldMask = [
-      'places.id',
-      'places.displayName',
-      'places.formattedAddress',
-      'places.shortFormattedAddress',
-      'places.addressComponents',
-      'places.location',
-      'places.types',
-      'places.primaryType',
-      'places.primaryTypeDisplayName',
-      'places.priceLevel',
-      'places.googleMapsUri',
-      'places.servesBreakfast',
-      'places.servesBrunch',
-      'places.servesLunch',
-      'places.servesDinner',
-      'places.servesCoffee',
-      'places.servesDessert',
-      'places.servesCocktails',
-      'places.servesWine',
-      'places.servesBeer',
-    ].join(',');
-
-    const requestBody: Record<string, any> = {
-      textQuery: effectiveQuery,
-      maxResultCount: 8,
-    };
-
-    if (userLocation) {
-      requestBody.locationBias = {
-        circle: {
-          center: {
-            latitude: userLocation.lat,
-            longitude: userLocation.lng,
+    const locationBias = userLocation
+      ? {
+          circle: {
+            center: {
+              latitude: userLocation.lat,
+              longitude: userLocation.lng,
+            },
+            radius: 30000.0,
           },
-          radius: 25000.0,
-        },
+        }
+      : undefined;
+
+    const autocompleteBody: Record<string, any> = {
+      input: effectiveQuery,
+      includedPrimaryTypes: ['restaurant', 'cafe', 'bakery', 'bar', 'food'],
+    };
+    if (locationBias) {
+      autocompleteBody.locationBias = locationBias;
+      autocompleteBody.origin = {
+        latitude: userLocation!.lat,
+        longitude: userLocation!.lng,
       };
     }
 
-    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': fieldMask,
-      },
-      body: JSON.stringify(requestBody),
-    });
+    const searchTextBody: Record<string, any> = {
+      textQuery: effectiveQuery,
+      maxResultCount: 8,
+    };
+    if (locationBias) {
+      searchTextBody.locationBias = locationBias;
+    }
 
-    if (response.ok) {
-      const data = await response.json();
-      if (Array.isArray(data.places) && data.places.length > 0) {
-        const candidates: PlaceCandidate[] = data.places.map((p: any) => {
-          const name = p.displayName?.text || trimmed;
-          const formattedAddress = p.formattedAddress || p.shortFormattedAddress || '';
-          const { neighborhood, city } = extractNeighborhoodAndCity(
-            formattedAddress,
-            p.addressComponents
-          );
+    const [autoRes, textRes] = await Promise.allSettled([
+      fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+        },
+        body: JSON.stringify(autocompleteBody),
+      }),
+      fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': PLACES_FIELD_MASK.map((f) => `places.${f}`).join(','),
+        },
+        body: JSON.stringify(searchTextBody),
+      }),
+    ]);
 
-          const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
-            name,
-            types: p.types,
-            primaryType: p.primaryType,
-            primaryTypeDisplayName: p.primaryTypeDisplayName?.text,
-            servesBreakfast: p.servesBreakfast,
-            servesBrunch: p.servesBrunch,
-            servesLunch: p.servesLunch,
-            servesDinner: p.servesDinner,
-            servesCoffee: p.servesCoffee,
-            servesDessert: p.servesDessert,
-            servesCocktails: p.servesCocktails,
-            servesWine: p.servesWine,
-            servesBeer: p.servesBeer,
-          });
+    const byId = new Map<string, PlaceCandidate>();
+    const autocompleteOrder: string[] = [];
 
-          return {
-            placeId: p.id || `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            name,
-            formattedAddress,
-            neighborhood,
-            city,
-            lat: p.location?.latitude,
-            lng: p.location?.longitude,
-            googleMapsUri:
-              p.googleMapsUri ||
-              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                `${name} ${formattedAddress}`
-              )}`,
-            priceLevel: p.priceLevel ? GOOGLE_PRICE_MAP[p.priceLevel] : undefined,
-            meals,
-            cuisines,
-            primaryTypeDisplay,
-            source: 'google_places',
-          };
-        });
-
-        return { results: candidates, providerUsed: 'google_places' };
+    if (textRes.status === 'fulfilled' && textRes.value.ok) {
+      const textData = await textRes.value.json();
+      if (Array.isArray(textData.places)) {
+        for (const p of textData.places) {
+          const cand = mapGooglePlaceToCandidate(p, trimmed);
+          byId.set(cand.placeId, cand);
+        }
       }
+    }
+
+    if (autoRes.status === 'fulfilled' && autoRes.value.ok) {
+      const autoData = await autoRes.value.json();
+      const suggestions = Array.isArray(autoData.suggestions) ? autoData.suggestions : [];
+      const missingPredictions: Array<{ placeId: string; mainText: string; secondaryText: string; types: string[] }> = [];
+
+      for (const s of suggestions) {
+        const pred = s.placePrediction;
+        if (!pred?.placeId) continue;
+        autocompleteOrder.push(pred.placeId);
+        if (!byId.has(pred.placeId) && missingPredictions.length < 5) {
+          missingPredictions.push({
+            placeId: pred.placeId,
+            mainText: pred.structuredFormat?.mainText?.text || pred.text?.text || trimmed,
+            secondaryText: pred.structuredFormat?.secondaryText?.text || '',
+            types: Array.isArray(pred.types) ? pred.types : [],
+          });
+        }
+      }
+
+      if (missingPredictions.length > 0) {
+        const detailedList = await Promise.all(
+          missingPredictions.map(async (pred) => {
+            const detailed = await fetchPlaceDetailsById(pred.placeId, apiKey, pred.mainText);
+            if (detailed) return detailed;
+            // Instant fallback from prediction metadata if details call fails
+            const { neighborhood, city } = extractNeighborhoodAndCity(pred.secondaryText);
+            const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
+              name: pred.mainText,
+              types: pred.types,
+            });
+            return {
+              placeId: pred.placeId,
+              name: pred.mainText,
+              formattedAddress: pred.secondaryText,
+              neighborhood,
+              city,
+              googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `${pred.mainText} ${pred.secondaryText}`
+              )}`,
+              meals,
+              cuisines,
+              primaryTypeDisplay,
+              source: 'google_places' as const,
+            };
+          })
+        );
+
+        for (const cand of detailedList) {
+          byId.set(cand.placeId, cand);
+        }
+      }
+    }
+
+    const allCandidates = Array.from(byId.values());
+    if (allCandidates.length > 0) {
+      // Score each candidate by how well its NAME matches the user's raw query
+      const scored = allCandidates.map((cand, originalIdx) => {
+        const nameScore = computeNameMatchScore(cand.name, trimmed);
+        const autoRank = autocompleteOrder.indexOf(cand.placeId);
+        const isFromAutocomplete = autoRank !== -1;
+        return {
+          cand,
+          nameScore,
+          isFromAutocomplete,
+          autoRank: isFromAutocomplete ? autoRank : 999,
+          originalIdx,
+        };
+      });
+
+      const hasNameMatches = scored.some((item) => item.nameScore > 0);
+      const filtered = hasNameMatches
+        ? scored.filter((item) => item.nameScore > 0)
+        : scored;
+
+      filtered.sort((a, b) => {
+        if (b.nameScore !== a.nameScore) return b.nameScore - a.nameScore;
+        if (a.isFromAutocomplete !== b.isFromAutocomplete) {
+          return a.isFromAutocomplete ? -1 : 1;
+        }
+        if (a.autoRank !== b.autoRank) return a.autoRank - b.autoRank;
+        return a.originalIdx - b.originalIdx;
+      });
+
+      return {
+        results: filtered.slice(0, 8).map((item) => item.cand),
+        providerUsed: 'google_places',
+      };
     }
   } catch {
     // Fall through to Photon / OpenStreetMap live search
@@ -239,7 +440,6 @@ export async function searchRestaurants(
 
         const osmKey = props.osm_key || '';
         const osmValue = props.osm_value || '';
-        // Prefer food/drink/shop/tourism POIs or named places
         const addressParts = [
           props.housenumber ? `${props.housenumber} ${props.street || ''}`.trim() : props.street,
           props.district || props.suburb || props.locality,
@@ -281,6 +481,10 @@ export async function searchRestaurants(
 
         if (candidates.length >= 8) break;
       }
+
+      candidates.sort(
+        (a, b) => computeNameMatchScore(b.name, trimmed) - computeNameMatchScore(a.name, trimmed)
+      );
 
       return { results: candidates, providerUsed: 'osm_photon' };
     }

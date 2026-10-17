@@ -3,7 +3,7 @@ import {
   DndContext,
   closestCenter,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -43,6 +43,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   userLocation = null,
   onSelectSpot,
 }) => {
+  const isDragDisabled = isFiltered || sortByNearest || readOnly;
   const {
     attributes,
     listeners,
@@ -52,7 +53,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     isDragging,
   } = useSortable({
     id: restaurant.id,
-    disabled: isFiltered || sortByNearest || readOnly,
+    disabled: isDragDisabled,
   });
 
   const style: React.CSSProperties = {
@@ -94,27 +95,30 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     <div
       ref={setNodeRef}
       style={style}
-      onClick={() => onSelectSpot(restaurant)}
-      className={`group flex items-center justify-between gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/60 transition-colors cursor-pointer select-none ${
+      {...(!isDragDisabled ? attributes : {})}
+      {...(!isDragDisabled ? listeners : {})}
+      onClick={() => {
+        if (!isDragging) onSelectSpot(restaurant);
+      }}
+      className={`group flex items-center justify-between gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/60 transition-all select-none ${
+        !isDragDisabled
+          ? 'cursor-grab active:cursor-grabbing touch-manipulation'
+          : 'cursor-pointer'
+      } ${
         isDragging
-          ? 'shadow-xl ring-1 ring-emerald-500/50 rounded-2xl z-30 bg-white dark:bg-zinc-900'
+          ? 'shadow-2xl scale-[1.015] ring-2 ring-emerald-500/60 rounded-2xl z-30 bg-white dark:bg-zinc-900 opacity-95'
           : ''
       }`}
     >
-      {/* Left: Drag Handle + Rank Number + Name/Subtitle */}
+      {/* Left: Subtle Grip Indicator + Rank Number + Name/Subtitle */}
       <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0 flex-1">
-        {!isFiltered && !sortByNearest && !readOnly && (
-          <button
-            type="button"
-            {...attributes}
-            {...listeners}
-            onClick={(e) => e.stopPropagation()}
-            className="p-1 -ml-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 group-hover:text-zinc-400 dark:group-hover:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 cursor-grab active:cursor-grabbing touch-none transition-colors"
-            title="Drag to reorder"
-            aria-label={`Drag ${restaurant.name}`}
+        {!isDragDisabled && (
+          <span
+            className="p-1 -ml-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 group-hover:text-zinc-400 dark:group-hover:text-zinc-500 transition-colors pointer-events-none"
+            aria-hidden="true"
           >
             <GripVertical className="w-4 h-4" />
-          </button>
+          </span>
         )}
 
         <span
@@ -166,11 +170,11 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   onOpenAddModal,
 }) => {
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: { distance: 6 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 180, tolerance: 6 },
+      activationConstraint: { delay: 150, tolerance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
