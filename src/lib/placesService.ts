@@ -10,14 +10,75 @@ const GOOGLE_PRICE_MAP: Record<string, number> = {
   PRICE_LEVEL_VERY_EXPENSIVE: 4,
 };
 
-function extractNeighborhoodAndCity(formattedAddress: string): {
+interface GoogleAddressComponent {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+}
+
+const NYC_BOROUGHS = new Set([
+  'Brooklyn',
+  'Manhattan',
+  'Queens',
+  'Bronx',
+  'The Bronx',
+  'Staten Island',
+]);
+
+function extractNeighborhoodAndCity(
+  formattedAddress: string,
+  addressComponents?: GoogleAddressComponent[]
+): {
   neighborhood?: string;
   city?: string;
 } {
+  if (Array.isArray(addressComponents) && addressComponents.length > 0) {
+    let neighborhood: string | undefined;
+    let sublocality: string | undefined;
+    let locality: string | undefined;
+    let postalTown: string | undefined;
+
+    for (const comp of addressComponents) {
+      const types = comp.types || [];
+      const text = comp.longText || comp.shortText;
+      if (!text) continue;
+      if (!neighborhood && types.includes('neighborhood')) {
+        neighborhood = text;
+      }
+      if (!sublocality && (types.includes('sublocality_level_1') || types.includes('sublocality'))) {
+        sublocality = text;
+      }
+      if (!locality && types.includes('locality')) {
+        locality = text;
+      }
+      if (!postalTown && types.includes('postal_town')) {
+        postalTown = text;
+      }
+    }
+
+    // Handle NYC boroughs cleanly: e.g. Williamsburg (neighborhood) + Brooklyn (sublocality) -> New York (city)
+    if (!locality && sublocality && NYC_BOROUGHS.has(sublocality)) {
+      return {
+        neighborhood: neighborhood || sublocality,
+        city: 'New York',
+      };
+    }
+
+    const resolvedCity = locality || postalTown || sublocality;
+    const resolvedNeighborhood =
+      neighborhood || (sublocality && sublocality !== resolvedCity ? sublocality : undefined);
+
+    if (resolvedCity || resolvedNeighborhood) {
+      return {
+        neighborhood: resolvedNeighborhood,
+        city: resolvedCity,
+      };
+    }
+  }
+
   if (!formattedAddress) return {};
   const parts = formattedAddress.split(',').map((p) => p.trim());
   if (parts.length >= 3) {
-    // e.g. "600 Guerrero St, San Francisco, CA 94110, USA"
     const cityCandidate = parts[parts.length - 3];
     const neighborhoodCandidate = parts.length >= 4 ? parts[parts.length - 4] : undefined;
     return {
@@ -56,6 +117,7 @@ export async function searchRestaurants(
       'places.displayName',
       'places.formattedAddress',
       'places.shortFormattedAddress',
+      'places.addressComponents',
       'places.location',
       'places.types',
       'places.primaryType',
@@ -106,7 +168,10 @@ export async function searchRestaurants(
         const candidates: PlaceCandidate[] = data.places.map((p: any) => {
           const name = p.displayName?.text || trimmed;
           const formattedAddress = p.formattedAddress || p.shortFormattedAddress || '';
-          const { neighborhood, city } = extractNeighborhoodAndCity(formattedAddress);
+          const { neighborhood, city } = extractNeighborhoodAndCity(
+            formattedAddress,
+            p.addressComponents
+          );
 
           const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
             name,

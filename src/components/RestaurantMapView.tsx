@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import L from 'leaflet';
+import { DEFAULT_PLACES_API_KEY } from '../firebase';
 import { Bookmark, ExternalMapLinkIcon, LocateFixed, Navigation, Sparkles } from './MapIcons';
 import { BookmarkEntry, RestaurantEntry } from '../types';
 import {
@@ -11,6 +11,13 @@ import {
 } from '../lib/geo';
 import { ScoreBadge } from './ScoreBadge';
 
+declare global {
+  interface Window {
+    google?: any;
+    gm_authFailure?: () => void;
+  }
+}
+
 interface RestaurantMapViewProps {
   mode: 'ranked' | 'want_to_try';
   restaurants: RestaurantEntry[];
@@ -21,6 +28,145 @@ interface RestaurantMapViewProps {
   onRequestLocation?: () => void;
   onSelectSpot: (spot: RestaurantEntry) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
+}
+
+const GOOGLE_LIGHT_MAP_STYLES = [
+  {
+    featureType: 'poi.business',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.medical',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.place_of_worship',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.school',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'transit.station.bus',
+    stylers: [{ visibility: 'off' }],
+  },
+];
+
+const GOOGLE_DARK_MAP_STYLES = [
+  { elementType: 'geometry', stylers: [{ color: '#18181b' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#18181b' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#a1a1aa' }] },
+  {
+    featureType: 'administrative.locality',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#e4e4e7' }],
+  },
+  {
+    featureType: 'administrative.neighborhood',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#a1a1aa' }],
+  },
+  {
+    featureType: 'poi.business',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.medical',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.school',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'geometry',
+    stylers: [{ color: '#14261f' }],
+  },
+  {
+    featureType: 'poi.park',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#6ee7b7' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry',
+    stylers: [{ color: '#27272a' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'geometry.stroke',
+    stylers: [{ color: '#18181b' }],
+  },
+  {
+    featureType: 'road',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#71717a' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'geometry',
+    stylers: [{ color: '#3f3f46' }],
+  },
+  {
+    featureType: 'transit',
+    elementType: 'geometry',
+    stylers: [{ color: '#27272a' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'geometry',
+    stylers: [{ color: '#090d16' }],
+  },
+  {
+    featureType: 'water',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#52525b' }],
+  },
+];
+
+let googleMapsPromise: Promise<any> | null = null;
+
+function loadGoogleMapsSdk(): Promise<any> {
+  if (typeof window !== 'undefined' && window.google?.maps?.Map && window.google?.maps?.OverlayView) {
+    return Promise.resolve(window.google.maps);
+  }
+  if (googleMapsPromise) return googleMapsPromise;
+
+  googleMapsPromise = new Promise((resolve, reject) => {
+    const existingScript = document.getElementById('jelly-google-maps-sdk') as HTMLScriptElement | null;
+    if (existingScript) {
+      existingScript.addEventListener('load', () => {
+        if (window.google?.maps) resolve(window.google.maps);
+        else reject(new Error('Google Maps failed to initialize'));
+      });
+      existingScript.addEventListener('error', () => reject(new Error('Google Maps script error')));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'jelly-google-maps-sdk';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+      DEFAULT_PLACES_API_KEY
+    )}&v=weekly`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google?.maps) {
+        resolve(window.google.maps);
+      } else {
+        reject(new Error('Google Maps SDK unavailable after load'));
+      }
+    };
+    script.onerror = () => {
+      googleMapsPromise = null;
+      reject(new Error('Failed to load Google Maps JS SDK'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return googleMapsPromise;
 }
 
 function getEntryCoords(
@@ -59,6 +205,58 @@ function getPinColors(score: number): { bg: string; border: string; text: string
   return { bg: '#e11d48', border: '#fda4af', text: '#ffffff' };
 }
 
+function createHtmlOverlay(
+  gmaps: any,
+  position: { lat: number; lng: number },
+  html: string,
+  zIndex: number,
+  onClick?: () => void
+) {
+  class HtmlPinOverlay extends gmaps.OverlayView {
+    private div: HTMLDivElement | null = null;
+
+    onAdd() {
+      const div = document.createElement('div');
+      div.style.position = 'absolute';
+      div.style.zIndex = String(zIndex);
+      div.style.userSelect = 'none';
+      div.innerHTML = html;
+
+      if (onClick) {
+        div.style.cursor = 'pointer';
+        div.addEventListener('click', (e) => {
+          e.stopPropagation();
+          onClick();
+        });
+      }
+
+      this.div = div;
+      const panes = this.getPanes();
+      panes?.overlayMouseTarget?.appendChild(div);
+    }
+
+    draw() {
+      if (!this.div) return;
+      const projection = this.getProjection();
+      if (!projection) return;
+      const point = projection.fromLatLngToDivPixel(new gmaps.LatLng(position.lat, position.lng));
+      if (point) {
+        this.div.style.left = `${point.x}px`;
+        this.div.style.top = `${point.y}px`;
+      }
+    }
+
+    onRemove() {
+      if (this.div && this.div.parentNode) {
+        this.div.parentNode.removeChild(this.div);
+      }
+      this.div = null;
+    }
+  }
+
+  return new HtmlPinOverlay();
+}
+
 export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
   mode,
   restaurants,
@@ -71,10 +269,11 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
   onRankBookmark,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const tileLayerRef = useRef<L.TileLayer | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const mapRef = useRef<any | null>(null);
+  const gmapsRef = useRef<any | null>(null);
+  const overlaysRef = useRef<any[]>([]);
 
+  const [sdkReady, setSdkReady] = useState(false);
   const [selectedRanked, setSelectedRanked] = useState<RestaurantEntry | null>(null);
   const [selectedBookmark, setSelectedBookmark] = useState<BookmarkEntry | null>(null);
 
@@ -96,65 +295,88 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       .filter((x): x is { entry: BookmarkEntry; coords: [number, number] } => x !== null);
   }, [bookmarks]);
 
-  // Initialize Leaflet Map
+  // Initialize Google Map
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    let cancelled = false;
 
-    const initialCenter: [number, number] = userLocation
-      ? [userLocation.lat, userLocation.lng]
-      : [37.7749, -122.4194];
+    loadGoogleMapsSdk()
+      .then((gmaps) => {
+        if (cancelled || !containerRef.current || mapRef.current) return;
+        gmapsRef.current = gmaps;
 
-    const map = L.map(containerRef.current, {
-      center: initialCenter,
-      zoom: 13,
-      zoomControl: false,
-      attributionControl: false,
-    });
+        const initialCenter = userLocation
+          ? { lat: userLocation.lat, lng: userLocation.lng }
+          : { lat: 37.7749, lng: -122.4194 };
 
-    L.control.zoom({ position: 'topright' }).addTo(map);
+        const map = new gmaps.Map(containerRef.current, {
+          center: initialCenter,
+          zoom: 13,
+          disableDefaultUI: true,
+          zoomControl: true,
+          zoomControlOptions: {
+            position: gmaps.ControlPosition.RIGHT_TOP,
+          },
+          gestureHandling: 'greedy',
+          clickableIcons: false,
+          styles: darkMode ? GOOGLE_DARK_MAP_STYLES : GOOGLE_LIGHT_MAP_STYLES,
+        });
 
-    const tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    }).addTo(map);
+        map.addListener('click', () => {
+          setSelectedRanked(null);
+          setSelectedBookmark(null);
+        });
 
-    const markersGroup = L.layerGroup().addTo(map);
-
-    mapRef.current = map;
-    tileLayerRef.current = tileLayer;
-    markersLayerRef.current = markersGroup;
+        mapRef.current = map;
+        setSdkReady(true);
+      })
+      .catch((err) => {
+        console.error('Error loading Google Maps:', err);
+      });
 
     return () => {
-      map.remove();
+      cancelled = true;
+      overlaysRef.current.forEach((ov) => ov.setMap(null));
+      overlaysRef.current = [];
       mapRef.current = null;
-      tileLayerRef.current = null;
-      markersLayerRef.current = null;
     };
   }, []);
 
-  // Render markers and fit bounds
+  // Update dark/light map style dynamically
+  useEffect(() => {
+    if (!mapRef.current) return;
+    mapRef.current.setOptions({
+      styles: darkMode ? GOOGLE_DARK_MAP_STYLES : GOOGLE_LIGHT_MAP_STYLES,
+    });
+  }, [darkMode, sdkReady]);
+
+  // Render custom HTML pins and fit bounds
   useEffect(() => {
     const map = mapRef.current;
-    const markersGroup = markersLayerRef.current;
-    if (!map || !markersGroup) return;
+    const gmaps = gmapsRef.current;
+    if (!map || !gmaps || !sdkReady) return;
 
-    markersGroup.clearLayers();
+    overlaysRef.current.forEach((ov) => ov.setMap(null));
+    overlaysRef.current = [];
     setSelectedRanked(null);
     setSelectedBookmark(null);
 
     const boundsPoints: [number, number][] = [];
 
-    // Render pulsing blue "You Are Here" marker if userLocation is available
+    // 1. Pulsing blue "You Are Here" marker
     if (userLocation) {
       const userHtml = `
-        <div style="
-          position: relative;
-          width: 22px;
-          height: 22px;
-          transform: translate(-50%, -50%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        ">
+        <div
+          title="You are here"
+          style="
+            position: relative;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          "
+        >
           <div style="
             position: absolute;
             inset: 0;
@@ -162,28 +384,26 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
             background: rgba(59, 130, 246, 0.28);
           "></div>
           <div style="
-            width: 12px;
-            height: 12px;
+            width: 13px;
+            height: 13px;
             border-radius: 9999px;
             background: #3b82f6;
             border: 2.5px solid #ffffff;
-            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.5);
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.55);
           "></div>
         </div>
       `;
-      const userIcon = L.divIcon({
-        className: 'jelly-user-location-pin',
-        html: userHtml,
-        iconSize: [0, 0],
-      });
-      L.marker([userLocation.lat, userLocation.lng], {
-        icon: userIcon,
-        zIndexOffset: 20000,
-      })
-        .bindTooltip('You are here', { direction: 'top', offset: [0, -8] })
-        .addTo(markersGroup);
+      const userOverlay = createHtmlOverlay(
+        gmaps,
+        { lat: userLocation.lat, lng: userLocation.lng },
+        userHtml,
+        20000
+      );
+      userOverlay.setMap(map);
+      overlaysRef.current.push(userOverlay);
     }
 
+    // 2. Ranked or Want-to-Try pins
     if (mode === 'ranked') {
       plottedRanked.forEach(({ entry, coords }) => {
         boundsPoints.push(coords);
@@ -209,7 +429,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
               display: flex;
               align-items: center;
               justify-content: center;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+              box-shadow: 0 4px 12px rgba(0,0,0,0.32);
             ">
               ${entry.magicScore.toFixed(1)}
             </div>
@@ -217,38 +437,35 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
               margin-top: 2px;
               padding: 1px 6px;
               border-radius: 9999px;
-              background: ${darkMode ? 'rgba(24,24,27,0.9)' : 'rgba(255,255,255,0.92)'};
+              background: ${darkMode ? 'rgba(24,24,27,0.92)' : 'rgba(255,255,255,0.94)'};
               color: ${darkMode ? '#f4f4f5' : '#18181b'};
               font-family: Inter, system-ui, sans-serif;
               font-weight: 600;
               font-size: 10px;
               white-space: nowrap;
-              max-width: 110px;
+              max-width: 115px;
               overflow: hidden;
               text-overflow: ellipsis;
-              box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+              box-shadow: 0 1px 4px rgba(0,0,0,0.18);
             ">
               ${entry.name.replace(/</g, '&lt;')}
             </div>
           </div>
         `;
 
-        const icon = L.divIcon({
-          className: 'jelly-map-pin',
+        const overlay = createHtmlOverlay(
+          gmaps,
+          { lat: coords[0], lng: coords[1] },
           html,
-          iconSize: [0, 0],
-        });
-
-        const marker = L.marker(coords, {
-          icon,
-          zIndexOffset: Math.max(0, 1000 - entry.rankIndex) * 10,
-        });
-        marker.on('click', () => {
-          setSelectedBookmark(null);
-          setSelectedRanked(entry);
-          map.panTo(coords, { animate: true });
-        });
-        marker.addTo(markersGroup);
+          Math.max(10, 1000 - entry.rankIndex),
+          () => {
+            setSelectedBookmark(null);
+            setSelectedRanked(entry);
+            map.panTo({ lat: coords[0], lng: coords[1] });
+          }
+        );
+        overlay.setMap(map);
+        overlaysRef.current.push(overlay);
       });
     } else {
       plottedBookmarks.forEach(({ entry, coords }) => {
@@ -274,7 +491,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
               display: flex;
               align-items: center;
               justify-content: center;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+              box-shadow: 0 4px 12px rgba(0,0,0,0.32);
             ">
               ★
             </div>
@@ -282,68 +499,78 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
               margin-top: 2px;
               padding: 1px 6px;
               border-radius: 9999px;
-              background: ${darkMode ? 'rgba(24,24,27,0.9)' : 'rgba(255,255,255,0.92)'};
+              background: ${darkMode ? 'rgba(24,24,27,0.92)' : 'rgba(255,255,255,0.94)'};
               color: ${darkMode ? '#f4f4f5' : '#18181b'};
               font-family: Inter, system-ui, sans-serif;
               font-weight: 600;
               font-size: 10px;
               white-space: nowrap;
-              max-width: 110px;
+              max-width: 115px;
               overflow: hidden;
               text-overflow: ellipsis;
-              box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+              box-shadow: 0 1px 4px rgba(0,0,0,0.18);
             ">
               ${entry.name.replace(/</g, '&lt;')}
             </div>
           </div>
         `;
 
-        const icon = L.divIcon({
-          className: 'jelly-map-pin',
+        const overlay = createHtmlOverlay(
+          gmaps,
+          { lat: coords[0], lng: coords[1] },
           html,
-          iconSize: [0, 0],
-        });
-
-        const marker = L.marker(coords, { icon });
-        marker.on('click', () => {
-          setSelectedRanked(null);
-          setSelectedBookmark(entry);
-          map.panTo(coords, { animate: true });
-        });
-        marker.addTo(markersGroup);
+          500,
+          () => {
+            setSelectedRanked(null);
+            setSelectedBookmark(entry);
+            map.panTo({ lat: coords[0], lng: coords[1] });
+          }
+        );
+        overlay.setMap(map);
+        overlaysRef.current.push(overlay);
       });
     }
+
+    const fitPoints = (pts: [number, number][]) => {
+      if (pts.length === 1) {
+        map.setCenter({ lat: pts[0][0], lng: pts[0][1] });
+        map.setZoom(14);
+        return;
+      }
+      if (pts.length > 1) {
+        const bounds = new gmaps.LatLngBounds();
+        pts.forEach((p) => bounds.extend({ lat: p[0], lng: p[1] }));
+        map.fitBounds(bounds, 48);
+        const listener = gmaps.event.addListenerOnce(map, 'idle', () => {
+          if (map.getZoom() > 15) map.setZoom(15);
+          gmaps.event.removeListener(listener);
+        });
+      }
+    };
 
     if (userLocation && selectedCity === 'ALL') {
       const nearbyPoints = boundsPoints.filter(
         (pt) => haversineDistanceMiles(userLocation.lat, userLocation.lng, pt[0], pt[1]) <= 30
       );
       if (nearbyPoints.length > 0) {
-        const localBounds = L.latLngBounds([
-          [userLocation.lat, userLocation.lng],
-          ...nearbyPoints,
-        ]);
-        map.fitBounds(localBounds, { padding: [48, 48], maxZoom: 15 });
+        fitPoints([[userLocation.lat, userLocation.lng], ...nearbyPoints]);
         return;
       }
       if (boundsPoints.length === 0) {
-        map.setView([userLocation.lat, userLocation.lng], 13);
+        map.setCenter({ lat: userLocation.lat, lng: userLocation.lng });
+        map.setZoom(13);
         return;
       }
     }
 
-    if (boundsPoints.length === 1) {
-      map.setView(boundsPoints[0], 14);
-    } else if (boundsPoints.length > 1) {
-      const bounds = L.latLngBounds(boundsPoints);
-      map.fitBounds(bounds, { padding: [44, 44], maxZoom: 15 });
-    }
-  }, [mode, plottedRanked, plottedBookmarks, darkMode, userLocation, selectedCity]);
+    fitPoints(boundsPoints);
+  }, [mode, plottedRanked, plottedBookmarks, darkMode, userLocation, selectedCity, sdkReady]);
 
   const handleLocateMeClick = () => {
     const map = mapRef.current;
     if (userLocation && map) {
-      map.setView([userLocation.lat, userLocation.lng], 14, { animate: true });
+      map.panTo({ lat: userLocation.lat, lng: userLocation.lng });
+      map.setZoom(14);
     } else if (onRequestLocation) {
       onRequestLocation();
     }
@@ -367,7 +594,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       <button
         type="button"
         onClick={handleLocateMeClick}
-        className={`absolute top-24 right-2.5 z-[400] w-8 h-8 rounded-lg bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex items-center justify-center transition-colors ${
+        className={`absolute top-24 right-2.5 z-[400] w-9 h-9 rounded-lg bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-sm flex items-center justify-center transition-colors ${
           userLocation
             ? 'text-blue-600 dark:text-blue-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
             : 'text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800'
