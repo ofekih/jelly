@@ -23,52 +23,6 @@ import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../l
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 
-function getScrollTierBanner(score: number): {
-  key: string;
-  title: string;
-  subtitle: string;
-  accentClass: string;
-} {
-  if (score >= 8.8) {
-    return {
-      key: 'incredible',
-      title: 'Hall of Fame',
-      subtitle: 'Incredible · 8.8+',
-      accentClass: 'text-emerald-600 dark:text-emerald-400',
-    };
-  }
-  if (score >= 7.5) {
-    return {
-      key: 'great',
-      title: 'Worth the Trip',
-      subtitle: 'Great · 7.5–8.7',
-      accentClass: 'text-teal-600 dark:text-teal-400',
-    };
-  }
-  if (score >= 6.0) {
-    return {
-      key: 'good',
-      title: 'Solid Rotation',
-      subtitle: 'Good · 6.0–7.4',
-      accentClass: 'text-lime-600 dark:text-lime-400',
-    };
-  }
-  if (score >= 4.0) {
-    return {
-      key: 'mid',
-      title: 'Only If Convenient',
-      subtitle: 'Mid · 4.0–5.9',
-      accentClass: 'text-amber-600 dark:text-amber-400',
-    };
-  }
-  return {
-    key: 'skip',
-    title: 'Never Again',
-    subtitle: 'Skip · < 4.0',
-    accentClass: 'text-rose-600 dark:text-rose-400',
-  };
-}
-
 interface SortableRestaurantRowProps {
   restaurant: RestaurantEntry;
   displayPosition: number;
@@ -591,24 +545,9 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
             const isBookmarked = Boolean(
               restaurant.placeId && bookmarkedPlaceIds?.has(restaurant.placeId)
             );
-            const tierBanner = getScrollTierBanner(restaurant.magicScore);
-            const prevTierKey =
-              idx > 0 ? getScrollTierBanner(restaurants[idx - 1].magicScore).key : null;
-            const showTierBanner = !sortByNearest && restaurants.length >= 2 && tierBanner.key !== prevTierKey;
 
             return (
               <React.Fragment key={restaurant.id}>
-                {showTierBanner && (
-                  <div className="px-4 py-1.5 bg-zinc-50/80 dark:bg-zinc-950/60 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider select-none">
-                    <span className={`flex items-center gap-1.5 ${tierBanner.accentClass}`}>
-                      <span>✦</span>
-                      <span>{tierBanner.title}</span>
-                    </span>
-                    <span className="text-zinc-400 dark:text-zinc-500 font-semibold">
-                      {tierBanner.subtitle}
-                    </span>
-                  </div>
-                )}
                 <SortableRestaurantRow
                   restaurant={restaurant}
                   displayPosition={idx + 1}

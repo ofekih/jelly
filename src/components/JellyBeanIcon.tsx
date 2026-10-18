@@ -1,76 +1,87 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 interface JellyBeanIconProps {
   className?: string;
   size?: number;
 }
 
+// Bean silhouette: a horizontal kidney shape (dent on top), centered on the origin.
+const BEAN_PATH =
+  'M-16 3 C-16 -4 -11 -8 -6 -6 C-2 -4.5 2 -4.5 6 -7 C11 -10 16 -6 16 0 C16 6 9 9 0 9 C-8 9 -16 9 -16 3 Z';
+
+/**
+ * Two overlapping jelly beans (mint in back, berry in front), matching the
+ * home-screen app icon artwork.
+ */
 export const JellyBeanIcon: React.FC<JellyBeanIconProps> = ({
   className = '',
   size = 24,
 }) => {
+  const uid = useId().replace(/:/g, '');
+  const greenId = `jellyEmerald-${uid}`;
+  const berryId = `jellyBerry-${uid}`;
+
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 64 64"
+      viewBox="6 6 52 52"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-hidden="true"
     >
       <defs>
-        <linearGradient
-          id="jellyEmeraldGrad"
-          x1="10"
-          y1="10"
-          x2="36"
-          y2="50"
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0%" stopColor="#6ee7b7" />
-          <stop offset="52%" stopColor="#10b981" />
-          <stop offset="100%" stopColor="#047857" />
+        <linearGradient id={greenId} x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0%" stopColor="#a7f3d0" />
+          <stop offset="45%" stopColor="#34d399" />
+          <stop offset="100%" stopColor="#059669" />
         </linearGradient>
-        <linearGradient
-          id="jellyBerryGrad"
-          x1="26"
-          y1="16"
-          x2="54"
-          y2="56"
-          gradientUnits="userSpaceOnUse"
-        >
+        <linearGradient id={berryId} x1="0" y1="0" x2="0.4" y2="1">
           <stop offset="0%" stopColor="#fda4af" />
-          <stop offset="52%" stopColor="#f43f5e" />
+          <stop offset="45%" stopColor="#f43f5e" />
           <stop offset="100%" stopColor="#be123c" />
         </linearGradient>
       </defs>
 
-      {/* Left Emerald-Mint Jelly Bean (upright, no tilt) */}
-      <g>
+      {/* Mint bean, back (upper-left) */}
+      <g transform="translate(24 28) rotate(-26) scale(0.92 1.05)">
+        <path d={BEAN_PATH} fill={`url(#${greenId})`} />
         <path
-          d="M15 13 C24 10, 33 15, 33 25 C33 31, 29 34, 30 40 C31 47, 25 51, 17 49 C8 47, 9 36, 13 29 C15 23, 8 16, 15 13 Z"
-          fill="url(#jellyEmeraldGrad)"
+          d="M-12 -1 C-11 -4 -8.5 -5 -6.5 -4"
+          stroke="#ffffff"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          opacity="0.75"
         />
         <path
-          d="M17.5 17 C22 15.5, 26.5 18, 26.5 23.5 C26.5 27, 23.5 31.5, 21 35"
+          d="M8 -6 C10 -7 12 -6.5 13 -5"
           stroke="#ffffff"
-          strokeWidth="2.8"
+          strokeWidth="1.5"
           strokeLinecap="round"
-          opacity="0.7"
+          opacity="0.6"
         />
       </g>
 
-      {/* Right Berry-Coral Jelly Bean (upright, no tilt) */}
-      <g>
+      {/* Berry bean, front (lower-right), mirrored so its big lobe is on the right */}
+      <g transform="translate(39 36) rotate(-20) scale(-1.02 1.2)">
         <path
-          d="M33 18 C42 15, 51 20, 51 30 C51 36, 47 39, 48 45 C49 52, 43 56, 35 54 C26 52, 27 41, 31 34 C33 28, 26 21, 33 18 Z"
-          fill="url(#jellyBerryGrad)"
+          d={BEAN_PATH}
+          fill={`url(#${berryId})`}
+          className="stroke-white dark:stroke-zinc-900"
+          strokeWidth="1.2"
         />
         <path
-          d="M35.5 22 C40 20.5, 44.5 23, 44.5 28.5 C44.5 32, 41.5 36.5, 39 40"
+          d="M8 -6 C10 -7 12 -6.5 13 -5"
           stroke="#ffffff"
-          strokeWidth="2.8"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          opacity="0.7"
+        />
+        <path
+          d="M-6.5 -4 C-9 -5 -11 -4 -12 -2"
+          stroke="#ffffff"
+          strokeWidth="1.8"
           strokeLinecap="round"
           opacity="0.7"
         />

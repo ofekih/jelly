@@ -194,46 +194,97 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const getGutVibeMeta = (rating: number | null) => {
     if (rating === null) {
       return {
-        label: 'Tap anywhere on the line',
+        label: 'Slide or tap anywhere on the line',
         pillClass:
           'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
         thumbBorder: '#10b981',
       };
     }
+
+    // Tier 1: Skip (1.0 - 3.9, 0% - 20% of bar)
     if (rating < 4.0) {
+      const label =
+        rating < 1.8
+          ? 'Disaster · Avoid at all costs'
+          : rating < 2.5
+          ? 'Rough · Regretted going'
+          : rating < 3.3
+          ? 'Not good · Wouldn’t go back'
+          : 'Missed the mark · Skip it';
       return {
-        label: 'Skip · Not good',
+        label,
         pillClass:
           'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/70',
         thumbBorder: '#f43f5e',
       };
     }
+
+    // Tier 2: Mid (4.0 - 5.9, 20% - 40% of bar, 5.0 at center)
     if (rating < 6.0) {
+      const label =
+        rating < 4.5
+          ? 'Could’ve been better · Underwhelming'
+          : rating < 5.0
+          ? 'Meh · Pretty forgettable'
+          : rating < 5.5
+          ? 'It was okay · Gets the job done'
+          : 'Fine in a pinch · Nothing special';
       return {
-        label: 'Mid · It was okay',
+        label,
         pillClass:
           'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70',
         thumbBorder: '#f59e0b',
       };
     }
+
+    // Tier 3: Good (6.0 - 7.4, 40% - 60% of bar)
     if (rating < 7.5) {
+      const label =
+        rating < 6.4
+          ? 'Pretty good · Glad I went'
+          : rating < 6.8
+          ? 'Liked it · Solid neighborhood spot'
+          : rating < 7.2
+          ? 'Good spot · Happy to go back'
+          : 'Really liked it · Easy recommendation';
       return {
-        label: 'Good · Liked it',
+        label,
         pillClass:
           'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800/70',
         thumbBorder: '#06b6d4',
       };
     }
+
+    // Tier 4: Great (7.5 - 8.7, 60% - 80% of bar -> culminates in "Loved it" near the Incredible boundary)
     if (rating < 8.8) {
+      const label =
+        rating < 7.8
+          ? 'Great meal · Worth a detour'
+          : rating < 8.2
+          ? 'So good · Would happily bring friends'
+          : rating < 8.5
+          ? 'Loved it · Standout spot'
+          : 'Really loved it · Crave-worthy';
       return {
-        label: 'Great · Really liked it',
+        label,
         pillClass:
           'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70',
         thumbBorder: '#14b8a6',
       };
     }
+
+    // Tier 5: Incredible (8.8 - 10.0, 80% - 100% of bar -> reserves the far right for true perfection)
+    const label =
+      rating < 9.1
+        ? 'Obsessed · Top-tier meal'
+        : rating < 9.5
+        ? 'Blown away · All-time favorite'
+        : rating < 9.8
+        ? 'Near perfection · Almost nothing to critique'
+        : 'Flawless · Literally nothing could be improved';
+
     return {
-      label: 'Incredible · Loved it',
+      label,
       pillClass:
         'bg-emerald-100/90 text-emerald-800 border-emerald-300 dark:bg-emerald-900/70 dark:text-emerald-200 dark:border-emerald-700',
       thumbBorder: '#059669',
