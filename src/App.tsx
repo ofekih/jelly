@@ -69,6 +69,7 @@ import { RestaurantList } from './components/RestaurantList';
 import { RestaurantMapView } from './components/RestaurantMapView';
 import { ShareModal } from './components/ShareModal';
 import { SpotDetailModal } from './components/SpotDetailModal';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
 
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
@@ -274,7 +275,7 @@ export const App: React.FC = () => {
     } catch {
       // Ignore
     }
-    return false;
+    return true;
   });
 
   // View & Filter State
@@ -486,6 +487,8 @@ export const App: React.FC = () => {
         }
         if (typeof data.useCurrentLocation === 'boolean') {
           setUseCurrentLocation(data.useCurrentLocation);
+        } else {
+          setUseCurrentLocation(true);
         }
         if (typeof data.handle === 'string' && data.handle.trim()) {
           setUserHandle(data.handle.trim());
@@ -2699,16 +2702,17 @@ export const App: React.FC = () => {
       {/* Minimal Settings Modal */}
       {isSettingsOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-jelly-backdrop"
           onClick={() => setIsSettingsOpen(false)}
         >
           <div
-            className="w-full max-w-sm bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden"
+            className="w-full max-w-sm bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden animate-jelly-dialog"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
               <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Settings</h2>
               <button
+                type="button"
                 onClick={() => setIsSettingsOpen(false)}
                 className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
               >
@@ -2717,16 +2721,33 @@ export const App: React.FC = () => {
             </div>
 
             <form onSubmit={saveSettings} className="p-5 space-y-4">
-              <div className="space-y-3">
+              {/* Location Bias Card */}
+              <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-800 space-y-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                      Default to Current Location
-                    </label>
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                      Bias searches to your current device location
-                    </p>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                      <Navigation className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                        <span>Search Nearby First</span>
+                        {useCurrentLocation && userLocation && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            GPS
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                        {useCurrentLocation
+                          ? userLocation
+                            ? 'Using your device location'
+                            : 'Will use device location when allowed'
+                          : 'Off · searching by city name only'}
+                      </p>
+                    </div>
                   </div>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -2751,6 +2772,7 @@ export const App: React.FC = () => {
                           },
                           () => {
                             showToast('Enable location permissions in your browser to use current location');
+                            setUseCurrentLocation(true);
                           }
                         );
                       } else {
@@ -2772,22 +2794,25 @@ export const App: React.FC = () => {
                   </button>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
+                <div className="pt-1 space-y-1.5">
+                  <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
                     {useCurrentLocation ? 'Fallback Search City' : 'Default Search City'}
                   </label>
-                  <input
-                    type="text"
-                    value={defaultCity}
-                    onChange={(e) => setDefaultCity(e.target.value)}
-                    placeholder="e.g. San Francisco, New York"
-                    className="w-full text-xs px-3 py-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                  />
-                  {useCurrentLocation && (
-                    <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">
-                      Used when current location is unavailable
-                    </p>
-                  )}
+                  <div className="relative flex items-center">
+                    <MapPin className="w-3.5 h-3.5 text-zinc-400 absolute left-3 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={defaultCity}
+                      onChange={(e) => setDefaultCity(e.target.value)}
+                      placeholder={useCurrentLocation ? 'e.g. San Francisco (used if GPS off)' : 'e.g. San Francisco'}
+                      className="w-full text-xs pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">
+                    {useCurrentLocation
+                      ? 'Searches prioritize nearby spots. If GPS is off or unavailable, jelly searches around this city.'
+                      : 'All restaurant searches will be biased toward this city.'}
+                  </p>
                 </div>
               </div>
 
@@ -2863,6 +2888,9 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* PWA Mobile Install Nudge */}
+      <PwaInstallBanner />
 
       {/* Subtle Toast (with optional Undo action) */}
       {toastMessage && (

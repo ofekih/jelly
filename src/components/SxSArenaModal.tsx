@@ -149,8 +149,8 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
     .join(' · ');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4">
-      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop">
+      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col animate-jelly-sheet sm:animate-jelly-dialog overscroll-contain">
         {/* Subtle Progress Line */}
         <div className="w-full h-1 bg-zinc-100 dark:bg-zinc-800">
           <div

@@ -322,7 +322,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-xs ${
+      className={`fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-xs animate-jelly-backdrop overscroll-contain ${
         step === 'search'
           ? 'items-start sm:items-center pt-2 sm:pt-4 px-2 sm:px-4'
           : 'items-end sm:items-center p-0 sm:p-4'
@@ -330,15 +330,22 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       onClick={onClose}
     >
       <div
-        className={`w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col ${
+        className={`w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col overscroll-contain ${
           step === 'search'
-            ? 'rounded-3xl max-h-[60dvh] sm:max-h-[85vh]'
-            : 'rounded-t-3xl sm:rounded-3xl max-h-[88vh]'
+            ? 'rounded-3xl max-h-[60dvh] sm:max-h-[85vh] animate-jelly-dialog'
+            : 'rounded-t-3xl sm:rounded-3xl max-h-[88vh] animate-jelly-sheet'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Grab Handle Pill (on non-search steps) */}
+        {step !== 'search' && (
+          <div className="w-full pt-2.5 pb-1 flex justify-center sm:hidden shrink-0 touch-none select-none">
+            <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
+          </div>
+        )}
+
         {/* Minimal Top Bar */}
-        <div className="px-5 pt-4 pb-3 flex items-center justify-between shrink-0">
+        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between shrink-0 touch-none select-none">
           {step !== 'search' && !reRankingEntry ? (
             <button
               type="button"

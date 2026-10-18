@@ -73,6 +73,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const {
     sheetStyle,
     backdropStyle,
+    sheetRef,
     scrollContainerRef,
     bindSheetTouch,
     bindHandleTouch,
@@ -185,26 +186,27 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop overscroll-contain"
       style={backdropStyle}
       onClick={onClose}
     >
       <div
+        ref={sheetRef}
         {...bindSheetTouch}
         style={sheetStyle}
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet touch-manipulation"
+        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet overscroll-contain touch-manipulation"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mobile Swipe-Down Handle Pill */}
         <div
           {...bindHandleTouch}
-          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0"
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0 touch-none select-none"
         >
-          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
         </div>
 
         {/* Header */}
-        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 touch-none select-none">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Friends on jelly</h2>

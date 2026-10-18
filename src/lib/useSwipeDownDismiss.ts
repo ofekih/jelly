@@ -1,4 +1,4 @@
-import { CSSProperties, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useRef, useState } from 'react';
 
 export interface UseSwipeDownDismissOptions {
   onClose: () => void;
@@ -48,10 +48,53 @@ export function useSwipeDownDismiss({
   const [isDragging, setIsDragging] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
 
+  const sheetNodeRef = useRef<HTMLElement | null>(null);
+  const sheetRef = (node: HTMLElement | null) => {
+    sheetNodeRef.current = node;
+  };
+
   const scrollContainerNodeRef = useRef<HTMLElement | null>(null);
   const scrollContainerRef = (node: HTMLElement | null) => {
     scrollContainerNodeRef.current = node;
   };
+
+  // Lock body scroll and overscroll chaining while modal is open
+  useEffect(() => {
+    const origOverflow = document.body.style.overflow;
+    const origOverscroll = document.body.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+
+    return () => {
+      document.body.style.overflow = origOverflow;
+      document.body.style.overscrollBehavior = origOverscroll;
+    };
+  }, []);
+
+  // Attach non-passive touchmove listener to the sheet to physically prevent Android pull-to-refresh
+  useEffect(() => {
+    const sheetEl = sheetNodeRef.current;
+    if (!sheetEl) return;
+
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (!touchStartRef.current || e.touches.length !== 1 || isDismissing) return;
+      const dy = e.touches[0].clientY - touchStartRef.current.startY;
+      const dx = e.touches[0].clientX - touchStartRef.current.startX;
+      const scrollTop = scrollContainerNodeRef.current ? scrollContainerNodeRef.current.scrollTop : 0;
+
+      // When dragging via handle or pulling down when scroll container is at top:
+      if (touchStartRef.current.forceSheet || (dy > 0 && scrollTop <= 0 && Math.abs(dy) > Math.abs(dx))) {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+      }
+    };
+
+    sheetEl.addEventListener('touchmove', onNativeTouchMove, { passive: false });
+    return () => {
+      sheetEl.removeEventListener('touchmove', onNativeTouchMove);
+    };
+  }, [isDismissing]);
 
   const touchStartRef = useRef<{
     startY: number;
@@ -138,6 +181,7 @@ export function useSwipeDownDismiss({
     isDismissing,
     sheetStyle,
     backdropStyle,
+    sheetRef,
     scrollContainerRef,
     bindSheetTouch: {
       onTouchStart: (e: React.TouchEvent) => handleTouchStart(e, false),

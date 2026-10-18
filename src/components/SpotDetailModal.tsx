@@ -82,6 +82,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   const {
     sheetStyle,
     backdropStyle,
+    sheetRef,
     scrollContainerRef,
     bindSheetTouch,
     bindHandleTouch,
@@ -178,25 +179,26 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop overscroll-contain"
       style={backdropStyle}
       onClick={onClose}
     >
       <div
+        ref={sheetRef}
         {...bindSheetTouch}
         style={sheetStyle}
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet touch-manipulation"
+        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet overscroll-contain touch-manipulation"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mobile Swipe-Down Handle Pill */}
         <div
           {...bindHandleTouch}
-          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0"
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0 touch-none select-none"
         >
-          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
         </div>
 
-        <div className="px-5 pt-3 sm:pt-5 pb-4 flex items-start justify-between gap-3">
+        <div className="px-5 pt-3 sm:pt-5 pb-4 flex items-start justify-between gap-3 touch-none select-none">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               <span>#{restaurant.rankIndex + 1} Overall</span>
