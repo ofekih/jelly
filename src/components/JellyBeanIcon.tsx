@@ -7,7 +7,7 @@ interface JellyBeanIconProps {
 
 /**
  * jelly logo: a cropped version of the original app icon artwork
- * (`/jelly-logo.png`), shown as a small rounded tile.
+ * with its flat dark background converted to transparency (`/jelly-logo.png`).
  */
 export const JellyBeanIcon: React.FC<JellyBeanIconProps> = ({
   className = '',
@@ -22,7 +22,7 @@ export const JellyBeanIcon: React.FC<JellyBeanIconProps> = ({
       aria-hidden="true"
       draggable={false}
       className={`shrink-0 select-none object-cover ${className}`}
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.26) }}
+      style={{ width: size, height: size }}
     />
   );
 };
