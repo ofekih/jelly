@@ -9,7 +9,7 @@ interface ShareModalProps {
   onClose: () => void;
   restaurants: RestaurantEntry[];
   bookmarks: BookmarkEntry[];
-  selectedMeal: MealCategory | 'ALL';
+  selectedMeals: MealCategory[];
   selectedCity: string | 'ALL';
   selectedCuisine: string | 'ALL';
   ownerName: string;
@@ -28,7 +28,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   isOpen,
   onClose,
   restaurants,
-  selectedMeal,
+  selectedMeals,
   selectedCity,
   selectedCuisine,
   ownerName,
@@ -47,11 +47,32 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const filterParts = [
     selectedCity !== 'ALL' ? selectedCity : null,
     selectedCuisine !== 'ALL' ? selectedCuisine : null,
-    selectedMeal !== 'ALL' ? selectedMeal : null,
+    selectedMeals.length > 0 ? selectedMeals.join(' + ') : null,
   ].filter(Boolean);
 
   const cardTitle =
     filterParts.length > 0 ? `Top ${filterParts.join(' · ')}` : 'Top Ranked Spots';
+
+  const canNativeShare =
+    typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+
+  const buildTextSummary = (urlToInclude?: string | null) => {
+    const lines = [
+      `🍬 ${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`,
+      ...topSpots.map(
+        (r, i) =>
+          `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) — ${[
+            r.meal,
+            r.cuisines[0] || r.primaryTypeDisplay,
+            r.neighborhood || r.city,
+          ]
+            .filter(Boolean)
+            .join(' · ')}`
+      ),
+      urlToInclude || shareUrl || 'https://eatwithjelly.com',
+    ];
+    return lines.join('\n');
+  };
 
   const handleCopyShareLink = async () => {
     setIsPublishing(true);
@@ -68,27 +89,41 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
   };
 
+  const handleNativeShareLink = async () => {
+    setIsPublishing(true);
+    try {
+      const url = isSignedIn ? await onPublishShareLink() : window.location.origin;
+      if (url && isSignedIn) setShareUrl(url);
+      const effectiveUrl = url || window.location.origin;
+
+      if (canNativeShare) {
+        try {
+          await navigator.share({
+            title: `${ownerName ? `${ownerName}'s ` : ''}jelly restaurant list`,
+            text: `Check out ${ownerName ? `${ownerName}'s ` : 'my '}ranked restaurant list on jelly!`,
+            url: effectiveUrl,
+          });
+          return;
+        } catch (err: any) {
+          if (err?.name === 'AbortError') return;
+        }
+      }
+
+      await navigator.clipboard.writeText(effectiveUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   const handleCopyTextSummary = async () => {
-    const lines = [
-      `🍬 ${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`,
-      ...topSpots.map(
-        (r, i) =>
-          `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) — ${[
-            r.meal,
-            r.cuisines[0] || r.primaryTypeDisplay,
-            r.neighborhood || r.city,
-          ]
-            .filter(Boolean)
-            .join(' · ')}`
-      ),
-      `https://eatwithjelly.com`,
-    ];
-    await navigator.clipboard.writeText(lines.join('\n'));
+    await navigator.clipboard.writeText(buildTextSummary());
     setCopiedText(true);
     setTimeout(() => setCopiedText(false), 2500);
   };
 
-  const handleDownloadCardPng = () => {
+  const renderCardCanvas = (): HTMLCanvasElement | null => {
     const scale = 2;
     const width = 440;
     const rowHeight = 46;
@@ -100,7 +135,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     canvas.width = width * scale;
     canvas.height = height * scale;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return null;
 
     ctx.scale(scale, scale);
 
@@ -195,11 +230,55 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     ctx.font = '600 11px Inter, system-ui, sans-serif';
     ctx.fillText('eatwithjelly.com', 26, height - 20);
 
+    return canvas;
+  };
+
+  const handleDownloadCardPng = () => {
+    const canvas = renderCardCanvas();
+    if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = `jelly-${cardTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
     a.click();
+  };
+
+  const handleNativeShareListOrCard = async () => {
+    const title = `${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`;
+    const text = buildTextSummary();
+
+    if (canNativeShare) {
+      try {
+        const canvas = renderCardCanvas();
+        if (canvas && typeof navigator.canShare === 'function') {
+          const blob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob((b) => resolve(b), 'image/png')
+          );
+          if (blob) {
+            const fileName = `jelly-${cardTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
+            const file = new File([blob], fileName, { type: 'image/png' });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({
+                files: [file],
+                title,
+                text,
+              });
+              return;
+            }
+          }
+        }
+        await navigator.share({
+          title,
+          text,
+          url: shareUrl || 'https://eatwithjelly.com',
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+
+    await handleCopyTextSummary();
   };
 
   return (
@@ -231,7 +310,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           {/* Live Read-Only Share Link Section */}
           <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
                   Read-Only Public Link
                 </div>
@@ -241,21 +320,43 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               </div>
 
               {isSignedIn ? (
-                <button
-                  type="button"
-                  onClick={handleCopyShareLink}
-                  disabled={isPublishing}
-                  className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors"
-                >
-                  {isPublishing ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : copiedLink ? (
-                    <Check className="w-3.5 h-3.5" />
-                  ) : (
-                    <Link2 className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {canNativeShare && (
+                    <button
+                      type="button"
+                      onClick={handleNativeShareLink}
+                      disabled={isPublishing}
+                      className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                    >
+                      {isPublishing ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Share2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>Share</span>
+                    </button>
                   )}
-                  <span>{copiedLink ? 'Copied Link!' : 'Copy Link'}</span>
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyShareLink}
+                    disabled={isPublishing}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                      canNativeShare
+                        ? 'bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
+                        : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950'
+                    }`}
+                  >
+                    {isPublishing && !canNativeShare ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : copiedLink ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : (
+                      <Link2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
+                  </button>
+                </div>
               ) : (
                 <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
                   Sign in to create live link
@@ -319,24 +420,41 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2.5 pt-1">
-            <button
-              type="button"
-              onClick={handleDownloadCardPng}
-              className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Save Card PNG</span>
-            </button>
+          <div className="space-y-2 pt-1">
+            {canNativeShare && (
+              <button
+                type="button"
+                onClick={handleNativeShareListOrCard}
+                className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-2xs"
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share Top 10 Card &amp; List</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleCopyTextSummary}
-              className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-            >
-              {copiedText ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedText ? 'Copied Text!' : 'Copy as Text'}</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={handleDownloadCardPng}
+                className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Save Card PNG</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopyTextSummary}
+                className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                {copiedText ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                <span>{copiedText ? 'Copied Text!' : 'Copy as Text'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

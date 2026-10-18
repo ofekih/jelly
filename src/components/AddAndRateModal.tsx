@@ -62,6 +62,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const [previewRating, setPreviewRating] = useState<number | null>(null);
   const [isDraggingLine, setIsDraggingLine] = useState(false);
   const [showAllMeals, setShowAllMeals] = useState(false);
+  const resultsScrollRef = React.useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -121,6 +122,11 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       if (!cancelled) {
         setSearchResults(results);
         setIsSearching(false);
+        requestAnimationFrame(() => {
+          if (resultsScrollRef.current) {
+            resultsScrollRef.current.scrollTop = 0;
+          }
+        });
       }
     }, 240);
 
@@ -129,6 +135,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       clearTimeout(timer);
     };
   }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation]);
+
+  // Ensure scroll container always starts at top when query or results change
+  useEffect(() => {
+    if (resultsScrollRef.current) {
+      resultsScrollRef.current.scrollTop = 0;
+    }
+  }, [searchQuery, searchResults]);
 
   const finishWithMeal = (candidate: PlaceCandidate, rating: number, meal: MealCategory) => {
     // Check if this exact (placeId + meal) or (name + address + meal) already exists in the list
@@ -258,15 +271,23 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4"
+      className={`fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-xs ${
+        step === 'search'
+          ? 'items-start sm:items-center pt-2 sm:pt-4 px-2 sm:px-4'
+          : 'items-end sm:items-center p-0 sm:p-4'
+      }`}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh]"
+        className={`w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col ${
+          step === 'search'
+            ? 'rounded-3xl max-h-[60dvh] sm:max-h-[85vh]'
+            : 'rounded-t-3xl sm:rounded-3xl max-h-[88vh]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Minimal Top Bar */}
-        <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+        <div className="px-5 pt-4 pb-3 flex items-center justify-between shrink-0">
           {step !== 'search' && !reRankingEntry ? (
             <button
               type="button"
@@ -300,31 +321,36 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           </button>
         </div>
 
+        {/* Sticky Search Input (kept outside the scrollable results container so mobile keyboard never scrolls past top results) */}
+        {step === 'search' && (
+          <div className="px-5 pb-3 shrink-0">
+            <div className="relative">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search any restaurant, cafe, or bar..."
+                autoFocus
+                className="w-full pl-10 pr-9 py-3 bg-zinc-100/80 dark:bg-zinc-800/80 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 rounded-2xl text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none transition-all"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Content */}
-        <div className="px-5 pb-6 overflow-y-auto flex-1">
+        <div ref={resultsScrollRef} className="px-5 pb-6 overflow-y-auto flex-1">
           {step === 'search' && (
             <div className="space-y-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search any restaurant, cafe, or bar..."
-                  autoFocus
-                  className="w-full pl-10 pr-9 py-3 bg-zinc-100/80 dark:bg-zinc-800/80 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 rounded-2xl text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none transition-all"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
               {isSearching && (
                 <div className="py-10 flex items-center justify-center gap-2 text-xs text-zinc-400">
                   <Loader2 className="w-4 h-4 animate-spin" />

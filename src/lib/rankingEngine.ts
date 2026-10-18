@@ -373,6 +373,71 @@ export function getBestInsertionIndex(state: SxSSearchState): {
   return { insertIndex: bestSlot, confidence };
 }
 
+function sharesTagWithCandidate(
+  entry: RestaurantEntry,
+  candidateCuisines: string[]
+): boolean {
+  if (!candidateCuisines || candidateCuisines.length === 0) return false;
+  const candSet = new Set(
+    candidateCuisines.map((c) => c.trim().toLowerCase()).filter(Boolean)
+  );
+  if (candSet.size === 0) return false;
+  for (const c of entry.cuisines || []) {
+    if (candSet.has(c.trim().toLowerCase())) return true;
+  }
+  if (entry.primaryTypeDisplay && candSet.has(entry.primaryTypeDisplay.trim().toLowerCase())) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks whether there is an uncompared spot sharing a cuisine/category tag (e.g. Japanese)
+ * immediately above (`index < insertIndex`) or immediately below (`index >= insertIndex`)
+ * the candidate's current projected insertion slot.
+ */
+function getMissingSameCuisineNeighbors(
+  state: SxSSearchState,
+  existingRanked: RestaurantEntry[],
+  insertIndex: number
+): { missingCuisineAbove: number; missingCuisineBelow: number } {
+  if (!state.candidateCuisines || state.candidateCuisines.length === 0) {
+    return { missingCuisineAbove: -1, missingCuisineBelow: -1 };
+  }
+  const n = existingRanked.length;
+  const comparedSet = new Set(state.comparedIndices);
+  const skippedSet = new Set(state.skippedIndices);
+
+  let nearestSameCuisineAbove = -1;
+  for (let i = Math.min(n - 1, insertIndex - 1); i >= 0; i--) {
+    if (skippedSet.has(i)) continue;
+    if (sharesTagWithCandidate(existingRanked[i], state.candidateCuisines)) {
+      nearestSameCuisineAbove = i;
+      break;
+    }
+  }
+
+  let nearestSameCuisineBelow = -1;
+  for (let i = Math.max(0, insertIndex); i < n; i++) {
+    if (skippedSet.has(i)) continue;
+    if (sharesTagWithCandidate(existingRanked[i], state.candidateCuisines)) {
+      nearestSameCuisineBelow = i;
+      break;
+    }
+  }
+
+  const missingCuisineAbove =
+    nearestSameCuisineAbove !== -1 && !comparedSet.has(nearestSameCuisineAbove)
+      ? nearestSameCuisineAbove
+      : -1;
+  const missingCuisineBelow =
+    nearestSameCuisineBelow !== -1 && !comparedSet.has(nearestSameCuisineBelow)
+      ? nearestSameCuisineBelow
+      : -1;
+
+  return { missingCuisineAbove, missingCuisineBelow };
+}
+
 /**
  * Checks whether there is an uncompared spot of the same meal immediately above
  * (`index < insertIndex`) or immediately below (`index >= insertIndex`) the candidate's
@@ -419,9 +484,9 @@ function getMissingSameMealNeighbors(
 
 /**
  * Picks the next restaurant opponent for a side-by-side comparison,
- * guaranteeing that if same-meal spots exist above and/or below the candidate's
- * position, we compare against at least the adjacent same-meal spot above and below
- * before concluding.
+ * prioritizing spots with the same cuisine/category tags (e.g. Japanese) and meal,
+ * and guaranteeing that adjacent same-cuisine and same-meal neighbors above/below
+ * the candidate's position are compared before concluding.
  */
 export function pickNextOpponent(
   state: SxSSearchState,
@@ -434,14 +499,21 @@ export function pickNextOpponent(
   if (usedSet.size >= n) return null;
 
   const { insertIndex } = getBestInsertionIndex(state);
+  const { missingCuisineAbove, missingCuisineBelow } = getMissingSameCuisineNeighbors(
+    state,
+    existingRanked,
+    insertIndex
+  );
   const { missingAbove, missingBelow } = getMissingSameMealNeighbors(
     state,
     existingRanked,
     insertIndex
   );
+  const hasMissingSameCuisineNeighbor =
+    missingCuisineAbove !== -1 || missingCuisineBelow !== -1;
   const hasMissingSameMealNeighbor = missingAbove !== -1 || missingBelow !== -1;
 
-  // Allow up to 2 extra comparisons beyond base maxComparisons if needed to verify same-meal above/below
+  // Allow up to 2 extra comparisons beyond base maxComparisons if needed to verify same-tag / same-meal neighbors
   const hardMaxComparisons = Math.min(n, state.maxComparisons + 2);
   if (state.completedComparisons >= hardMaxComparisons) return null;
 
@@ -451,7 +523,7 @@ export function pickNextOpponent(
     state.minValidSlot >= state.maxValidSlot ||
     (maxWeight >= 0.66 && (state.completedComparisons >= 2 || n <= 2));
 
-  if (baseConverged && !hasMissingSameMealNeighbor) {
+  if (baseConverged && !hasMissingSameCuisineNeighbor && !hasMissingSameMealNeighbor) {
     return null;
   }
 
@@ -480,20 +552,50 @@ export function pickNextOpponent(
     n - 1
   );
 
-  // 1. If there are uncompared same-meal spots inside the active window [loSlot, hiSlot - 1],
-  //    pivot on the same-meal spot closest to targetOpponentIdx so we bracket within the meal first!
+  // 1. Inside the active window [loSlot, hiSlot - 1]:
+  //    a) First look for an uncompared spot sharing BOTH cuisine tag (e.g. Japanese) AND meal
+  //    b) Next look for an uncompared spot sharing the cuisine tag (e.g. Japanese)
+  //    c) Next look for an uncompared spot sharing the meal
   if (loSlot < hiSlot) {
+    let bestSameCuisineAndMeal = -1;
+    let bestSameCuisineAndMealDist = Infinity;
+    let bestSameCuisine = -1;
+    let bestSameCuisineDist = Infinity;
     let bestSameMealInWindow = -1;
     let bestSameMealDist = Infinity;
+
     for (let i = loSlot; i <= hiSlot - 1; i++) {
       if (usedSet.has(i)) continue;
-      if (existingRanked[i].meal === state.candidateMeal) {
-        const dist = Math.abs(i - targetOpponentIdx);
-        if (dist < bestSameMealDist) {
-          bestSameMealDist = dist;
-          bestSameMealInWindow = i;
-        }
+      const entry = existingRanked[i];
+      const dist = Math.abs(i - targetOpponentIdx);
+      const isSameMeal = entry.meal === state.candidateMeal;
+      const isSameCuisine = sharesTagWithCandidate(entry, state.candidateCuisines);
+
+      if (isSameCuisine && isSameMeal && dist < bestSameCuisineAndMealDist) {
+        bestSameCuisineAndMealDist = dist;
+        bestSameCuisineAndMeal = i;
       }
+      if (isSameCuisine && dist < bestSameCuisineDist) {
+        bestSameCuisineDist = dist;
+        bestSameCuisine = i;
+      }
+      if (isSameMeal && dist < bestSameMealDist) {
+        bestSameMealDist = dist;
+        bestSameMealInWindow = i;
+      }
+    }
+
+    if (bestSameCuisineAndMeal !== -1) {
+      return {
+        opponentIndex: bestSameCuisineAndMeal,
+        opponent: existingRanked[bestSameCuisineAndMeal],
+      };
+    }
+    if (bestSameCuisine !== -1) {
+      return {
+        opponentIndex: bestSameCuisine,
+        opponent: existingRanked[bestSameCuisine],
+      };
     }
     if (bestSameMealInWindow !== -1) {
       return {
@@ -503,8 +605,32 @@ export function pickNextOpponent(
     }
   }
 
-  // 2. If the adjacent same-meal spot above or below `insertIndex` hasn't been compared yet,
-  //    compare against it now so both same-meal neighbors are guaranteed to be tested.
+  // 2a. If an adjacent same-cuisine spot (e.g. Japanese) above or below `insertIndex` hasn't been compared yet,
+  //     compare against it first!
+  if (missingCuisineAbove !== -1 && missingCuisineBelow !== -1) {
+    const distAbove = Math.abs(missingCuisineAbove - targetOpponentIdx);
+    const distBelow = Math.abs(missingCuisineBelow - targetOpponentIdx);
+    const chosenIdx = distAbove <= distBelow ? missingCuisineAbove : missingCuisineBelow;
+    return {
+      opponentIndex: chosenIdx,
+      opponent: existingRanked[chosenIdx],
+    };
+  }
+  if (missingCuisineAbove !== -1) {
+    return {
+      opponentIndex: missingCuisineAbove,
+      opponent: existingRanked[missingCuisineAbove],
+    };
+  }
+  if (missingCuisineBelow !== -1) {
+    return {
+      opponentIndex: missingCuisineBelow,
+      opponent: existingRanked[missingCuisineBelow],
+    };
+  }
+
+  // 2b. If the adjacent same-meal spot above or below `insertIndex` hasn't been compared yet,
+  //     compare against it next.
   if (missingAbove !== -1 && missingBelow !== -1) {
     const distAbove = Math.abs(missingAbove - targetOpponentIdx);
     const distBelow = Math.abs(missingBelow - targetOpponentIdx);
@@ -527,7 +653,7 @@ export function pickNextOpponent(
     };
   }
 
-  // 3. Otherwise (same-meal neighbors above & below are already verified),
+  // 3. Otherwise (same-cuisine and same-meal neighbors above & below are already verified),
   //    refine exact placement within the active window [loSlot, hiSlot - 1]
   let bestCandidateIdx = -1;
   let bestCandidateScore = -Infinity;
@@ -543,10 +669,10 @@ export function pickNextOpponent(
 
     let score = -dist * 1.45;
 
-    if (item.meal === state.candidateMeal && dist <= 3) score += 0.75;
-    if (item.cuisines.some((c) => state.candidateCuisines.includes(c)) && dist <= 3) {
-      score += 0.45;
+    if (sharesTagWithCandidate(item, state.candidateCuisines) && dist <= 4) {
+      score += 1.25;
     }
+    if (item.meal === state.candidateMeal && dist <= 3) score += 0.75;
 
     const jitter = (((i * 31 + state.completedComparisons * 17) % 10) - 5) * 0.03;
     score += jitter;

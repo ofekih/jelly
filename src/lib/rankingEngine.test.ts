@@ -16,7 +16,8 @@ function makeDummySpot(
   name: string,
   initialRating: number,
   rankIndex: number,
-  meal: MealCategory = 'Dinner'
+  meal: MealCategory = 'Dinner',
+  cuisines: string[] = ['Italian']
 ): RestaurantEntry {
   return {
     id,
@@ -24,7 +25,7 @@ function makeDummySpot(
     formattedAddress: '123 Main St',
     meal,
     meals: [meal],
-    cuisines: ['Italian'],
+    cuisines,
     initialRating,
     elo: ratingToBaseElo(initialRating),
     rankIndex,
@@ -112,6 +113,22 @@ describe('rankingEngine (ELO-based)', () => {
     expect(comparedSet.has(0)).toBe(true);
     // Must have compared against the Dinner spot below insertIndex (index 4: Mid Dinner)
     expect(comparedSet.has(4)).toBe(true);
+  });
+
+  it('prioritizes same-cuisine tags (e.g. Japanese) during SxS comparisons', () => {
+    const existing = recomputeMagicScores([
+      makeDummySpot('1', 'Top Sushi', 9.5, 0, 'Dinner', ['Japanese', 'Sushi']),
+      makeDummySpot('2', 'French Bistro', 9.0, 1, 'Dinner', ['French']),
+      makeDummySpot('3', 'Steakhouse', 8.6, 2, 'Dinner', ['Steakhouse']),
+      makeDummySpot('4', 'Ramen Bar', 8.2, 3, 'Dinner', ['Japanese', 'Ramen']),
+      makeDummySpot('5', 'Trattoria', 7.8, 4, 'Dinner', ['Italian']),
+    ]);
+
+    let state = initSxSSearch(existing, 8.6, 'Dinner', ['Japanese']);
+    const firstPick = pickNextOpponent(state, existing);
+    expect(firstPick).not.toBeNull();
+    // Even though index 2 (Steakhouse) is the exact midpoint, index 3 (Ramen Bar) or index 0 (Top Sushi) is Japanese and should be picked first!
+    expect(firstPick!.opponent.cuisines).toContain('Japanese');
   });
 
   it('maps 5 equal visual divisions with 5.0 at the center of Mid (30%), and supports linear fallback', () => {

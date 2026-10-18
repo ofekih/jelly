@@ -46,8 +46,8 @@ export const JellyBeanIcon: React.FC<JellyBeanIconProps> = ({
         </linearGradient>
       </defs>
 
-      {/* Left Emerald-Mint Jelly Bean */}
-      <g transform="rotate(-26 23 30)">
+      {/* Left Emerald-Mint Jelly Bean (upright, no tilt) */}
+      <g>
         <path
           d="M15 13 C24 10, 33 15, 33 25 C33 31, 29 34, 30 40 C31 47, 25 51, 17 49 C8 47, 9 36, 13 29 C15 23, 8 16, 15 13 Z"
           fill="url(#jellyEmeraldGrad)"
@@ -61,8 +61,8 @@ export const JellyBeanIcon: React.FC<JellyBeanIconProps> = ({
         />
       </g>
 
-      {/* Right Berry-Coral Jelly Bean */}
-      <g transform="rotate(-20 41 35)">
+      {/* Right Berry-Coral Jelly Bean (upright, no tilt) */}
+      <g>
         <path
           d="M33 18 C42 15, 51 20, 51 30 C51 36, 47 39, 48 45 C49 52, 43 56, 35 54 C26 52, 27 41, 31 34 C33 28, 26 21, 33 18 Z"
           fill="url(#jellyBerryGrad)"

@@ -15,8 +15,8 @@
     </filter>
   </defs>
   <rect width="64" height="64" rx="16" fill="#09090b" />
-  <!-- Left Emerald Jelly Bean -->
-  <g filter="url(#glow)" transform="rotate(-28 25 31)">
+  <!-- Left Emerald Jelly Bean (upright, no tilt) -->
+  <g filter="url(#glow)">
     <path
       d="M17 17 C25 14, 33 18, 33 27 C33 32, 30 35, 31 40 C32 46, 26 50, 19 48 C11 46, 12 36, 15 30 C17 25, 11 19, 17 17 Z"
       fill="url(#emeraldBean)"
@@ -29,8 +29,8 @@
       opacity="0.65"
     />
   </g>
-  <!-- Right Berry-Coral Jelly Bean -->
-  <g filter="url(#glow)" transform="rotate(-22 40 36)">
+  <!-- Right Berry-Coral Jelly Bean (upright, no tilt) -->
+  <g filter="url(#glow)">
     <path
       d="M32 22 C40 19, 48 23, 48 32 C48 37, 45 40, 46 45 C47 51, 41 55, 34 53 C26 51, 27 41, 30 35 C32 30, 26 24, 32 22 Z"
       fill="url(#berryBean)"

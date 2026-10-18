@@ -199,7 +199,9 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
             >
               <div className="space-y-1.5">
                 <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  {pendingPlacement.meal}
+                  {[pendingPlacement.meal, pendingPlacement.cuisines[0]]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </span>
                 <h3 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                   {pendingPlacement.candidate.name}
@@ -222,7 +224,13 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
             >
               <div className="space-y-1.5">
                 <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  {currentMatch.opponent.meal} · #{currentMatch.opponent.rankIndex + 1}
+                  {[
+                    currentMatch.opponent.meal,
+                    currentMatch.opponent.cuisines[0],
+                    `#${currentMatch.opponent.rankIndex + 1}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </span>
                 <h3 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                   {currentMatch.opponent.name}

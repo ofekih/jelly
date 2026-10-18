@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   Bookmark,
   Calendar,
+  Check,
   ExternalLink,
   MapPin,
   Pencil,
   RefreshCw,
+  Share2,
   Trash2,
   Users,
   X,
@@ -69,18 +71,22 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   onDelete,
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isEditingNoteInline, setIsEditingNoteInline] = useState(false);
   const [meal, setMeal] = useState<MealCategory>('Dinner');
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [priceLevel, setPriceLevel] = useState<number | undefined>(undefined);
   const [notes, setNotes] = useState('');
+  const [copiedSpotShare, setCopiedSpotShare] = useState(false);
 
   useEffect(() => {
     if (!restaurant) return;
     setIsEditMode(false);
+    setIsEditingNoteInline(false);
     setMeal(restaurant.meal || 'Dinner');
     setCuisines(restaurant.cuisines || []);
     setPriceLevel(restaurant.priceLevel);
     setNotes(restaurant.notes || '');
+    setCopiedSpotShare(false);
   }, [restaurant]);
 
   if (!restaurant) return null;
@@ -99,6 +105,52 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
     });
     setIsEditMode(false);
     onClose();
+  };
+
+  const handleSaveInlineNote = () => {
+    onSaveEdits(restaurant.id, {
+      meal: restaurant.meal,
+      cuisines: restaurant.cuisines || [],
+      priceLevel: restaurant.priceLevel,
+      notes: notes.trim() || undefined,
+    });
+    setIsEditingNoteInline(false);
+  };
+
+  const handleShareSpot = async () => {
+    const shareTitle = `${restaurant.name} on jelly`;
+    const sub = [
+      restaurant.meal,
+      restaurant.cuisines[0] || restaurant.primaryTypeDisplay,
+      restaurant.neighborhood || restaurant.city,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const shareText = `${restaurant.name} (${restaurant.magicScore.toFixed(1)}/10)${
+      sub ? ` — ${sub}` : ''
+    }${restaurant.notes ? `\n"${restaurant.notes}"` : ''}`;
+    const shareUrl = restaurant.googleMapsUri || window.location.origin;
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+      setCopiedSpotShare(true);
+      setTimeout(() => setCopiedSpotShare(false), 2200);
+    } catch {
+      // Ignore
+    }
   };
 
   const allCuisineOptions = Array.from(new Set([...cuisines, ...COMMON_CUISINES]));
@@ -209,10 +261,75 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
               )}
             </div>
 
-            {restaurant.notes && (
-              <p className="text-xs text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl">
-                {restaurant.notes}
-              </p>
+            {/* Multi-line Personal Note Section (inline editable for your own spots) */}
+            {!readOnly ? (
+              isEditingNoteInline ? (
+                <div className="space-y-2 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 p-3 border border-zinc-200/80 dark:border-zinc-700">
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block">
+                    Personal Note
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="What did you order? What stood out? Would you come back?"
+                    autoFocus
+                    className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 leading-relaxed resize-y min-h-[96px] focus:outline-none focus:border-emerald-500"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotes(restaurant.notes || '');
+                        setIsEditingNoteInline(false);
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-medium text-zinc-500 hover:bg-zinc-200/60 dark:hover:bg-zinc-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveInlineNote}
+                      className="px-3.5 py-1.5 rounded-xl bg-zinc-900 dark:bg-emerald-500 text-white dark:text-zinc-950 text-xs font-semibold"
+                    >
+                      Save Note
+                    </button>
+                  </div>
+                </div>
+              ) : restaurant.notes ? (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingNoteInline(true)}
+                  className="w-full text-left group rounded-xl bg-zinc-50 dark:bg-zinc-800/50 hover:bg-zinc-100/80 dark:hover:bg-zinc-800 p-3.5 transition-colors space-y-1"
+                  title="Click to edit note"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    <span>Your Note</span>
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <Pencil className="w-2.5 h-2.5" />
+                      Edit
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                    {restaurant.notes}
+                  </p>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsEditingNoteInline(true)}
+                  className="w-full py-2.5 px-3.5 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-left flex items-center gap-2 transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5 shrink-0" />
+                  <span>Add a note (favorite dishes, thoughts...)</span>
+                </button>
+              )
+            ) : (
+              restaurant.notes && (
+                <p className="text-xs text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-xl whitespace-pre-wrap leading-relaxed">
+                  {restaurant.notes}
+                </p>
+              )
             )}
 
             {/* Community Averages & Personalized Taste Prediction */}
@@ -322,7 +439,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                         )}
                       </div>
                       {fm.notes && (
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 pl-8 italic">
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 pl-8 italic whitespace-pre-wrap">
                           &ldquo;{fm.notes}&rdquo;
                         </p>
                       )}
@@ -347,39 +464,57 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   <span>Re-rank {restaurant.name}</span>
                 </button>
 
-                <div className="grid grid-cols-3 gap-2 pt-1">
+                <div className="grid grid-cols-4 gap-1.5 pt-1">
                   <button
                     type="button"
                     onClick={() => setIsEditMode(true)}
-                    className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                    className="py-2.5 px-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors"
                   >
-                    <Pencil className="w-3.5 h-3.5" />
-                    <span>Edit Details</span>
+                    <Pencil className="w-3.5 h-3.5 shrink-0" />
+                    <span>Edit</span>
                   </button>
 
-                  {restaurant.googleMapsUri ? (
-                    <a
-                      href={restaurant.googleMapsUri}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Maps</span>
-                    </a>
-                  ) : (
-                    <div />
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleShareSpot}
+                    className="py-2.5 px-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors"
+                  >
+                    {copiedSpotShare ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Share</span>
+                      </>
+                    )}
+                  </button>
+
+                  <a
+                    href={
+                      restaurant.googleMapsUri ||
+                      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                        `${restaurant.name} ${restaurant.formattedAddress || restaurant.city || ''}`
+                      )}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="py-2.5 px-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    <span>Maps</span>
+                  </a>
 
                   <button
                     type="button"
                     onClick={() => {
                       onDelete(restaurant.id);
-                      onClose();
                     }}
-                    className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-rose-50 dark:bg-zinc-800 dark:hover:bg-rose-950/40 text-zinc-500 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+                    className="py-2.5 px-2 rounded-xl bg-zinc-100 hover:bg-rose-50 dark:bg-zinc-800 dark:hover:bg-rose-950/40 text-zinc-500 hover:text-rose-600 dark:text-zinc-400 dark:hover:text-rose-400 text-xs font-medium flex items-center justify-center gap-1 transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
                     <span>Remove</span>
                   </button>
                 </div>
@@ -412,22 +547,45 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   </button>
                 )}
 
-                {restaurant.googleMapsUri && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleShareSpot}
+                    className="py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
+                  >
+                    {copiedSpotShare ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-3.5 h-3.5" />
+                        <span>Share Spot</span>
+                      </>
+                    )}
+                  </button>
+
                   <a
-                    href={restaurant.googleMapsUri}
+                    href={
+                      restaurant.googleMapsUri ||
+                      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                        `${restaurant.name} ${restaurant.formattedAddress || restaurant.city || ''}`
+                      )}`
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
+                    className="py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open in Google Maps</span>
+                    <span>Google Maps</span>
                   </a>
-                )}
+                </div>
               </div>
             )}
           </div>
         ) : (
-          /* Hidden Edit Menu — Only visible when user explicitly clicks "Edit Details" */
+          /* Edit Menu */
           <form onSubmit={handleSave} className="px-5 pb-6 space-y-4 overflow-y-auto">
             <div>
               <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
@@ -495,15 +653,15 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
             </div>
 
             <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
                 Personal Note (Optional)
               </label>
-              <input
-                type="text"
+              <textarea
+                rows={4}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add a private note..."
-                className="w-full px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                placeholder="What did you order? Favorite dishes, vibe, or notes..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 leading-relaxed resize-y min-h-[96px] focus:outline-none"
               />
             </div>
 

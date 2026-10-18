@@ -18,8 +18,10 @@ rules_version = '2';
 //   - photoURL: string (optional, <= 1000 chars) - user avatar URL
 //   - defaultCity: string (optional, <= 200 chars) - default search city preference
 //   - darkMode: bool (optional) - dark mode theme preference
+//   - linearRatingScale: bool (optional) - linear rating scale preference
 //   - handle: string (optional, <= 60 chars) - user handle for friend discovery
 //   - followingIds: list<string> (optional, <= 200 items) - followed friend UIDs/shareIds
+//   - seenFollowerIds: list<string> (optional, <= 500 items) - seen follower UIDs/shareIds for notifications
 //   - friends: list<map> (optional, <= 200 items) - lightweight friend metadata objects
 //
 // Collection: users/{userId}/restaurants
@@ -94,6 +96,7 @@ rules_version = '2';
 //   - title: string (optional, <= 300 chars) - shared list title
 //   - restaurants: list (optional, <= 500 items) - snapshot of shared restaurants
 //   - bookmarks: list (optional, <= 500 items) - optional snapshot of bookmarks
+//   - followingIds: list<string> (optional, <= 500 items) - followed friend UIDs/shareIds for follower notifications
 //   - createdAt: number | timestamp (optional) - creation timestamp
 //   - updatedAt: number | timestamp (optional) - last update timestamp
 //
@@ -158,8 +161,10 @@ service cloud.firestore {
         isValidOptionalString('defaultCity', 0, 200) &&
         isValidOptionalString('handle', 0, 60) &&
         (!('followingIds' in data) || data.followingIds == null || isValidList(data.followingIds, 200)) &&
+        (!('seenFollowerIds' in data) || data.seenFollowerIds == null || isValidList(data.seenFollowerIds, 500)) &&
         (!('friends' in data) || data.friends == null || isValidList(data.friends, 200)) &&
         (!('darkMode' in data) || data.darkMode == null || data.darkMode is bool) &&
+        (!('linearRatingScale' in data) || data.linearRatingScale == null || data.linearRatingScale is bool) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp);
     }
@@ -251,6 +256,7 @@ service cloud.firestore {
         (!('entries' in data) || isValidList(data.entries, 500)) &&
         (!('items' in data) || isValidList(data.items, 500)) &&
         (!('bookmarks' in data) || isValidList(data.bookmarks, 500)) &&
+        (!('followingIds' in data) || data.followingIds == null || isValidList(data.followingIds, 500)) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
     }

@@ -59,6 +59,7 @@ import {
 } from './lib/friendsService';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
+import { ConfirmModal } from './components/ConfirmModal';
 import { EatTogetherModal } from './components/EatTogetherModal';
 import { FriendsModal } from './components/FriendsModal';
 import { JellyBeanIcon } from './components/JellyBeanIcon';
@@ -72,6 +73,7 @@ const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
 const LOCAL_SETTINGS_KEY = 'palatelo_settings_v2';
 const LOCAL_FRIENDS_KEY = 'jelly_friends_v1';
+const LOCAL_SEEN_FOLLOWERS_KEY = 'jelly_seen_followers_v1';
 const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
 
 function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
@@ -120,6 +122,9 @@ function parseSharedListDoc(id: string, data: any): SharedListPayload {
   const loadedBookmarks: BookmarkEntry[] = Array.isArray(data.bookmarks)
     ? data.bookmarks.map(sanitizeLoadedBookmark)
     : [];
+  const followingIds: string[] | undefined = Array.isArray(data.followingIds)
+    ? data.followingIds.filter((uid: any) => typeof uid === 'string')
+    : undefined;
   return {
     id,
     ownerUid: data.ownerUid || id,
@@ -130,6 +135,7 @@ function parseSharedListDoc(id: string, data: any): SharedListPayload {
     title: data.title,
     restaurants: recomputeMagicScores(loadedRestaurants),
     bookmarks: loadedBookmarks,
+    followingIds,
     createdAt: data.createdAt || Date.now(),
     updatedAt: data.updatedAt || Date.now(),
   };
@@ -201,6 +207,20 @@ export const App: React.FC = () => {
     return [];
   });
 
+  const [seenFollowerIds, setSeenFollowerIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_SEEN_FOLLOWERS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return new Set(parsed.filter((x) => typeof x === 'string'));
+      }
+    } catch {
+      // Ignore
+    }
+    return new Set();
+  });
+  const notifiedFollowersRef = useRef<Set<string>>(new Set());
+
   const [userHandle, setUserHandle] = useState<string>(() => {
     try {
       const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
@@ -243,7 +263,7 @@ export const App: React.FC = () => {
   // View & Filter State
   const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try'>('ranked');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [selectedMeal, setSelectedMeal] = useState<MealCategory | 'ALL'>('ALL');
+  const [selectedMeals, setSelectedMeals] = useState<MealCategory[]>([]);
   const [selectedCity, setSelectedCity] = useState<string | 'ALL'>('ALL');
   const [selectedCuisine, setSelectedCuisine] = useState<string | 'ALL'>('ALL');
   const [sortByNearest, setSortByNearest] = useState<boolean>(false);
@@ -278,6 +298,12 @@ export const App: React.FC = () => {
   const [isEatTogetherOpen, setIsEatTogetherOpen] = useState(false);
   const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastAction, setToastAction] = useState<{ label: string; onClick: () => void } | null>(
     null
@@ -420,7 +446,7 @@ export const App: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Load user profile doc (friends, handle, defaultCity) when signed in
+  // Load user profile doc (friends, handle, defaultCity, seenFollowerIds) when signed in
   useEffect(() => {
     if (!user) return;
     const userDocRef = doc(db, 'users', user.uid);
@@ -431,6 +457,16 @@ export const App: React.FC = () => {
         const data = snap.data();
         if (typeof data.handle === 'string' && data.handle.trim()) {
           setUserHandle(data.handle.trim());
+        }
+        if (Array.isArray(data.seenFollowerIds)) {
+          setSeenFollowerIds((prev) => {
+            const next = new Set(prev);
+            for (const uid of data.seenFollowerIds) {
+              if (typeof uid === 'string') next.add(uid);
+            }
+            localStorage.setItem(LOCAL_SEEN_FOLLOWERS_KEY, JSON.stringify(Array.from(next)));
+            return next;
+          });
         }
         if (Array.isArray(data.friends)) {
           setFriends((prev) => {
@@ -452,6 +488,31 @@ export const App: React.FC = () => {
     );
     return () => unsub();
   }, [user]);
+
+  const markFollowersSeen = (followerUids: string[]) => {
+    if (followerUids.length === 0) return;
+    setSeenFollowerIds((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const uid of followerUids) {
+        if (!next.has(uid)) {
+          next.add(uid);
+          changed = true;
+        }
+      }
+      if (!changed) return prev;
+      const arr = Array.from(next);
+      localStorage.setItem(LOCAL_SEEN_FOLLOWERS_KEY, JSON.stringify(arr));
+      if (user) {
+        setDoc(
+          doc(db, 'users', user.uid),
+          { seenFollowerIds: arr, updatedAt: Date.now() },
+          { merge: true }
+        ).catch(() => {});
+      }
+      return next;
+    });
+  };
 
   // Live-fetch SharedListPayload for each followed friend
   useEffect(() => {
@@ -476,7 +537,7 @@ export const App: React.FC = () => {
     };
   }, [friends]);
 
-  // Live subscription to public jelly lists for community average & collaborative taste predictions
+  // Live subscription to public jelly lists for community average, collaborative taste predictions & follower notifications
   const [communityLists, setCommunityLists] = useState<SharedListPayload[]>([]);
   useEffect(() => {
     const colRef = collection(db, 'sharedLists');
@@ -607,10 +668,10 @@ export const App: React.FC = () => {
     return () => unsub();
   }, [user]);
 
-  // Auto-sync signed-in user's public sharedLists/{uid} document so friends & @handle search stay live
+  // Auto-sync signed-in user's public sharedLists/{uid} document so friends, @handle search, & follower notifications stay live
   useEffect(() => {
     if (!user || !cloudLoadedRef.current) return;
-    if (restaurants.length === 0 && bookmarks.length === 0) return;
+    if (restaurants.length === 0 && bookmarks.length === 0 && friends.length === 0) return;
 
     const timer = setTimeout(() => {
       const shareId = user.uid;
@@ -640,6 +701,7 @@ export const App: React.FC = () => {
         handle: effectiveHandle,
         restaurants: cleanRestaurants,
         bookmarks: cleanBookmarks,
+        followingIds: friends.slice(0, 500).map((f) => f.uid),
         updatedAt: Date.now(),
         createdAt: Date.now(),
       };
@@ -649,7 +711,7 @@ export const App: React.FC = () => {
     }, 900);
 
     return () => clearTimeout(timer);
-  }, [user, restaurants, bookmarks, userHandle]);
+  }, [user, restaurants, bookmarks, userHandle, friends]);
 
   const persistOrderedRestaurants = async (ordered: RestaurantEntry[], deletedId?: string) => {
     const recomputed = recomputeMagicScores(ordered);
@@ -822,7 +884,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleUnfollowFriend = async (friendUid: string) => {
+  const executeUnfollowFriend = async (friendUid: string) => {
     const prevFriends = [...friends];
     const removed = friends.find((f) => f.uid === friendUid);
     const nextFriends = friends.filter((f) => f.uid !== friendUid);
@@ -866,6 +928,17 @@ export const App: React.FC = () => {
         5000
       );
     }
+  };
+
+  const handleUnfollowFriend = (friendUid: string) => {
+    const target = friends.find((f) => f.uid === friendUid);
+    const friendName = target?.name || 'this friend';
+    setConfirmDialog({
+      title: `Unfollow ${friendName}?`,
+      message: `Are you sure you want to remove ${friendName} from your friends list?`,
+      confirmLabel: 'Unfollow',
+      onConfirm: () => executeUnfollowFriend(friendUid),
+    });
   };
 
   const handleUpdateUserHandle = async (nextHandle: string) => {
@@ -967,7 +1040,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleDeleteBookmark = async (bookmarkId: string) => {
+  const executeDeleteBookmark = async (bookmarkId: string) => {
     const prevBookmarks = [...bookmarks];
     const target = bookmarks.find((b) => b.id === bookmarkId);
     const nextBookmarks = bookmarks.filter((b) => b.id !== bookmarkId);
@@ -999,6 +1072,17 @@ export const App: React.FC = () => {
         5000
       );
     }
+  };
+
+  const handleDeleteBookmark = (bookmarkId: string) => {
+    const target = bookmarks.find((b) => b.id === bookmarkId);
+    if (!target) return;
+    setConfirmDialog({
+      title: `Remove ${target.name}?`,
+      message: `Are you sure you want to remove ${target.name} from your Want to Try list?`,
+      confirmLabel: 'Remove',
+      onConfirm: () => executeDeleteBookmark(bookmarkId),
+    });
   };
 
   const handleStartRankFromBookmark = (bookmark: BookmarkEntry) => {
@@ -1064,6 +1148,7 @@ export const App: React.FC = () => {
       handle: effectiveHandle,
       restaurants: cleanRestaurants,
       bookmarks: cleanBookmarks,
+      followingIds: friends.slice(0, 500).map((f) => f.uid),
       updatedAt: Date.now(),
       createdAt: Date.now(),
     };
@@ -1341,10 +1426,13 @@ export const App: React.FC = () => {
     showToast('Updated details');
   };
 
-  const handleDeleteRestaurant = async (id: string) => {
+  const executeDeleteRestaurant = async (id: string) => {
     const prevRestaurants = [...restaurants];
     const target = restaurants.find((r) => r.id === id);
     if (!target) return;
+    if (activeDetailSpot?.id === id) {
+      setActiveDetailSpot(null);
+    }
     const remaining = restaurants.filter((r) => r.id !== id);
     trackEvent('delete_spot', {
       restaurant_name: target.name,
@@ -1362,6 +1450,17 @@ export const App: React.FC = () => {
       },
       5500
     );
+  };
+
+  const handleDeleteRestaurant = (id: string) => {
+    const target = restaurants.find((r) => r.id === id);
+    if (!target) return;
+    setConfirmDialog({
+      title: `Remove ${target.name}?`,
+      message: `Are you sure you want to remove ${target.name} (${target.meal}) from your ranked list?`,
+      confirmLabel: 'Remove Spot',
+      onConfirm: () => executeDeleteRestaurant(id),
+    });
   };
 
   const isReadOnly = Boolean(sharedList);
@@ -1407,6 +1506,57 @@ export const App: React.FC = () => {
     }
     return list;
   }, [friends, friendListsMap, sharedList, user]);
+
+  // Followers: jelly users whose public list has our uid in followingIds
+  const followers = useMemo(() => {
+    if (!user) return [];
+    return communityLists.filter(
+      (cl) =>
+        cl.id !== user.uid &&
+        cl.ownerUid !== user.uid &&
+        Array.isArray(cl.followingIds) &&
+        cl.followingIds.includes(user.uid)
+    );
+  }, [communityLists, user]);
+
+  const newFollowerIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of followers) {
+      if (!seenFollowerIds.has(f.id)) {
+        set.add(f.id);
+      }
+    }
+    return set;
+  }, [followers, seenFollowerIds]);
+
+  // Notify when a new follower is detected
+  useEffect(() => {
+    if (!user || newFollowerIds.size === 0) return;
+    for (const follower of followers) {
+      if (newFollowerIds.has(follower.id) && !notifiedFollowersRef.current.has(follower.id)) {
+        notifiedFollowersRef.current.add(follower.id);
+        const handleLabel = follower.handle ? ` (@${follower.handle})` : '';
+        const isAlreadyFollowing = friends.some((f) => f.uid === follower.id);
+        showToast(
+          `🎉 ${follower.ownerName || 'Someone'}${handleLabel} added you as a friend!`,
+          isAlreadyFollowing
+            ? {
+                label: 'View',
+                onClick: () => setIsFriendsOpen(true),
+              }
+            : {
+                label: 'Follow back',
+                onClick: () => {
+                  handleFollowFriend(follower);
+                  markFollowersSeen([follower.id]);
+                },
+              },
+          7000
+        );
+        break;
+      }
+    }
+  }, [user, followers, newFollowerIds, friends]);
 
   const isViewingSharedOwnerFollowed = useMemo(() => {
     if (!sharedList) return false;
@@ -1461,23 +1611,35 @@ export const App: React.FC = () => {
     return map;
   }, [currentSourceItems, selectedCity]);
 
-  // Cuisines available in the currently selected meal & city
+  // Cuisines available in the currently selected meal(s) & city
   const cuisineCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of currentSourceItems) {
       if (selectedCity !== 'ALL' && item.city !== selectedCity) continue;
-      if (selectedMeal !== 'ALL' && item.meal !== selectedMeal) continue;
+      if (
+        selectedMeals.length > 0 &&
+        !selectedMeals.includes(item.meal) &&
+        !(item.meals && item.meals.some((m) => selectedMeals.includes(m)))
+      ) {
+        continue;
+      }
       for (const c of item.cuisines) {
         map.set(c, (map.get(c) || 0) + 1);
       }
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [currentSourceItems, selectedMeal, selectedCity]);
+  }, [currentSourceItems, selectedMeals, selectedCity]);
 
   const filteredRestaurants = useMemo(() => {
     const base = activeRestaurants.filter((r) => {
       if (selectedCity !== 'ALL' && r.city !== selectedCity) return false;
-      if (selectedMeal !== 'ALL' && r.meal !== selectedMeal) return false;
+      if (
+        selectedMeals.length > 0 &&
+        !selectedMeals.includes(r.meal) &&
+        !(r.meals && r.meals.some((m) => selectedMeals.includes(m)))
+      ) {
+        return false;
+      }
       if (selectedCuisine !== 'ALL' && !r.cuisines.includes(selectedCuisine)) return false;
       if (listSearchQuery.trim()) {
         const q = listSearchQuery.toLowerCase();
@@ -1502,7 +1664,7 @@ export const App: React.FC = () => {
   }, [
     activeRestaurants,
     selectedCity,
-    selectedMeal,
+    selectedMeals,
     selectedCuisine,
     listSearchQuery,
     sortByNearest,
@@ -1512,7 +1674,13 @@ export const App: React.FC = () => {
   const filteredBookmarks = useMemo(() => {
     const base = activeBookmarks.filter((b) => {
       if (selectedCity !== 'ALL' && b.city !== selectedCity) return false;
-      if (selectedMeal !== 'ALL' && b.meal !== selectedMeal) return false;
+      if (
+        selectedMeals.length > 0 &&
+        !selectedMeals.includes(b.meal) &&
+        !(b.meals && b.meals.some((m) => selectedMeals.includes(m)))
+      ) {
+        return false;
+      }
       if (selectedCuisine !== 'ALL' && !b.cuisines.includes(selectedCuisine)) return false;
       if (listSearchQuery.trim()) {
         const q = listSearchQuery.toLowerCase();
@@ -1537,7 +1705,7 @@ export const App: React.FC = () => {
   }, [
     activeBookmarks,
     selectedCity,
-    selectedMeal,
+    selectedMeals,
     selectedCuisine,
     listSearchQuery,
     userLocation,
@@ -1545,7 +1713,7 @@ export const App: React.FC = () => {
 
   const isFiltered =
     selectedCity !== 'ALL' ||
-    selectedMeal !== 'ALL' ||
+    selectedMeals.length > 0 ||
     selectedCuisine !== 'ALL' ||
     listSearchQuery.trim().length > 0;
 
@@ -1712,11 +1880,18 @@ export const App: React.FC = () => {
               title="Friends & Eat Together"
             >
               <Users className="w-4 h-4" />
-              {friends.length > 0 && (
+              {newFollowerIds.size > 0 ? (
+                <span
+                  className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-zinc-50 dark:ring-zinc-950"
+                  title={`${newFollowerIds.size} new follower${newFollowerIds.size === 1 ? '' : 's'}`}
+                >
+                  +{newFollowerIds.size}
+                </span>
+              ) : friends.length > 0 ? (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-emerald-500 text-zinc-950 text-[9px] font-extrabold flex items-center justify-center">
                   {friends.length}
                 </span>
-              )}
+              ) : null}
             </button>
 
             {activeRestaurants.length > 0 && (
@@ -2005,7 +2180,7 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Clean Filters: Meal Tabs + Near Me Toggle + City Filter Pill + Cuisine Chips */}
+        {/* Clean Filters: Multi-Select Meal Tabs + Near Me Toggle + City Filter Pill + Cuisine Chips */}
         {currentSourceItems.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -2076,12 +2251,12 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setSelectedMeal('ALL');
+                  setSelectedMeals([]);
                   setSelectedCuisine('ALL');
                   trackEvent('filter_meal', { meal: 'ALL' });
                 }}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-                  selectedMeal === 'ALL'
+                  selectedMeals.length === 0
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                     : 'bg-zinc-200/60 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
                 }`}
@@ -2090,17 +2265,19 @@ export const App: React.FC = () => {
               </button>
               {ALL_MEAL_CATEGORIES.map((meal) => {
                 const count = mealCounts.get(meal) || 0;
-                if (count === 0 && selectedMeal !== meal) return null;
-                const active = selectedMeal === meal;
+                const active = selectedMeals.includes(meal);
+                if (count === 0 && !active) return null;
                 return (
                   <button
                     key={meal}
                     type="button"
                     onClick={() => {
-                      const nextMeal = active ? 'ALL' : meal;
-                      setSelectedMeal(nextMeal);
+                      const nextMeals = active
+                        ? selectedMeals.filter((m) => m !== meal)
+                        : [...selectedMeals, meal];
+                      setSelectedMeals(nextMeals);
                       setSelectedCuisine('ALL');
-                      trackEvent('filter_meal', { meal: nextMeal });
+                      trackEvent('filter_meal', { meal: nextMeals.join(',') || 'ALL' });
                     }}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
                       active
@@ -2174,7 +2351,7 @@ export const App: React.FC = () => {
             sortByNearest={sortByNearest && Boolean(userLocation)}
             userLocation={userLocation}
             readOnly={isReadOnly}
-            selectedMealFilter={selectedMeal}
+            selectedMealsFilter={selectedMeals}
             totalUnfilteredCount={activeRestaurants.length}
             myUid={user?.uid}
             myRestaurants={restaurants}
@@ -2223,7 +2400,7 @@ export const App: React.FC = () => {
             bookmarks={filteredBookmarks}
             isFiltered={isFiltered}
             userLocation={userLocation}
-            selectedMealFilter={selectedMeal}
+            selectedMealsFilter={selectedMeals}
             totalUnfilteredCount={activeBookmarks.length}
             readOnly={isReadOnly}
             myUid={user?.uid}
@@ -2322,7 +2499,12 @@ export const App: React.FC = () => {
       {/* Friends Directory & @Handle Modal */}
       <FriendsModal
         isOpen={isFriendsOpen}
-        onClose={() => setIsFriendsOpen(false)}
+        onClose={() => {
+          setIsFriendsOpen(false);
+          if (followers.length > 0) {
+            markFollowersSeen(followers.map((f) => f.id));
+          }
+        }}
         isSignedIn={Boolean(user)}
         userUid={user?.uid}
         userHandle={userHandle}
@@ -2330,6 +2512,8 @@ export const App: React.FC = () => {
         onUpdateHandle={handleUpdateUserHandle}
         friends={friends}
         friendListsMap={friendListsMap}
+        followers={followers}
+        newFollowerIds={newFollowerIds}
         onSearchDirectory={handleSearchPublicLists}
         onFollowFriend={handleFollowFriend}
         onFollowByShareId={handleFollowByShareId}
@@ -2340,6 +2524,9 @@ export const App: React.FC = () => {
             handleSelectFriendToView(found);
           } else if (friendListsMap[friendUid]) {
             setSharedList(friendListsMap[friendUid]);
+          } else {
+            const fromFollowers = followers.find((f) => f.id === friendUid);
+            if (fromFollowers) setSharedList(fromFollowers);
           }
         }}
         onOpenBlendWithFriend={(friendUid: string) => {
@@ -2372,7 +2559,7 @@ export const App: React.FC = () => {
         onClose={() => setIsShareOpen(false)}
         restaurants={filteredRestaurants.length > 0 ? filteredRestaurants : activeRestaurants}
         bookmarks={activeBookmarks}
-        selectedMeal={selectedMeal}
+        selectedMeals={selectedMeals}
         selectedCity={selectedCity}
         selectedCuisine={selectedCuisine}
         ownerName={
@@ -2384,6 +2571,21 @@ export const App: React.FC = () => {
         }
         isSignedIn={Boolean(user)}
         onPublishShareLink={() => handlePublishShareLink()}
+      />
+
+      {/* Confirmation Modal for Deleting Spots / Bookmarks / Friends */}
+      <ConfirmModal
+        isOpen={Boolean(confirmDialog)}
+        title={confirmDialog?.title || 'Confirm'}
+        message={confirmDialog?.message || ''}
+        confirmLabel={confirmDialog?.confirmLabel || 'Remove'}
+        onConfirm={() => {
+          if (confirmDialog) {
+            confirmDialog.onConfirm();
+          }
+          setConfirmDialog(null);
+        }}
+        onCancel={() => setConfirmDialog(null)}
       />
 
       {/* Minimal Settings Modal */}

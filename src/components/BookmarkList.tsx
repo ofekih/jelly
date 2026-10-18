@@ -7,7 +7,7 @@ import { JellyBeanIcon } from './JellyBeanIcon';
 
 interface SwipeableBookmarkRowProps {
   item: BookmarkEntry;
-  selectedMealFilter: MealCategory | 'ALL';
+  selectedMealsFilter: MealCategory[];
   userLocation: UserCoordinates | null;
   readOnly: boolean;
   myUid?: string | null;
@@ -25,7 +25,7 @@ interface SwipeableBookmarkRowProps {
 
 const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   item,
-  selectedMealFilter,
+  selectedMealsFilter,
   userLocation,
   readOnly,
   myUid = null,
@@ -60,7 +60,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   const rawMiles = getItemDistanceMiles(item, userLocation);
   const distLabel = formatDistanceMiles(rawMiles);
   const subtitleParts = [
-    selectedMealFilter === 'ALL' ? item.meal : null,
+    selectedMealsFilter.length !== 1 ? item.meal : null,
     primaryCuisine,
     locationLabel,
     distLabel,
@@ -340,7 +340,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
 interface BookmarkListProps {
   bookmarks: BookmarkEntry[];
   isFiltered: boolean;
-  selectedMealFilter: MealCategory | 'ALL';
+  selectedMealsFilter: MealCategory[];
   totalUnfilteredCount: number;
   userLocation?: UserCoordinates | null;
   readOnly?: boolean;
@@ -360,7 +360,7 @@ interface BookmarkListProps {
 export const BookmarkList: React.FC<BookmarkListProps> = ({
   bookmarks,
   isFiltered,
-  selectedMealFilter,
+  selectedMealsFilter,
   totalUnfilteredCount,
   userLocation = null,
   readOnly = false,
@@ -432,7 +432,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
           <SwipeableBookmarkRow
             key={item.id}
             item={item}
-            selectedMealFilter={selectedMealFilter}
+            selectedMealsFilter={selectedMealsFilter}
             userLocation={userLocation}
             readOnly={readOnly}
             myUid={myUid}

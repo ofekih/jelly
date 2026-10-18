@@ -149,6 +149,7 @@ export interface SharedListPayload {
   handle?: string;
   photoURL?: string;
   title?: string;
+  followingIds?: string[];
   restaurants: RestaurantEntry[];
   bookmarks?: BookmarkEntry[];
   createdAt: number;
