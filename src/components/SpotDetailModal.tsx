@@ -21,6 +21,7 @@ import {
   RestaurantEntry,
 } from '../types';
 import { SpotSocialMetrics } from '../lib/friendsService';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { ScoreBadge } from './ScoreBadge';
 
 function formatRankedDate(ts: number): string {
@@ -77,6 +78,14 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   const [priceLevel, setPriceLevel] = useState<number | undefined>(undefined);
   const [notes, setNotes] = useState('');
   const [copiedSpotShare, setCopiedSpotShare] = useState(false);
+
+  const {
+    sheetStyle,
+    backdropStyle,
+    scrollContainerRef,
+    bindSheetTouch,
+    bindHandleTouch,
+  } = useSwipeDownDismiss({ onClose });
 
   useEffect(() => {
     if (!restaurant) return;
@@ -169,14 +178,25 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+      style={backdropStyle}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh]"
+        {...bindSheetTouch}
+        style={sheetStyle}
+        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet touch-manipulation"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 pt-5 pb-4 flex items-start justify-between gap-3">
+        {/* Mobile Swipe-Down Handle Pill */}
+        <div
+          {...bindHandleTouch}
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        </div>
+
+        <div className="px-5 pt-3 sm:pt-5 pb-4 flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
               <span>#{restaurant.rankIndex + 1} Overall</span>
@@ -208,7 +228,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
         </div>
 
         {!isEditMode ? (
-          <div className="px-5 pb-6 space-y-4 overflow-y-auto">
+          <div ref={scrollContainerRef} className="px-5 pb-6 space-y-4 overflow-y-auto">
             {/* Subtle Metadata Row */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
               {restaurant.priceLevel && (
@@ -539,7 +559,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     />
                     <span>
                       {isBookmarkedInMyList
-                        ? 'Saved in Your Want to Try'
+                        ? 'Remove from Want to Try'
                         : `Save to Want to Try${
                             friendOwnerName ? ` (Rec by ${friendOwnerName})` : ''
                           }`}
@@ -586,7 +606,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
           </div>
         ) : (
           /* Edit Menu */
-          <form onSubmit={handleSave} className="px-5 pb-6 space-y-4 overflow-y-auto">
+          <form ref={scrollContainerRef} onSubmit={handleSave} className="px-5 pb-6 space-y-4 overflow-y-auto">
             <div>
               <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
                 Meal

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bookmark,
   Check,
@@ -19,6 +19,7 @@ import {
 } from '../types';
 import { BlendSpotItem, computeGroupBlend } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { ScoreBadge } from './ScoreBadge';
 
 interface EatTogetherModalProps {
@@ -59,8 +60,21 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
   const [mealFilter, setMealFilter] = useState<MealCategory | 'ALL'>('ALL');
   const [sortByNearest, setSortByNearest] = useState(false);
 
+  const {
+    sheetStyle,
+    backdropStyle,
+    scrollContainerRef,
+    bindSheetTouch,
+    bindHandleTouch,
+  } = useSwipeDownDismiss({ onClose });
+
+  const hasInitializedRef = useRef(false);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      hasInitializedRef.current = false;
+      return;
+    }
     if (initialSelectedFriendUid) {
       setSelectedFriendIds([initialSelectedFriendUid]);
     } else if (friends.length > 0 && selectedFriendIds.length === 0) {
@@ -78,17 +92,21 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
     return computeGroupBlend(myRestaurants, myBookmarks, activeFriendLists);
   }, [myRestaurants, myBookmarks, activeFriendLists]);
 
-  // Auto-select the first non-empty tab when opening
+  // Auto-select the first non-empty tab only when opening
   useEffect(() => {
     if (!isOpen) return;
+    if (hasInitializedRef.current) return;
     if (blend.bothWantToTry.length > 0) {
       setActiveSection('both_want');
+      hasInitializedRef.current = true;
     } else if (blend.sharedFavorites.length > 0) {
       setActiveSection('shared_favorites');
-    } else {
+      hasInitializedRef.current = true;
+    } else if (blend.forYouFromFriends.length > 0) {
       setActiveSection('from_friends');
+      hasInitializedRef.current = true;
     }
-  }, [isOpen, selectedFriendIds.join(',')]);
+  }, [isOpen, blend]);
 
   if (!isOpen) return null;
 
@@ -123,15 +141,26 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+      style={backdropStyle}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh]"
+        {...bindSheetTouch}
+        style={sheetStyle}
+        className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet touch-manipulation"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Swipe-Down Handle Pill */}
+        <div
+          {...bindHandleTouch}
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        </div>
+
         {/* Top Bar */}
-        <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
@@ -176,7 +205,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
             </button>
           </div>
         ) : (
-          <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto flex-1">
+          <div ref={scrollContainerRef} className="p-4 sm:p-5 space-y-3.5 overflow-y-auto flex-1">
             {/* Select Friends to Blend With */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
               <span className="px-2.5 py-1 rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-semibold shrink-0">
@@ -386,7 +415,12 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                             }`}
                             title={
                               isBookmarked
-                                ? 'Saved to Want to Try'
+                                ? 'Remove from Want to Try'
+                                : `Save to Want to Try (Rec by ${recLabel})`
+                            }
+                            aria-label={
+                              isBookmarked
+                                ? 'Remove from Want to Try'
                                 : `Save to Want to Try (Rec by ${recLabel})`
                             }
                           >

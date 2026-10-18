@@ -116,7 +116,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       const { results } = await searchRestaurants(
         trimmed,
         customPlacesApiKey,
-        defaultCity,
+        userLocation ? undefined : defaultCity,
         userLocation
       );
       if (!cancelled) {

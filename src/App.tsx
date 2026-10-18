@@ -61,6 +61,7 @@ import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
 import { ConfirmModal } from './components/ConfirmModal';
 import { EatTogetherModal } from './components/EatTogetherModal';
+import { FollowListModal } from './components/FollowListModal';
 import { FriendsModal } from './components/FriendsModal';
 import { JellyBeanIcon } from './components/JellyBeanIcon';
 import { PendingPlacement, SxSArenaModal } from './components/SxSArenaModal';
@@ -68,6 +69,7 @@ import { RestaurantList } from './components/RestaurantList';
 import { RestaurantMapView } from './components/RestaurantMapView';
 import { ShareModal } from './components/ShareModal';
 import { SpotDetailModal } from './components/SpotDetailModal';
+import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
 
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
@@ -260,6 +262,21 @@ export const App: React.FC = () => {
     return false;
   });
 
+  const [useCurrentLocation, setUseCurrentLocation] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.useCurrentLocation === 'boolean') {
+          return parsed.useCurrentLocation;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+    return false;
+  });
+
   // View & Filter State
   const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try'>('ranked');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
@@ -302,8 +319,14 @@ export const App: React.FC = () => {
     title: string;
     message: string;
     confirmLabel: string;
+    iconVariant?: 'danger' | 'logout';
     onConfirm: () => void;
   } | null>(null);
+  const [followListDialog, setFollowListDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    users: SharedListPayload[];
+  }>({ isOpen: false, title: '', users: [] });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastAction, setToastAction] = useState<{ label: string; onClick: () => void } | null>(
     null
@@ -455,6 +478,15 @@ export const App: React.FC = () => {
       (snap) => {
         if (!snap.exists()) return;
         const data = snap.data();
+        if (typeof data.defaultCity === 'string') {
+          setDefaultCity(data.defaultCity);
+        }
+        if (typeof data.linearRatingScale === 'boolean') {
+          setLinearRatingScale(data.linearRatingScale);
+        }
+        if (typeof data.useCurrentLocation === 'boolean') {
+          setUseCurrentLocation(data.useCurrentLocation);
+        }
         if (typeof data.handle === 'string' && data.handle.trim()) {
           setUserHandle(data.handle.trim());
         }
@@ -802,13 +834,13 @@ export const App: React.FC = () => {
     friendName: string,
     friendUid?: string
   ) => {
-    const alreadySaved = bookmarks.some(
+    const existingBookmark = bookmarks.find(
       (b) =>
         (spot.placeId && b.placeId === spot.placeId) ||
         b.name.trim().toLowerCase() === spot.name.trim().toLowerCase()
     );
-    if (alreadySaved) {
-      showToast(`${spot.name} is already in your Want to Try`);
+    if (existingBookmark) {
+      executeDeleteBookmark(existingBookmark.id);
       return;
     }
     const fallbackMeal: MealCategory = 'meal' in spot && spot.meal ? spot.meal : 'Dinner';
@@ -1075,14 +1107,7 @@ export const App: React.FC = () => {
   };
 
   const handleDeleteBookmark = (bookmarkId: string) => {
-    const target = bookmarks.find((b) => b.id === bookmarkId);
-    if (!target) return;
-    setConfirmDialog({
-      title: `Remove ${target.name}?`,
-      message: `Are you sure you want to remove ${target.name} from your Want to Try list?`,
-      confirmLabel: 'Remove',
-      onConfirm: () => executeDeleteBookmark(bookmarkId),
-    });
+    executeDeleteBookmark(bookmarkId);
   };
 
   const handleStartRankFromBookmark = (bookmark: BookmarkEntry) => {
@@ -1175,10 +1200,19 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut(auth);
-    trackEvent('logout');
-    showToast('Signed out');
+  const requestSignOut = () => {
+    setConfirmDialog({
+      title: 'Sign out of jelly?',
+      message: 'Your ranked list and bookmarks stay saved to your account.',
+      confirmLabel: 'Sign out',
+      iconVariant: 'logout',
+      onConfirm: async () => {
+        setIsSettingsOpen(false);
+        await signOut(auth);
+        trackEvent('logout');
+        showToast('Signed out');
+      },
+    });
   };
 
   const cleanupBookmarkIfRanked = async (placeId?: string, name?: string) => {
@@ -1507,17 +1541,24 @@ export const App: React.FC = () => {
     return list;
   }, [friends, friendListsMap, sharedList, user]);
 
+  const followGraph = useMemo(() => {
+    return buildFollowGraph(communityLists);
+  }, [communityLists]);
+
   // Followers: jelly users whose public list has our uid in followingIds
   const followers = useMemo(() => {
     if (!user) return [];
-    return communityLists.filter(
-      (cl) =>
-        cl.id !== user.uid &&
-        cl.ownerUid !== user.uid &&
-        Array.isArray(cl.followingIds) &&
-        cl.followingIds.includes(user.uid)
-    );
-  }, [communityLists, user]);
+    return getFollowersForUser(followGraph, user.uid);
+  }, [followGraph, user]);
+
+  const followedUids = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of friends) {
+      if (f.uid) set.add(f.uid);
+      if (f.shareId) set.add(f.shareId);
+    }
+    return set;
+  }, [friends]);
 
   const newFollowerIds = useMemo(() => {
     const set = new Set<string>();
@@ -1616,11 +1657,7 @@ export const App: React.FC = () => {
     const map = new Map<string, number>();
     for (const item of currentSourceItems) {
       if (selectedCity !== 'ALL' && item.city !== selectedCity) continue;
-      if (
-        selectedMeals.length > 0 &&
-        !selectedMeals.includes(item.meal) &&
-        !(item.meals && item.meals.some((m) => selectedMeals.includes(m)))
-      ) {
+      if (selectedMeals.length > 0 && !selectedMeals.includes(item.meal)) {
         continue;
       }
       for (const c of item.cuisines) {
@@ -1633,11 +1670,7 @@ export const App: React.FC = () => {
   const filteredRestaurants = useMemo(() => {
     const base = activeRestaurants.filter((r) => {
       if (selectedCity !== 'ALL' && r.city !== selectedCity) return false;
-      if (
-        selectedMeals.length > 0 &&
-        !selectedMeals.includes(r.meal) &&
-        !(r.meals && r.meals.some((m) => selectedMeals.includes(m)))
-      ) {
+      if (selectedMeals.length > 0 && !selectedMeals.includes(r.meal)) {
         return false;
       }
       if (selectedCuisine !== 'ALL' && !r.cuisines.includes(selectedCuisine)) return false;
@@ -1674,11 +1707,7 @@ export const App: React.FC = () => {
   const filteredBookmarks = useMemo(() => {
     const base = activeBookmarks.filter((b) => {
       if (selectedCity !== 'ALL' && b.city !== selectedCity) return false;
-      if (
-        selectedMeals.length > 0 &&
-        !selectedMeals.includes(b.meal) &&
-        !(b.meals && b.meals.some((m) => selectedMeals.includes(m)))
-      ) {
+      if (selectedMeals.length > 0 && !selectedMeals.includes(b.meal)) {
         return false;
       }
       if (selectedCuisine !== 'ALL' && !b.cuisines.includes(selectedCuisine)) return false;
@@ -1726,12 +1755,20 @@ export const App: React.FC = () => {
         darkMode,
         handle: userHandle,
         linearRatingScale,
+        useCurrentLocation,
       })
     );
     if (user) {
       setDoc(
         doc(db, 'users', user.uid),
-        { defaultCity: defaultCity.trim(), darkMode, handle: userHandle, updatedAt: Date.now() },
+        {
+          defaultCity: defaultCity.trim(),
+          darkMode,
+          handle: userHandle,
+          linearRatingScale,
+          useCurrentLocation,
+          updatedAt: Date.now(),
+        },
         { merge: true }
       ).catch(() => {});
     }
@@ -1758,7 +1795,7 @@ export const App: React.FC = () => {
       {sharedList && (
         <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-semibold">
           <div className="max-w-xl mx-auto w-full flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
               <span className="truncate">
                 Viewing {sharedList.ownerName}&rsquo;s List ({sharedList.restaurants.length} ranked)
               </span>
@@ -1767,6 +1804,55 @@ export const App: React.FC = () => {
                   @{sharedList.handle}
                 </span>
               )}
+              <div className="flex items-center gap-1.5 text-emerald-100/90 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const list = getFollowersForUser(
+                      followGraph,
+                      sharedList.ownerUid || sharedList.id
+                    );
+                    setFollowListDialog({
+                      isOpen: true,
+                      title: `${sharedList.ownerName}'s Followers`,
+                      users: list,
+                    });
+                  }}
+                  className="hover:underline font-medium"
+                >
+                  {
+                    getFollowersForUser(
+                      followGraph,
+                      sharedList.ownerUid || sharedList.id
+                    ).length
+                  }{' '}
+                  followers
+                </button>
+                <span>·</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const list = getFollowingForUser(
+                      followGraph,
+                      sharedList.ownerUid || sharedList.id
+                    );
+                    setFollowListDialog({
+                      isOpen: true,
+                      title: `${sharedList.ownerName} is Following`,
+                      users: list,
+                    });
+                  }}
+                  className="hover:underline font-medium"
+                >
+                  {
+                    getFollowingForUser(
+                      followGraph,
+                      sharedList.ownerUid || sharedList.id
+                    ).length
+                  }{' '}
+                  following
+                </button>
+              </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {sharedList.ownerUid !== user?.uid && (
@@ -1936,7 +2022,7 @@ export const App: React.FC = () => {
               (user ? (
                 <button
                   type="button"
-                  onClick={handleSignOut}
+                  onClick={requestSignOut}
                   className="p-1 rounded-full hover:opacity-80 transition-opacity"
                   title={`Signed in as ${user.email} · Click to sign out`}
                 >
@@ -2448,7 +2534,7 @@ export const App: React.FC = () => {
         reRankingEntry={reRankingEntry}
         defaultCity={defaultCity}
         linearRatingScale={linearRatingScale}
-        userLocation={userLocation}
+        userLocation={useCurrentLocation ? userLocation : null}
         onCompleteQuestions={handleCompleteQuestions}
         onAddBookmark={(candidate) => handleAddBookmark(candidate)}
       />
@@ -2514,6 +2600,10 @@ export const App: React.FC = () => {
         friendListsMap={friendListsMap}
         followers={followers}
         newFollowerIds={newFollowerIds}
+        followGraph={followGraph}
+        onOpenFollowList={(title, users) =>
+          setFollowListDialog({ isOpen: true, title, users })
+        }
         onSearchDirectory={handleSearchPublicLists}
         onFollowFriend={handleFollowFriend}
         onFollowByShareId={handleFollowByShareId}
@@ -2570,6 +2660,7 @@ export const App: React.FC = () => {
             : ''
         }
         isSignedIn={Boolean(user)}
+        darkMode={darkMode}
         onPublishShareLink={() => handlePublishShareLink()}
       />
 
@@ -2579,6 +2670,7 @@ export const App: React.FC = () => {
         title={confirmDialog?.title || 'Confirm'}
         message={confirmDialog?.message || ''}
         confirmLabel={confirmDialog?.confirmLabel || 'Remove'}
+        iconVariant={confirmDialog?.iconVariant}
         onConfirm={() => {
           if (confirmDialog) {
             confirmDialog.onConfirm();
@@ -2586,6 +2678,22 @@ export const App: React.FC = () => {
           setConfirmDialog(null);
         }}
         onCancel={() => setConfirmDialog(null)}
+      />
+
+      {/* Modal to view followers and following for anyone */}
+      <FollowListModal
+        isOpen={followListDialog.isOpen}
+        onClose={() => setFollowListDialog((prev) => ({ ...prev, isOpen: false }))}
+        title={followListDialog.title}
+        users={followListDialog.users}
+        myUid={user?.uid}
+        followedUids={followedUids}
+        onFollowUser={handleFollowFriend}
+        onUnfollowUser={handleUnfollowFriend}
+        onSelectUser={(selectedUser) => {
+          setSharedList(selectedUser);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
 
       {/* Minimal Settings Modal */}
@@ -2609,17 +2717,78 @@ export const App: React.FC = () => {
             </div>
 
             <form onSubmit={saveSettings} className="p-5 space-y-4">
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
-                  Default Search City
-                </label>
-                <input
-                  type="text"
-                  value={defaultCity}
-                  onChange={(e) => setDefaultCity(e.target.value)}
-                  placeholder="e.g. San Francisco, New York"
-                  className="w-full text-xs px-3 py-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block">
+                      Default to Current Location
+                    </label>
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
+                      Bias searches to your current device location
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!useCurrentLocation) {
+                        if (typeof navigator === 'undefined' || !navigator.geolocation) {
+                          showToast('Location is not supported by your browser');
+                          return;
+                        }
+                        navigator.geolocation.getCurrentPosition(
+                          (pos) => {
+                            const coords: UserCoordinates = {
+                              lat: pos.coords.latitude,
+                              lng: pos.coords.longitude,
+                            };
+                            setUserLocation(coords);
+                            setUseCurrentLocation(true);
+                            try {
+                              sessionStorage.setItem(SESSION_COORDS_KEY, JSON.stringify(coords));
+                            } catch {
+                              // Ignore
+                            }
+                          },
+                          () => {
+                            showToast('Enable location permissions in your browser to use current location');
+                          }
+                        );
+                      } else {
+                        setUseCurrentLocation(false);
+                      }
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      useCurrentLocation ? 'bg-emerald-600' : 'bg-zinc-200 dark:bg-zinc-700'
+                    }`}
+                    role="switch"
+                    aria-checked={useCurrentLocation}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                        useCurrentLocation ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
+                    {useCurrentLocation ? 'Fallback Search City' : 'Default Search City'}
+                  </label>
+                  <input
+                    type="text"
+                    value={defaultCity}
+                    onChange={(e) => setDefaultCity(e.target.value)}
+                    placeholder="e.g. San Francisco, New York"
+                    className="w-full text-xs px-3 py-2.5 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                  />
+                  {useCurrentLocation && (
+                    <p className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">
+                      Used when current location is unavailable
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
@@ -2647,13 +2816,13 @@ export const App: React.FC = () => {
                         : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                     }`}
                   >
-                    Linear (1–10)
+                    Linear
                   </button>
                 </div>
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug">
                   {linearRatingScale
-                    ? 'Proportional 1–10 spacing across the bar.'
-                    : 'Equal width for Skip, Mid (5.0 centered), Good, Great, and Incredible so 5+ gets more room.'}
+                    ? 'Uniform spacing across the entire spectrum.'
+                    : 'Equal width for each vibe tier, giving top spots more room to breathe.'}
                 </p>
               </div>
 
@@ -2673,10 +2842,7 @@ export const App: React.FC = () => {
                   <span className="truncate">{user.email}</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      handleSignOut();
-                      setIsSettingsOpen(false);
-                    }}
+                    onClick={requestSignOut}
                     className="text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1 shrink-0"
                   >
                     <LogOut className="w-3.5 h-3.5" />

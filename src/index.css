@@ -28,3 +28,51 @@
   background: #09090b;
 }
 
+/* Modal & Bottom-Sheet animations */
+@keyframes jelly-modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes jelly-sheet-slide-up {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes jelly-dialog-pop {
+  from {
+    transform: scale(0.96) translate3d(0, 8px, 0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+.animate-jelly-backdrop {
+  animation: jelly-modal-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-jelly-sheet {
+  animation: jelly-sheet-slide-up 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (min-width: 640px) {
+  .animate-jelly-sheet {
+    animation: jelly-dialog-pop 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+.animate-jelly-dialog {
+  animation: jelly-dialog-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

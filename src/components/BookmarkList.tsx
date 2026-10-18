@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bookmark, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, MealCategory, RestaurantEntry, SharedListPayload } from '../types';
 import { getSpotSocialMetrics } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
+import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
 
 interface SwipeableBookmarkRowProps {
@@ -21,6 +22,7 @@ interface SwipeableBookmarkRowProps {
   onSaveFromFriendBookmark?: (bookmark: BookmarkEntry) => void;
   isAlreadySavedByMe?: boolean;
   friendName?: string;
+  onContextMenu?: (e: React.MouseEvent, item: BookmarkEntry) => void;
 }
 
 const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
@@ -39,6 +41,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   onSaveFromFriendBookmark,
   isAlreadySavedByMe = false,
   friendName,
+  onContextMenu,
 }) => {
   const [swipeX, setSwipeX] = useState(0);
   const [isTouchTracking, setIsTouchTracking] = useState(false);
@@ -231,9 +234,11 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
             onSetOpenSwipeId(null);
           }
         }}
+        onContextMenu={(e) => onContextMenu?.(e, item)}
         style={{
           transform: swipeX !== 0 ? `translate3d(${swipeX}px, 0, 0)` : undefined,
           transition: isTouchTracking ? 'none' : 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+          WebkitTouchCallout: 'none',
         }}
         className="relative flex items-center gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors"
       >
@@ -377,6 +382,87 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   friendName,
 }) => {
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    x: number;
+    y: number;
+    bookmark: BookmarkEntry | null;
+  }>({ isOpen: false, x: 0, y: 0, bookmark: null });
+
+  const handleContextMenu = (e: React.MouseEvent, item: BookmarkEntry) => {
+    if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) {
+      return;
+    }
+    e.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      bookmark: item,
+    });
+  };
+
+  const contextMenuItems: ContextMenuItem[] = contextMenu.bookmark
+    ? [
+        ...(!readOnly
+          ? [
+              {
+                label: 'I Went, Rank It!',
+                icon: <Sparkles className="w-4 h-4 text-emerald-500" />,
+                onClick: () => onRankBookmark(contextMenu.bookmark!),
+              },
+            ]
+          : []),
+        {
+          label: 'Open in Google Maps',
+          icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
+          onClick: () => {
+            const b = contextMenu.bookmark!;
+            const url =
+              b.googleMapsUri ||
+              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `${b.name} ${b.formattedAddress || b.city || ''}`
+              )}`;
+            window.open(url, '_blank');
+          },
+        },
+        ...(contextMenu.bookmark.formattedAddress
+          ? [
+              {
+                label: 'Copy Address',
+                icon: <Copy className="w-4 h-4 text-zinc-400" />,
+                onClick: () => {
+                  navigator.clipboard.writeText(contextMenu.bookmark!.formattedAddress || '');
+                },
+              },
+            ]
+          : []),
+        ...(readOnly && onSaveFromFriendBookmark
+          ? [
+              {
+                label:
+                  (contextMenu.bookmark.placeId &&
+                    myBookmarkedPlaceIds?.has(contextMenu.bookmark.placeId)) ||
+                  myBookmarkedNames?.has(contextMenu.bookmark.name.trim().toLowerCase())
+                    ? 'Remove from Want to Try'
+                    : 'Save to Want to Try',
+                icon: <Bookmark className="w-4 h-4 text-rose-500" />,
+                onClick: () => onSaveFromFriendBookmark(contextMenu.bookmark!),
+              },
+            ]
+          : []),
+        ...(!readOnly
+          ? [
+              {
+                label: 'Remove from Want to Try',
+                icon: <Trash2 className="w-4 h-4 text-rose-500" />,
+                danger: true,
+                onClick: () => onDeleteBookmark(contextMenu.bookmark!.id),
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   if (totalUnfilteredCount === 0) {
     return (
@@ -422,33 +508,44 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   }
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
-      {bookmarks.map((item) => {
-        const isAlreadySavedByMe = Boolean(
-          (item.placeId && myBookmarkedPlaceIds?.has(item.placeId)) ||
-            myBookmarkedNames?.has(item.name.trim().toLowerCase())
-        );
-        return (
-          <SwipeableBookmarkRow
-            key={item.id}
-            item={item}
-            selectedMealsFilter={selectedMealsFilter}
-            userLocation={userLocation}
-            readOnly={readOnly}
-            myUid={myUid}
-            myRestaurants={myRestaurants}
-            friendLists={friendLists}
-            communityLists={communityLists}
-            openSwipeId={openSwipeId}
-            onSetOpenSwipeId={setOpenSwipeId}
-            onRankBookmark={onRankBookmark}
-            onDeleteBookmark={onDeleteBookmark}
-            onSaveFromFriendBookmark={onSaveFromFriendBookmark}
-            isAlreadySavedByMe={isAlreadySavedByMe}
-            friendName={friendName}
-          />
-        );
-      })}
-    </div>
+    <>
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
+        {bookmarks.map((item) => {
+          const isAlreadySavedByMe = Boolean(
+            (item.placeId && myBookmarkedPlaceIds?.has(item.placeId)) ||
+              myBookmarkedNames?.has(item.name.trim().toLowerCase())
+          );
+          return (
+            <SwipeableBookmarkRow
+              key={item.id}
+              item={item}
+              selectedMealsFilter={selectedMealsFilter}
+              userLocation={userLocation}
+              readOnly={readOnly}
+              myUid={myUid}
+              myRestaurants={myRestaurants}
+              friendLists={friendLists}
+              communityLists={communityLists}
+              openSwipeId={openSwipeId}
+              onSetOpenSwipeId={setOpenSwipeId}
+              onRankBookmark={onRankBookmark}
+              onDeleteBookmark={onDeleteBookmark}
+              onSaveFromFriendBookmark={onSaveFromFriendBookmark}
+              isAlreadySavedByMe={isAlreadySavedByMe}
+              friendName={friendName}
+              onContextMenu={handleContextMenu}
+            />
+          );
+        })}
+      </div>
+
+      <ContextMenu
+        isOpen={contextMenu.isOpen}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        items={contextMenuItems}
+        onClose={() => setContextMenu((prev) => ({ ...prev, isOpen: false }))}
+      />
+    </>
   );
 };

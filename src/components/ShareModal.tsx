@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Check, Copy, Download, Link2, Loader2, Share2, X } from 'lucide-react';
 import { BookmarkEntry, MealCategory, RestaurantEntry } from '../types';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -14,6 +15,7 @@ interface ShareModalProps {
   selectedCuisine: string | 'ALL';
   ownerName: string;
   isSignedIn: boolean;
+  darkMode?: boolean;
   onPublishShareLink: () => Promise<string | null>;
 }
 
@@ -22,6 +24,16 @@ function getScoreBadgeHex(score: number): string {
   if (score >= 7.8) return '#0d9488';
   if (score >= 6.5) return '#d97706';
   return '#e11d48';
+}
+
+function loadLogoImage(): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = '/jelly-logo.png';
+  });
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -33,12 +45,21 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   selectedCuisine,
   ownerName,
   isSignedIn,
+  darkMode,
   onPublishShareLink,
 }) => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+
+  const {
+    sheetStyle,
+    backdropStyle,
+    scrollContainerRef,
+    bindSheetTouch,
+    bindHandleTouch,
+  } = useSwipeDownDismiss({ onClose });
 
   if (!isOpen) return null;
 
@@ -123,7 +144,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     setTimeout(() => setCopiedText(false), 2500);
   };
 
-  const renderCardCanvas = (): HTMLCanvasElement | null => {
+  const renderCardCanvas = async (): Promise<HTMLCanvasElement | null> => {
     const scale = 2;
     const width = 440;
     const rowHeight = 46;
@@ -139,31 +160,67 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
     ctx.scale(scale, scale);
 
-    // Dark sleek background
-    ctx.fillStyle = '#09090b';
+    const isDark =
+      darkMode ??
+      (typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
+
+    const colors = isDark
+      ? {
+          bg: '#09090b',
+          border: '#27272a',
+          headerTitle: '#f4f4f5',
+          headerSub: '#a1a1aa',
+          divider: '#18181b',
+          rank: '#71717a',
+          name: '#f4f4f5',
+          sub: '#71717a',
+          footer: '#52525b',
+        }
+      : {
+          bg: '#ffffff',
+          border: '#e4e4e7',
+          headerTitle: '#18181b',
+          headerSub: '#71717a',
+          divider: '#f4f4f5',
+          rank: '#a1a1aa',
+          name: '#18181b',
+          sub: '#71717a',
+          footer: '#71717a',
+        };
+
+    // Background
+    ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, width, height);
 
-    // Subtle border
-    ctx.strokeStyle = '#27272a';
+    // Border
+    ctx.strokeStyle = colors.border;
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
 
-    // Header
-    ctx.fillStyle = '#10b981';
-    ctx.beginPath();
-    ctx.arc(34, 38, 7, 0, Math.PI * 2);
-    ctx.fill();
+    // Header Logo & Title
+    const logoImg = await loadLogoImage();
+    if (logoImg) {
+      ctx.drawImage(logoImg, 26, 26, 24, 24);
+      ctx.fillStyle = colors.headerTitle;
+      ctx.font = '800 20px Inter, system-ui, sans-serif';
+      ctx.fillText('jelly', 58, 44);
+    } else {
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(34, 38, 7, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.fillStyle = '#f43f5e';
-    ctx.beginPath();
-    ctx.arc(46, 42, 7, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.fillStyle = '#f43f5e';
+      ctx.beginPath();
+      ctx.arc(46, 42, 7, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.fillStyle = '#f4f4f5';
-    ctx.font = '800 20px Inter, system-ui, sans-serif';
-    ctx.fillText('jelly', 62, 45);
+      ctx.fillStyle = colors.headerTitle;
+      ctx.font = '800 20px Inter, system-ui, sans-serif';
+      ctx.fillText('jelly', 62, 45);
+    }
 
-    ctx.fillStyle = '#a1a1aa';
+    ctx.fillStyle = colors.headerSub;
     ctx.font = '600 12px Inter, system-ui, sans-serif';
     ctx.fillText(
       `${ownerName ? `${ownerName} · ` : ''}${cardTitle}`,
@@ -172,7 +229,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     );
 
     // Divider
-    ctx.strokeStyle = '#18181b';
+    ctx.strokeStyle = colors.divider;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(24, 88);
@@ -184,12 +241,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       const y = headerHeight + idx * rowHeight;
 
       // Rank
-      ctx.fillStyle = '#71717a';
+      ctx.fillStyle = colors.rank;
       ctx.font = '700 13px Inter, system-ui, sans-serif';
       ctx.fillText(`${idx + 1}`, 26, y + 24);
 
       // Name
-      ctx.fillStyle = '#f4f4f5';
+      ctx.fillStyle = colors.name;
       ctx.font = '700 14px Inter, system-ui, sans-serif';
       const maxNameWidth = 270;
       let displayName = spot.name;
@@ -206,7 +263,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       ]
         .filter(Boolean)
         .join(' · ');
-      ctx.fillStyle = '#71717a';
+      ctx.fillStyle = colors.sub;
       ctx.font = '500 11px Inter, system-ui, sans-serif';
       ctx.fillText(sub, 54, y + 35);
 
@@ -226,15 +283,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     });
 
     // Footer
-    ctx.fillStyle = '#52525b';
+    ctx.fillStyle = colors.footer;
     ctx.font = '600 11px Inter, system-ui, sans-serif';
     ctx.fillText('eatwithjelly.com', 26, height - 20);
 
     return canvas;
   };
 
-  const handleDownloadCardPng = () => {
-    const canvas = renderCardCanvas();
+  const handleDownloadCardPng = async () => {
+    const canvas = await renderCardCanvas();
     if (!canvas) return;
     const dataUrl = canvas.toDataURL('image/png');
     const a = document.createElement('a');
@@ -244,12 +301,24 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   const handleNativeShareListOrCard = async () => {
-    const title = `${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`;
-    const text = buildTextSummary();
-
-    if (canNativeShare) {
+    setIsPublishing(true);
+    let effectiveUrl = shareUrl;
+    if (!effectiveUrl && isSignedIn) {
       try {
-        const canvas = renderCardCanvas();
+        effectiveUrl = await onPublishShareLink();
+        if (effectiveUrl) setShareUrl(effectiveUrl);
+      } catch {
+        // Fall back to origin
+      }
+    }
+    const finalUrl =
+      effectiveUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://eatwithjelly.com');
+    const title = `${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`;
+    const blurb = `🍬 Check out ${ownerName ? `${ownerName}'s ` : 'my '}${cardTitle.toLowerCase()} on jelly! ${finalUrl}`;
+
+    try {
+      if (canNativeShare) {
+        const canvas = await renderCardCanvas();
         if (canvas && typeof navigator.canShare === 'function') {
           const blob = await new Promise<Blob | null>((resolve) =>
             canvas.toBlob((b) => resolve(b), 'image/png')
@@ -261,7 +330,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               await navigator.share({
                 files: [file],
                 title,
-                text,
+                text: blurb,
               });
               return;
             }
@@ -269,13 +338,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         }
         await navigator.share({
           title,
-          text,
-          url: shareUrl || 'https://eatwithjelly.com',
+          text: blurb,
+          url: finalUrl,
         });
         return;
-      } catch (err: any) {
-        if (err?.name === 'AbortError') return;
       }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+    } finally {
+      setIsPublishing(false);
     }
 
     await handleCopyTextSummary();
@@ -283,14 +354,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+      style={backdropStyle}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[90vh]"
+        {...bindSheetTouch}
+        style={sheetStyle}
+        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[90vh] animate-jelly-sheet touch-manipulation"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+        {/* Mobile Swipe-Down Handle Pill */}
+        <div
+          {...bindHandleTouch}
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        </div>
+
+        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <Share2 className="w-4 h-4 text-emerald-500" />
             <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
@@ -306,7 +388,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-4 overflow-y-auto">
+        <div ref={scrollContainerRef} className="p-5 space-y-4 overflow-y-auto">
           {/* Live Read-Only Share Link Section */}
           <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
@@ -371,38 +453,38 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             )}
           </div>
 
-          {/* Preview of Top 10 Snapshot Card */}
-          <div className="rounded-2xl bg-zinc-950 text-zinc-100 p-4 border border-zinc-800 space-y-3 shadow-inner">
-            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+          {/* Preview of Top 10 Snapshot Card (matches light / dark theme) */}
+          <div className="rounded-2xl bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4 border border-zinc-200/90 dark:border-zinc-800 space-y-3 shadow-inner">
+            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5">
               <div className="flex items-center gap-2">
                 <JellyBeanIcon size={20} />
                 <div>
-                  <div className="font-display font-extrabold text-sm leading-none text-white">
+                  <div className="font-display font-extrabold text-sm leading-none text-zinc-900 dark:text-white">
                     jelly
                   </div>
-                  <div className="text-[11px] text-zinc-400 mt-0.5">
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
                     {ownerName ? `${ownerName} · ` : ''}
                     {cardTitle}
                   </div>
                 </div>
               </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                 eatwithjelly.com
               </span>
             </div>
 
-            <div className="divide-y divide-zinc-900">
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
               {topSpots.map((spot, idx) => (
                 <div key={spot.id} className="py-2 flex items-center justify-between gap-2.5">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-4 text-xs font-bold text-zinc-500 tabular-nums shrink-0">
+                    <span className="w-4 text-xs font-bold text-zinc-400 dark:text-zinc-500 tabular-nums shrink-0">
                       {idx + 1}
                     </span>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-zinc-100 truncate">
+                      <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
                         {spot.name}
                       </div>
-                      <div className="text-[10px] text-zinc-500 truncate">
+                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
                         {[
                           spot.meal,
                           spot.cuisines[0] || spot.primaryTypeDisplay,

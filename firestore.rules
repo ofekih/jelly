@@ -19,6 +19,7 @@ rules_version = '2';
 //   - defaultCity: string (optional, <= 200 chars) - default search city preference
 //   - darkMode: bool (optional) - dark mode theme preference
 //   - linearRatingScale: bool (optional) - linear rating scale preference
+//   - useCurrentLocation: bool (optional) - whether to default searches to current device location
 //   - handle: string (optional, <= 60 chars) - user handle for friend discovery
 //   - followingIds: list<string> (optional, <= 200 items) - followed friend UIDs/shareIds
 //   - seenFollowerIds: list<string> (optional, <= 500 items) - seen follower UIDs/shareIds for notifications
@@ -165,6 +166,7 @@ service cloud.firestore {
         (!('friends' in data) || data.friends == null || isValidList(data.friends, 200)) &&
         (!('darkMode' in data) || data.darkMode == null || data.darkMode is bool) &&
         (!('linearRatingScale' in data) || data.linearRatingScale == null || data.linearRatingScale is bool) &&
+        (!('useCurrentLocation' in data) || data.useCurrentLocation == null || data.useCurrentLocation is bool) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp);
     }

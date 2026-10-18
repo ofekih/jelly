@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { FriendProfile, RestaurantEntry, SharedListPayload } from '../types';
 import { computeUserTasteSimilarity, sanitizeHandle } from '../lib/friendsService';
+import { FollowGraph, getFollowersForUser, getFollowingForUser } from '../lib/followGraph';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 
 interface FriendsModalProps {
   isOpen: boolean;
@@ -28,6 +30,8 @@ interface FriendsModalProps {
   friendListsMap: Record<string, SharedListPayload>;
   followers?: SharedListPayload[];
   newFollowerIds?: Set<string>;
+  followGraph?: FollowGraph;
+  onOpenFollowList?: (title: string, users: SharedListPayload[]) => void;
   onSearchDirectory: (query: string) => Promise<SharedListPayload[]>;
   onFollowFriend: (listPayload: SharedListPayload) => Promise<void>;
   onFollowByShareId: (shareId: string) => Promise<boolean>;
@@ -49,6 +53,8 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   friendListsMap,
   followers = [],
   newFollowerIds = new Set(),
+  followGraph,
+  onOpenFollowList,
   onSearchDirectory,
   onFollowFriend,
   onFollowByShareId,
@@ -63,6 +69,14 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const [handleDraft, setHandleDraft] = useState(userHandle);
   const [isSavingHandle, setIsSavingHandle] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  const {
+    sheetStyle,
+    backdropStyle,
+    scrollContainerRef,
+    bindSheetTouch,
+    bindHandleTouch,
+  } = useSwipeDownDismiss({ onClose });
 
   const canNativeShare =
     typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -171,15 +185,26 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+      style={backdropStyle}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh]"
+        {...bindSheetTouch}
+        style={sheetStyle}
+        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[88vh] animate-jelly-sheet touch-manipulation"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Swipe-Down Handle Pill */}
+        <div
+          {...bindHandleTouch}
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0"
+        >
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        </div>
+
         {/* Header */}
-        <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Friends on jelly</h2>
@@ -194,7 +219,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-5 overflow-y-auto flex-1">
+        <div ref={scrollContainerRef} className="p-5 space-y-5 overflow-y-auto flex-1">
           {/* Your Handle & Shareable Friend Link */}
           {isSignedIn ? (
             <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-800 space-y-3">
@@ -206,6 +231,37 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                   <div className="text-xs text-zinc-500 dark:text-zinc-400">
                     Friends can search you by @{userHandle || 'handle'} or use your link
                   </div>
+                  {followGraph && userUid && (
+                    <div className="flex items-center gap-2.5 text-xs text-zinc-500 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const list = getFollowersForUser(followGraph, userUid);
+                          onOpenFollowList?.('Your Followers', list);
+                        }}
+                        className="hover:underline hover:text-emerald-600 dark:hover:text-emerald-400 font-medium"
+                      >
+                        <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                          {getFollowersForUser(followGraph, userUid).length}
+                        </span>{' '}
+                        followers
+                      </button>
+                      <span>·</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const list = getFollowingForUser(followGraph, userUid);
+                          onOpenFollowList?.('You Are Following', list);
+                        }}
+                        className="hover:underline hover:text-emerald-600 dark:hover:text-emerald-400 font-medium"
+                      >
+                        <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                          {getFollowingForUser(followGraph, userUid).length}
+                        </span>{' '}
+                        following
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -498,8 +554,38 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                            {rankedCount} ranked · {bookmarkCount} want to try
+                          <div className="text-[11px] text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
+                            <span>{rankedCount} ranked</span>
+                            <span>·</span>
+                            {followGraph ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const list = getFollowersForUser(followGraph, friend.uid);
+                                    onOpenFollowList?.(`${friend.name}'s Followers`, list);
+                                  }}
+                                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                                >
+                                  {getFollowersForUser(followGraph, friend.uid).length} followers
+                                </button>
+                                <span>·</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const list = getFollowingForUser(followGraph, friend.uid);
+                                    onOpenFollowList?.(`${friend.name} is Following`, list);
+                                  }}
+                                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                                >
+                                  {getFollowingForUser(followGraph, friend.uid).length} following
+                                </button>
+                              </>
+                            ) : (
+                              <span>{bookmarkCount} want to try</span>
+                            )}
                           </div>
                         </div>
                       </button>

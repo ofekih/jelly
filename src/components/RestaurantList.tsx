@@ -16,10 +16,11 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Bookmark, ExternalLink, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { MealCategory, RestaurantEntry, SharedListPayload } from '../types';
 import { getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
+import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -42,6 +43,7 @@ interface SortableRestaurantRowProps {
   onSelectSpot: (restaurant: RestaurantEntry) => void;
   onReRankSpot?: (restaurant: RestaurantEntry) => void;
   onDeleteSpot?: (id: string) => void;
+  onContextMenu?: (e: React.MouseEvent, restaurant: RestaurantEntry) => void;
 }
 
 const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
@@ -63,6 +65,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   onSelectSpot,
   onReRankSpot,
   onDeleteSpot,
+  onContextMenu,
 }) => {
   const isDragDisabled = isFiltered || sortByNearest || readOnly;
   const {
@@ -157,8 +160,8 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
         })
       : null;
 
-  const alreadyRankedByMe =
-    readOnly && myRestaurants.some((r) => isSameSpot(r, restaurant));
+  const myRankedMatch = readOnly ? myRestaurants.find((r) => isSameSpot(r, restaurant)) : null;
+  const alreadyRankedByMe = Boolean(myRankedMatch);
 
   const mapsHref =
     restaurant.googleMapsUri ||
@@ -336,6 +339,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
           }
           onSelectSpot(restaurant);
         }}
+        onContextMenu={(e) => onContextMenu?.(e, restaurant)}
         style={{
           transform: swipeX !== 0 && !isDragging ? `translate3d(${swipeX}px, 0, 0)` : undefined,
           transition: isTouchTracking ? 'none' : 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
@@ -382,11 +386,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
               <span className="truncate">{subtitleParts.join(' · ')}</span>
               {rankedFriends.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0">
-                  {rankedFriends.length <= 2
-                    ? rankedFriends
-                        .map((rf) => `${rf.friendName} ${rf.magicScore?.toFixed(1)}`)
-                        .join(' · ')
-                    : `Friends ${socialMetrics?.friendsAvg?.toFixed(1)} (${rankedFriends.length})`}
+                  Friends {socialMetrics?.friendsAvg?.toFixed(1) || rankedFriends[0].magicScore?.toFixed(1)}
                 </span>
               )}
               {socialMetrics &&
@@ -399,6 +399,14 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
                     jelly {socialMetrics.communityAvg.toFixed(1)}
                   </span>
                 )}
+              {myRankedMatch && (
+                <span
+                  className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0"
+                  title="Your score for this spot"
+                >
+                  You {myRankedMatch.magicScore.toFixed(1)}
+                </span>
+              )}
               {readOnly &&
                 !alreadyRankedByMe &&
                 socialMetrics &&
@@ -428,8 +436,8 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
                   ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
                   : 'text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
               }`}
-              title={isBookmarkedInMyList ? 'Saved in your Want to Try' : 'Save to Want to Try'}
-              aria-label="Save to Want to Try"
+              title={isBookmarkedInMyList ? 'Remove from Want to Try' : 'Save to Want to Try'}
+              aria-label={isBookmarkedInMyList ? 'Remove from Want to Try' : 'Save to Want to Try'}
             >
               <Bookmark className={`w-4 h-4 ${isBookmarkedInMyList ? 'fill-rose-500' : ''}`} />
             </button>
@@ -484,6 +492,91 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   onOpenAddModal,
 }) => {
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean;
+    x: number;
+    y: number;
+    restaurant: RestaurantEntry | null;
+  }>({ isOpen: false, x: 0, y: 0, restaurant: null });
+
+  const handleContextMenu = (e: React.MouseEvent, r: RestaurantEntry) => {
+    if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) {
+      return;
+    }
+    e.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      x: e.clientX,
+      y: e.clientY,
+      restaurant: r,
+    });
+  };
+
+  const contextMenuItems: ContextMenuItem[] = contextMenu.restaurant
+    ? [
+        {
+          label: 'View Details',
+          icon: <Eye className="w-4 h-4 text-zinc-400" />,
+          onClick: () => onSelectSpot(contextMenu.restaurant!),
+        },
+        ...(!readOnly && onReRankSpot
+          ? [
+              {
+                label: 'Re-rank Spot',
+                icon: <RefreshCw className="w-4 h-4 text-emerald-500" />,
+                onClick: () => onReRankSpot(contextMenu.restaurant!),
+              },
+            ]
+          : []),
+        {
+          label: 'Open in Google Maps',
+          icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
+          onClick: () => {
+            const r = contextMenu.restaurant!;
+            const url =
+              r.googleMapsUri ||
+              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                `${r.name} ${r.formattedAddress || r.city || ''}`
+              )}`;
+            window.open(url, '_blank');
+          },
+        },
+        ...(contextMenu.restaurant.formattedAddress
+          ? [
+              {
+                label: 'Copy Address',
+                icon: <Copy className="w-4 h-4 text-zinc-400" />,
+                onClick: () => {
+                  navigator.clipboard.writeText(contextMenu.restaurant!.formattedAddress || '');
+                },
+              },
+            ]
+          : []),
+        ...(readOnly && onBookmarkFromFriend
+          ? [
+              {
+                label:
+                  contextMenu.restaurant.placeId &&
+                  bookmarkedPlaceIds?.has(contextMenu.restaurant.placeId)
+                    ? 'Remove from Want to Try'
+                    : 'Save to Want to Try',
+                icon: <Bookmark className="w-4 h-4 text-rose-500" />,
+                onClick: () => onBookmarkFromFriend(contextMenu.restaurant!),
+              },
+            ]
+          : []),
+        ...(!readOnly && onDeleteSpot
+          ? [
+              {
+                label: 'Remove from Ranked List',
+                icon: <Trash2 className="w-4 h-4 text-rose-500" />,
+                danger: true,
+                onClick: () => onDeleteSpot(contextMenu.restaurant!.id),
+              },
+            ]
+          : []),
+      ]
+    : [];
 
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -535,45 +628,57 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext
-        items={restaurants.map((r) => r.id)}
-        strategy={verticalListSortingStrategy}
-      >
-        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/90 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
-          {restaurants.map((restaurant, idx) => {
-            const isBookmarked = Boolean(
-              restaurant.placeId && bookmarkedPlaceIds?.has(restaurant.placeId)
-            );
+    <>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext
+          items={restaurants.map((r) => r.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/80 dark:border-zinc-800/90 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-2xs">
+            {restaurants.map((restaurant, idx) => {
+              const isBookmarked = Boolean(
+                restaurant.placeId && bookmarkedPlaceIds?.has(restaurant.placeId)
+              );
 
-            return (
-              <React.Fragment key={restaurant.id}>
-                <SortableRestaurantRow
-                  restaurant={restaurant}
-                  displayPosition={idx + 1}
-                  isFiltered={isFiltered}
-                  sortByNearest={sortByNearest}
-                  readOnly={readOnly}
-                  selectedMealsFilter={selectedMealsFilter}
-                  userLocation={userLocation}
-                  myUid={myUid}
-                  myRestaurants={myRestaurants}
-                  friendLists={friendLists}
-                  communityLists={communityLists}
-                  isBookmarkedInMyList={isBookmarked}
-                  onBookmarkFromFriend={onBookmarkFromFriend}
-                  openSwipeId={openSwipeId}
-                  onSetOpenSwipeId={setOpenSwipeId}
-                  onSelectSpot={onSelectSpot}
-                  onReRankSpot={onReRankSpot}
-                  onDeleteSpot={onDeleteSpot}
-                />
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </SortableContext>
-    </DndContext>
+              return (
+                <React.Fragment key={restaurant.id}>
+                  <SortableRestaurantRow
+                    restaurant={restaurant}
+                    displayPosition={idx + 1}
+                    isFiltered={isFiltered}
+                    sortByNearest={sortByNearest}
+                    readOnly={readOnly}
+                    selectedMealsFilter={selectedMealsFilter}
+                    userLocation={userLocation}
+                    myUid={myUid}
+                    myRestaurants={myRestaurants}
+                    friendLists={friendLists}
+                    communityLists={communityLists}
+                    isBookmarkedInMyList={isBookmarked}
+                    onBookmarkFromFriend={onBookmarkFromFriend}
+                    openSwipeId={openSwipeId}
+                    onSetOpenSwipeId={setOpenSwipeId}
+                    onSelectSpot={onSelectSpot}
+                    onReRankSpot={onReRankSpot}
+                    onDeleteSpot={onDeleteSpot}
+                    onContextMenu={handleContextMenu}
+                  />
+                </React.Fragment>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      <ContextMenu
+        isOpen={contextMenu.isOpen}
+        x={contextMenu.x}
+        y={contextMenu.y}
+        title={contextMenu.restaurant?.name}
+        items={contextMenuItems}
+        onClose={() => setContextMenu((prev) => ({ ...prev, isOpen: false }))}
+      />
+    </>
   );
 };
 

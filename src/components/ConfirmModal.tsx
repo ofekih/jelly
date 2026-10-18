@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trash2, X } from 'lucide-react';
+import { LogOut, Trash2, X } from 'lucide-react';
 
 export interface ConfirmModalProps {
   isOpen: boolean;
@@ -7,6 +7,7 @@ export interface ConfirmModalProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  iconVariant?: 'danger' | 'logout';
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -17,6 +18,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   message,
   confirmLabel = 'Remove',
   cancelLabel = 'Cancel',
+  iconVariant = 'danger',
   onConfirm,
   onCancel,
 }) => {
@@ -24,17 +26,27 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 backdrop-blur-xs p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 backdrop-blur-xs p-4 animate-jelly-backdrop"
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-xs bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden p-5 space-y-4"
+        className="w-full max-w-xs bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden p-5 space-y-4 animate-jelly-dialog"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
-              <Trash2 className="w-4 h-4" />
+            <div
+              className={`w-8 h-8 rounded-2xl flex items-center justify-center shrink-0 ${
+                iconVariant === 'logout'
+                  ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {iconVariant === 'logout' ? (
+                <LogOut className="w-4 h-4" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
             </div>
             <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 leading-snug">
               {title}
