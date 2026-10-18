@@ -18,6 +18,7 @@ import {
   RankedHistoryEvent,
   RestaurantEntry,
 } from '../types';
+import { SpotSocialMetrics } from '../lib/friendsService';
 import { ScoreBadge } from './ScoreBadge';
 
 function formatRankedDate(ts: number): string {
@@ -37,6 +38,7 @@ interface SpotDetailModalProps {
   readOnly?: boolean;
   friendOwnerName?: string;
   friendMatches?: FriendSpotMatch[];
+  socialMetrics?: SpotSocialMetrics | null;
   isBookmarkedInMyList?: boolean;
   onSaveFromFriendToBookmark?: (restaurant: RestaurantEntry) => void;
   onClose: () => void;
@@ -58,6 +60,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   readOnly = false,
   friendOwnerName,
   friendMatches = [],
+  socialMetrics = null,
   isBookmarkedInMyList = false,
   onSaveFromFriendToBookmark,
   onClose,
@@ -212,12 +215,85 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
               </p>
             )}
 
+            {/* Community Averages & Personalized Taste Prediction */}
+            {socialMetrics &&
+              (socialMetrics.friendsAvg !== null ||
+                socialMetrics.communityAvg !== null ||
+                socialMetrics.predictedScore !== null) && (
+                <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-3.5 space-y-2.5 bg-zinc-50/50 dark:bg-zinc-800/30">
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200/60 dark:border-zinc-800 p-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                        Friends Avg
+                      </div>
+                      <div className="text-sm font-extrabold text-zinc-900 dark:text-zinc-100 mt-0.5 tabular-nums">
+                        {socialMetrics.friendsAvg !== null
+                          ? socialMetrics.friendsAvg.toFixed(1)
+                          : '—'}
+                      </div>
+                      <div className="text-[10px] text-zinc-400">
+                        {socialMetrics.friendsCount > 0
+                          ? `${socialMetrics.friendsCount} ${
+                              socialMetrics.friendsCount === 1 ? 'friend' : 'friends'
+                            }`
+                          : 'None yet'}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200/60 dark:border-zinc-800 p-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                        jelly Avg
+                      </div>
+                      <div className="text-sm font-extrabold text-zinc-900 dark:text-zinc-100 mt-0.5 tabular-nums">
+                        {socialMetrics.communityAvg !== null
+                          ? socialMetrics.communityAvg.toFixed(1)
+                          : '—'}
+                      </div>
+                      <div className="text-[10px] text-zinc-400">
+                        {socialMetrics.communityCount > 0
+                          ? `${socialMetrics.communityCount} ${
+                              socialMetrics.communityCount === 1 ? 'user' : 'users'
+                            }`
+                          : 'None yet'}
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 p-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                        For You
+                      </div>
+                      <div className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5 tabular-nums">
+                        {socialMetrics.predictedScore !== null
+                          ? `~${socialMetrics.predictedScore.toFixed(1)}`
+                          : '—'}
+                      </div>
+                      <div className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80">
+                        Predicted
+                      </div>
+                    </div>
+                  </div>
+
+                  {socialMetrics.predictionBasis && socialMetrics.predictedScore !== null && (
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 text-center">
+                      {socialMetrics.predictionBasis}
+                    </div>
+                  )}
+                </div>
+              )}
+
             {/* Friends Who Ranked or Saved This Spot */}
             {friendMatches.length > 0 && (
               <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-3.5 space-y-2.5">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Friends ({friendMatches.length})</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    <Users className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Friends ({friendMatches.length})</span>
+                  </div>
+                  {socialMetrics?.friendsAvg !== null && socialMetrics?.friendsAvg !== undefined && (
+                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                      Avg {socialMetrics.friendsAvg.toFixed(1)}
+                    </span>
+                  )}
                 </div>
                 <div className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
                   {friendMatches.map((fm) => (

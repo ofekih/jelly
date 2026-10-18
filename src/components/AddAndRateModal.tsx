@@ -9,7 +9,7 @@ import {
   SharedListPayload,
 } from '../types';
 import { createManualPlaceCandidate, searchRestaurants } from '../lib/placesService';
-import { getFriendMatchesForSpot } from '../lib/friendsService';
+import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { pctToSpectrumRating, spectrumRatingToPct } from '../lib/rankingEngine';
 import { trackEvent } from '../firebase';
@@ -18,8 +18,10 @@ interface AddAndRateModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingRestaurants: RestaurantEntry[];
+  myUid?: string | null;
   bookmarkedPlaceIds?: Set<string>;
   friendLists?: SharedListPayload[];
+  communityLists?: SharedListPayload[];
   reRankingEntry?: RestaurantEntry | null;
   defaultCity?: string;
   customPlacesApiKey?: string;
@@ -38,8 +40,10 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   isOpen,
   onClose,
   existingRestaurants,
+  myUid = null,
   bookmarkedPlaceIds,
   friendLists = [],
+  communityLists = [],
   reRankingEntry,
   defaultCity = '',
   customPlacesApiKey = '',
@@ -342,6 +346,17 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     const isAlreadyBookmarked = bookmarkedPlaceIds?.has(item.placeId);
                     const friendMatches =
                       friendLists.length > 0 ? getFriendMatchesForSpot(item, friendLists) : [];
+                    const socialMetrics =
+                      existingRestaurants.length > 0 ||
+                      friendLists.length > 0 ||
+                      communityLists.length > 0
+                        ? getSpotSocialMetrics(item, {
+                            myUid,
+                            myRestaurants: existingRestaurants,
+                            friendLists,
+                            communityLists,
+                          })
+                        : null;
 
                     return (
                       <div
@@ -359,12 +374,28 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                           <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
                             {[primaryCuisine, locationShort, distLabel].filter(Boolean).join(' · ')}
                           </div>
-                          {friendMatches.length > 0 && (
+                          {(friendMatches.length > 0 ||
+                            (socialMetrics &&
+                              (socialMetrics.predictedScore !== null ||
+                                socialMetrics.communityAvg !== null))) && (
                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                              {friendMatches.slice(0, 3).map((fm) => (
+                              {socialMetrics && socialMetrics.predictedScore !== null && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold"
+                                  title={socialMetrics.predictionBasis || undefined}
+                                >
+                                  ~{socialMetrics.predictedScore.toFixed(1)} for you
+                                </span>
+                              )}
+                              {socialMetrics && socialMetrics.communityAvg !== null && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-semibold">
+                                  jelly {socialMetrics.communityAvg.toFixed(1)}
+                                </span>
+                              )}
+                              {friendMatches.slice(0, 2).map((fm) => (
                                 <span
                                   key={fm.friendUid}
-                                  className="px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold"
+                                  className="px-1.5 py-0.5 rounded-md bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-semibold"
                                 >
                                   {fm.friendName}{' '}
                                   {fm.status === 'ranked' && fm.magicScore !== undefined

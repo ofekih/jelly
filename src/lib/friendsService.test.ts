@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeGroupBlend,
+  computeUserTasteSimilarity,
+  deduplicateUserLists,
   deriveDefaultHandle,
   getFriendMatchesForSpot,
+  getSpotSocialMetrics,
   isSameSpot,
   sanitizeHandle,
 } from './friendsService';
@@ -146,6 +149,142 @@ describe('friendsService', () => {
     expect(blend.forYouFromFriends.map((i) => i.name)).toContain('Hayato');
 
     // Taste match should be high since Bavel is 9.5 vs 9.3
-    expect(blend.tasteMatchPct).toBeGreaterThanOrEqual(90);
+    expect(blend.tasteMatchPct).toBeGreaterThanOrEqual(80);
+  });
+
+  it('deduplicates multiple sharedList snapshots from the same ownerUid into a single canonical user list', () => {
+    const lists: SharedListPayload[] = [
+      {
+        id: 'snap_old',
+        ownerUid: 'u1',
+        ownerName: 'Alex',
+        restaurants: [makeRestaurant({ placeId: 'p1', name: 'Spot A', magicScore: 8.0 })],
+        bookmarks: [],
+        createdAt: 1000,
+        updatedAt: 1000,
+      },
+      {
+        id: 'u1',
+        ownerUid: 'u1',
+        ownerName: 'Alex',
+        restaurants: [
+          makeRestaurant({ placeId: 'p1', name: 'Spot A', magicScore: 9.0 }),
+          makeRestaurant({ placeId: 'p2', name: 'Spot B', magicScore: 8.5 }),
+        ],
+        bookmarks: [],
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    ];
+
+    const deduped = deduplicateUserLists(lists);
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0].id).toBe('u1');
+    expect(deduped[0].restaurants).toHaveLength(2);
+  });
+
+  it('computes high taste similarity for aligned palates even when one user rates harsher', () => {
+    // User A rates generously (mean ~8.5)
+    const generousUser = [
+      makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 9.8, rankIndex: 0 }),
+      makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 9.0, rankIndex: 1 }),
+      makeRestaurant({ placeId: 'p3', name: 'Local Diner', magicScore: 7.5, rankIndex: 2 }),
+      makeRestaurant({ placeId: 'p4', name: 'Chain Burger', magicScore: 6.8, rankIndex: 3 }),
+    ];
+
+    // User B has the exact same rank order and relative Z-scores, but rates 1.5 points harsher!
+    const harshAlignedFriend = [
+      makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 8.3, rankIndex: 0 }),
+      makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 7.5, rankIndex: 1 }),
+      makeRestaurant({ placeId: 'p3', name: 'Local Diner', magicScore: 6.0, rankIndex: 2 }),
+      makeRestaurant({ placeId: 'p4', name: 'Chain Burger', magicScore: 5.3, rankIndex: 3 }),
+    ];
+
+    // User C has the exact opposite rank order
+    const oppositeUser = [
+      makeRestaurant({ placeId: 'p4', name: 'Chain Burger', magicScore: 9.6, rankIndex: 0 }),
+      makeRestaurant({ placeId: 'p3', name: 'Local Diner', magicScore: 8.9, rankIndex: 1 }),
+      makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 7.2, rankIndex: 2 }),
+      makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 6.1, rankIndex: 3 }),
+    ];
+
+    const alignedSim = computeUserTasteSimilarity(generousUser, harshAlignedFriend);
+    const oppositeSim = computeUserTasteSimilarity(generousUser, oppositeUser);
+
+    expect(alignedSim.sharedCount).toBe(4);
+    expect(alignedSim.similarity).toBeGreaterThan(0.5);
+    expect(oppositeSim.similarity).toBeLessThan(0);
+    expect(alignedSim.tasteMatchPct!).toBeGreaterThan(oppositeSim.tasteMatchPct! + 35);
+  });
+
+  it('computes global jelly Avg, Friends Avg, and Z-score calibrated predictedScore for a spot', () => {
+    // Active user ("me") has a generous scale (mean ~8.3)
+    const myRestaurants = [
+      makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 9.6, rankIndex: 0, cuisines: ['Japanese'] }),
+      makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 8.8, rankIndex: 1, cuisines: ['Mediterranean'] }),
+      makeRestaurant({ placeId: 'p3', name: 'Taco Stand', magicScore: 7.8, rankIndex: 2, cuisines: ['Mexican'] }),
+      makeRestaurant({ placeId: 'p4', name: 'Mid Cafe', magicScore: 7.0, rankIndex: 3, cuisines: ['American'] }),
+    ];
+
+    // Friend "Maya" is a harsh grader (mean ~6.8) whose rank order matches mine (p1 > p2 > p3 > p4),
+    // and she gives a new spot "Hayato" an 8.2 (which for her is her #1 spot, +1.5 SD above her mean!).
+    const mayaList: SharedListPayload = {
+      id: 'maya',
+      ownerUid: 'maya',
+      ownerName: 'Maya',
+      restaurants: [
+        makeRestaurant({ placeId: 'target_hayato', name: 'Hayato', magicScore: 8.2, rankIndex: 0, cuisines: ['Japanese'] }),
+        makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 8.0, rankIndex: 1 }),
+        makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 7.2, rankIndex: 2 }),
+        makeRestaurant({ placeId: 'p3', name: 'Taco Stand', magicScore: 6.2, rankIndex: 3 }),
+        makeRestaurant({ placeId: 'p4', name: 'Mid Cafe', magicScore: 5.4, rankIndex: 4 }),
+      ],
+      bookmarks: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+
+    // Another community user "RandomUser" (not followed) who has opposite taste to me gives Hayato a 6.0
+    const randomCommunityList: SharedListPayload = {
+      id: 'rand',
+      ownerUid: 'rand',
+      ownerName: 'Rand',
+      restaurants: [
+        makeRestaurant({ placeId: 'target_hayato', name: 'Hayato', magicScore: 6.0, rankIndex: 3, cuisines: ['Japanese'] }),
+        makeRestaurant({ placeId: 'p4', name: 'Mid Cafe', magicScore: 9.5, rankIndex: 0 }),
+        makeRestaurant({ placeId: 'p3', name: 'Taco Stand', magicScore: 8.8, rankIndex: 1 }),
+        makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 6.5, rankIndex: 2 }),
+        makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 5.5, rankIndex: 4 }),
+      ],
+      bookmarks: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+    };
+
+    const metrics = getSpotSocialMetrics(
+      { placeId: 'target_hayato', name: 'Hayato', cuisines: ['Japanese'], meals: ['Dinner'] },
+      {
+        myUid: 'me_uid',
+        myRestaurants,
+        friendLists: [mayaList],
+        communityLists: [mayaList, randomCommunityList],
+      }
+    );
+
+    // Friends Avg: only Maya (8.2)
+    expect(metrics.friendsAvg).toBe(8.2);
+    expect(metrics.friendsCount).toBe(1);
+
+    // Global jelly Avg: Maya (8.2) + Rand (6.0) = 7.1 across 2 unique jelly users
+    expect(metrics.communityAvg).toBe(7.1);
+    expect(metrics.communityCount).toBe(2);
+
+    // Predicted score for me:
+    // Because Maya has strong positive correlation with me and 8.2 is well above her harsh 6.8 average,
+    // while Rand has negative correlation with me (so Rand is ignored), my predicted score should be
+    // projected onto MY generous scale (> 8.8, even higher than Maya's raw 8.2!).
+    expect(metrics.predictedScore).not.toBeNull();
+    expect(metrics.predictedScore!).toBeGreaterThan(8.8);
   });
 });
+

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { BookmarkEntry, MealCategory } from '../types';
+import { BookmarkEntry, MealCategory, RestaurantEntry, SharedListPayload } from '../types';
+import { getSpotSocialMetrics } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { JellyBeanIcon } from './JellyBeanIcon';
 
@@ -9,6 +10,10 @@ interface SwipeableBookmarkRowProps {
   selectedMealFilter: MealCategory | 'ALL';
   userLocation: UserCoordinates | null;
   readOnly: boolean;
+  myUid?: string | null;
+  myRestaurants?: RestaurantEntry[];
+  friendLists?: SharedListPayload[];
+  communityLists?: SharedListPayload[];
   openSwipeId: string | null;
   onSetOpenSwipeId: (id: string | null) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
@@ -23,6 +28,10 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   selectedMealFilter,
   userLocation,
   readOnly,
+  myUid = null,
+  myRestaurants = [],
+  friendLists = [],
+  communityLists = [],
   openSwipeId,
   onSetOpenSwipeId,
   onRankBookmark,
@@ -56,6 +65,16 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
     locationLabel,
     distLabel,
   ].filter(Boolean);
+
+  const socialMetrics =
+    myRestaurants.length > 0 || friendLists.length > 0 || communityLists.length > 0
+      ? getSpotSocialMetrics(item, {
+          myUid,
+          myRestaurants,
+          friendLists,
+          communityLists,
+        })
+      : null;
 
   const mapsHref =
     item.googleMapsUri ||
@@ -233,8 +252,28 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
               </span>
             )}
           </div>
-          <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-            {subtitleParts.length > 0 ? subtitleParts.join(' · ') : item.formattedAddress}
+          <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5 flex items-center gap-1.5">
+            <span className="truncate">
+              {subtitleParts.length > 0 ? subtitleParts.join(' · ') : item.formattedAddress}
+            </span>
+            {socialMetrics && socialMetrics.predictedScore !== null && (
+              <span
+                className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0"
+                title={socialMetrics.predictionBasis || 'Predicted score for you'}
+              >
+                ~{socialMetrics.predictedScore.toFixed(1)} for you
+              </span>
+            )}
+            {socialMetrics && socialMetrics.friendsAvg !== null && (
+              <span className="px-1.5 py-0.2 rounded-md bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-semibold shrink-0">
+                Friends {socialMetrics.friendsAvg.toFixed(1)}
+              </span>
+            )}
+            {socialMetrics && socialMetrics.communityAvg !== null && (
+              <span className="px-1.5 py-0.2 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-semibold shrink-0">
+                jelly {socialMetrics.communityAvg.toFixed(1)}
+              </span>
+            )}
           </div>
         </div>
 
@@ -305,6 +344,10 @@ interface BookmarkListProps {
   totalUnfilteredCount: number;
   userLocation?: UserCoordinates | null;
   readOnly?: boolean;
+  myUid?: string | null;
+  myRestaurants?: RestaurantEntry[];
+  friendLists?: SharedListPayload[];
+  communityLists?: SharedListPayload[];
   onRankBookmark: (bookmark: BookmarkEntry) => void;
   onDeleteBookmark: (id: string) => void;
   onOpenAddModal: () => void;
@@ -321,6 +364,10 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   totalUnfilteredCount,
   userLocation = null,
   readOnly = false,
+  myUid = null,
+  myRestaurants = [],
+  friendLists = [],
+  communityLists = [],
   onRankBookmark,
   onDeleteBookmark,
   onOpenAddModal,
@@ -388,6 +435,10 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
             selectedMealFilter={selectedMealFilter}
             userLocation={userLocation}
             readOnly={readOnly}
+            myUid={myUid}
+            myRestaurants={myRestaurants}
+            friendLists={friendLists}
+            communityLists={communityLists}
             openSwipeId={openSwipeId}
             onSetOpenSwipeId={setOpenSwipeId}
             onRankBookmark={onRankBookmark}

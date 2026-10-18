@@ -51,8 +51,10 @@ import {
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { ratingToBaseElo, recomputeMagicScores } from './lib/rankingEngine';
 import {
+  deduplicateUserLists,
   deriveDefaultHandle,
   getFriendMatchesForSpot,
+  getSpotSocialMetrics,
   sanitizeHandle,
 } from './lib/friendsService';
 import { AddAndRateModal } from './components/AddAndRateModal';
@@ -473,6 +475,36 @@ export const App: React.FC = () => {
       cancelled = true;
     };
   }, [friends]);
+
+  // Live subscription to public jelly lists for community average & collaborative taste predictions
+  const [communityLists, setCommunityLists] = useState<SharedListPayload[]>([]);
+  useEffect(() => {
+    const colRef = collection(db, 'sharedLists');
+    const unsub = onSnapshot(
+      colRef,
+      (snapshot) => {
+        const docs: SharedListPayload[] = [];
+        snapshot.forEach((docSnap) => {
+          docs.push(parseSharedListDoc(docSnap.id, docSnap.data()));
+        });
+        const deduped = deduplicateUserLists(docs);
+        setCommunityLists(deduped);
+        // Also keep friendListsMap fresh for any followed friends present in sharedLists
+        setFriendListsMap((prev) => {
+          const next = { ...prev };
+          for (const d of deduped) {
+            const uid = d.ownerUid || d.id;
+            if (uid && next[uid]) {
+              next[uid] = d;
+            }
+          }
+          return next;
+        });
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
 
   // Firestore subscription for Ranked Restaurants
   useEffect(() => {
@@ -1387,6 +1419,16 @@ export const App: React.FC = () => {
     return getFriendMatchesForSpot(activeDetailSpot, friendLists);
   }, [activeDetailSpot, friendLists]);
 
+  const activeDetailSocialMetrics = useMemo(() => {
+    if (!activeDetailSpot) return null;
+    return getSpotSocialMetrics(activeDetailSpot, {
+      myUid: user?.uid,
+      myRestaurants: restaurants,
+      friendLists,
+      communityLists,
+    });
+  }, [activeDetailSpot, user, restaurants, friendLists, communityLists]);
+
   const isDetailSpotBookmarkedByMe = useMemo(() => {
     if (!activeDetailSpot) return false;
     return Boolean(
@@ -2134,7 +2176,10 @@ export const App: React.FC = () => {
             readOnly={isReadOnly}
             selectedMealFilter={selectedMeal}
             totalUnfilteredCount={activeRestaurants.length}
-            friendLists={isReadOnly ? undefined : friendLists}
+            myUid={user?.uid}
+            myRestaurants={restaurants}
+            friendLists={friendLists}
+            communityLists={communityLists}
             bookmarkedPlaceIds={myBookmarkedPlaceIds}
             onBookmarkFromFriend={
               sharedList
@@ -2181,6 +2226,10 @@ export const App: React.FC = () => {
             selectedMealFilter={selectedMeal}
             totalUnfilteredCount={activeBookmarks.length}
             readOnly={isReadOnly}
+            myUid={user?.uid}
+            myRestaurants={restaurants}
+            friendLists={friendLists}
+            communityLists={communityLists}
             myBookmarkedPlaceIds={myBookmarkedPlaceIds}
             myBookmarkedNames={myBookmarkedNames}
             friendName={sharedList?.ownerName}
@@ -2215,8 +2264,10 @@ export const App: React.FC = () => {
           setRankingBookmark(null);
         }}
         existingRestaurants={restaurants}
+        myUid={user?.uid}
         bookmarkedPlaceIds={myBookmarkedPlaceIds}
         friendLists={friendLists}
+        communityLists={communityLists}
         reRankingEntry={reRankingEntry}
         defaultCity={defaultCity}
         linearRatingScale={linearRatingScale}
@@ -2244,6 +2295,7 @@ export const App: React.FC = () => {
         friendOwnerName={sharedList?.ownerName}
         isBookmarkedInMyList={isDetailSpotBookmarkedByMe}
         friendMatches={activeDetailFriendMatches}
+        socialMetrics={activeDetailSocialMetrics}
         onSaveFromFriendToBookmark={
           sharedList
             ? (spot: RestaurantEntry) =>
@@ -2274,6 +2326,7 @@ export const App: React.FC = () => {
         isSignedIn={Boolean(user)}
         userUid={user?.uid}
         userHandle={userHandle}
+        myRestaurants={restaurants}
         onUpdateHandle={handleUpdateUserHandle}
         friends={friends}
         friendListsMap={friendListsMap}

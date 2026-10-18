@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Bookmark, ExternalLink, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { MealCategory, RestaurantEntry, SharedListPayload } from '../types';
-import { getFriendMatchesForSpot } from '../lib/friendsService';
+import { getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
@@ -31,7 +31,10 @@ interface SortableRestaurantRowProps {
   readOnly?: boolean;
   selectedMealFilter: MealCategory | 'ALL';
   userLocation?: UserCoordinates | null;
+  myUid?: string | null;
+  myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
+  communityLists?: SharedListPayload[];
   isBookmarkedInMyList?: boolean;
   onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   openSwipeId: string | null;
@@ -49,7 +52,10 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   readOnly = false,
   selectedMealFilter,
   userLocation = null,
+  myUid = null,
+  myRestaurants = [],
   friendLists = [],
+  communityLists = [],
   isBookmarkedInMyList = false,
   onBookmarkFromFriend,
   openSwipeId,
@@ -140,6 +146,19 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
     !readOnly && friendLists.length > 0
       ? getFriendMatchesForSpot(restaurant, friendLists).filter((f) => f.status === 'ranked')
       : [];
+
+  const socialMetrics =
+    friendLists.length > 0 || communityLists.length > 0
+      ? getSpotSocialMetrics(restaurant, {
+          myUid,
+          myRestaurants,
+          friendLists,
+          communityLists,
+        })
+      : null;
+
+  const alreadyRankedByMe =
+    readOnly && myRestaurants.some((r) => isSameSpot(r, restaurant));
 
   const mapsHref =
     restaurant.googleMapsUri ||
@@ -363,12 +382,34 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
               <span className="truncate">{subtitleParts.join(' · ')}</span>
               {rankedFriends.length > 0 && (
                 <span className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0">
-                  {rankedFriends
-                    .slice(0, 2)
-                    .map((rf) => `${rf.friendName} ${rf.magicScore?.toFixed(1)}`)
-                    .join(' · ')}
+                  {rankedFriends.length <= 2
+                    ? rankedFriends
+                        .map((rf) => `${rf.friendName} ${rf.magicScore?.toFixed(1)}`)
+                        .join(' · ')
+                    : `Friends ${socialMetrics?.friendsAvg?.toFixed(1)} (${rankedFriends.length})`}
                 </span>
               )}
+              {socialMetrics &&
+                socialMetrics.communityAvg !== null &&
+                socialMetrics.communityCount >= 2 && (
+                  <span
+                    className="px-1.5 py-0.2 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-semibold shrink-0"
+                    title={`Average across ${socialMetrics.communityCount} jelly users`}
+                  >
+                    jelly {socialMetrics.communityAvg.toFixed(1)}
+                  </span>
+                )}
+              {readOnly &&
+                !alreadyRankedByMe &&
+                socialMetrics &&
+                socialMetrics.predictedScore !== null && (
+                  <span
+                    className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0"
+                    title={socialMetrics.predictionBasis || 'Predicted score for you'}
+                  >
+                    ~{socialMetrics.predictedScore.toFixed(1)} for you
+                  </span>
+                )}
             </div>
           </div>
         </div>
@@ -409,7 +450,10 @@ interface RestaurantListProps {
   selectedMealFilter: MealCategory | 'ALL';
   totalUnfilteredCount: number;
   userLocation?: UserCoordinates | null;
+  myUid?: string | null;
+  myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
+  communityLists?: SharedListPayload[];
   bookmarkedPlaceIds?: Set<string>;
   onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   onReorderDragEnd: (activeId: string, overId: string) => void;
@@ -427,7 +471,10 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   selectedMealFilter,
   totalUnfilteredCount,
   userLocation = null,
+  myUid = null,
+  myRestaurants = [],
   friendLists = [],
+  communityLists = [],
   bookmarkedPlaceIds,
   onBookmarkFromFriend,
   onReorderDragEnd,
@@ -508,7 +555,10 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
                 readOnly={readOnly}
                 selectedMealFilter={selectedMealFilter}
                 userLocation={userLocation}
+                myUid={myUid}
+                myRestaurants={myRestaurants}
                 friendLists={friendLists}
+                communityLists={communityLists}
                 isBookmarkedInMyList={isBookmarked}
                 onBookmarkFromFriend={onBookmarkFromFriend}
                 openSwipeId={openSwipeId}

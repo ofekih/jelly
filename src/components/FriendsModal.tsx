@@ -11,8 +11,8 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { FriendProfile, SharedListPayload } from '../types';
-import { sanitizeHandle } from '../lib/friendsService';
+import { FriendProfile, RestaurantEntry, SharedListPayload } from '../types';
+import { computeUserTasteSimilarity, sanitizeHandle } from '../lib/friendsService';
 
 interface FriendsModalProps {
   isOpen: boolean;
@@ -20,6 +20,7 @@ interface FriendsModalProps {
   isSignedIn: boolean;
   userUid?: string;
   userHandle: string;
+  myRestaurants?: RestaurantEntry[];
   onUpdateHandle: (newHandle: string) => Promise<void>;
   friends: FriendProfile[];
   friendListsMap: Record<string, SharedListPayload>;
@@ -38,6 +39,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   isSignedIn,
   userUid,
   userHandle,
+  myRestaurants = [],
   onUpdateHandle,
   friends,
   friendListsMap,
@@ -353,6 +355,10 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                   const listData = friendListsMap[friend.uid];
                   const rankedCount = listData?.restaurants?.length ?? 0;
                   const bookmarkCount = listData?.bookmarks?.length ?? 0;
+                  const sim =
+                    myRestaurants.length > 0 && listData?.restaurants?.length
+                      ? computeUserTasteSimilarity(myRestaurants, listData.restaurants)
+                      : null;
 
                   return (
                     <div
@@ -371,10 +377,22 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                           {friend.name.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                            {friend.name}
-                            {friend.handle && (
-                              <span className="ml-1 font-normal text-zinc-400">@{friend.handle}</span>
+                          <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                            <span className="truncate">
+                              {friend.name}
+                              {friend.handle && (
+                                <span className="ml-1 font-normal text-zinc-400">@{friend.handle}</span>
+                              )}
+                            </span>
+                            {sim && sim.tasteMatchPct !== null && (
+                              <span
+                                className="px-1.5 py-0.2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold shrink-0"
+                                title={`Based on ${sim.sharedCount} shared ${
+                                  sim.sharedCount === 1 ? 'spot' : 'spots'
+                                }`}
+                              >
+                                {sim.tasteMatchPct}% match
+                              </span>
                             )}
                           </div>
                           <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
