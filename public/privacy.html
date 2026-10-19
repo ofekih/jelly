@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy · jelly</title>
+  <link rel="icon" href="/favicon.png" />
+  <style>
+    :root { color-scheme: light dark; --bg: #fafafa; --fg: #18181b; --muted: #52525b; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #09090b; --fg: #f4f4f5; --muted: #a1a1aa; } }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 40px 16px 64px; }
+    h1 { display: flex; align-items: center; gap: 10px; font-size: 1.6rem; margin: 0 0 4px; }
+    h1 img { width: 36px; height: 36px; }
+    h2 { font-size: 1.1rem; margin: 28px 0 6px; }
+    p, li { color: var(--muted); }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1><img src="/jelly-logo.png" alt="" />jelly privacy</h1>
+    <p>Last updated October 19, 2026</p>
+
+    <h2>What jelly stores</h2>
+    <ul>
+      <li>When you sign in with Google: your name, email address and profile photo, used to identify your account and show your profile to friends.</li>
+      <li>The spots you rank or bookmark, your ratings, notes and settings, stored in Google Firebase.</li>
+      <li>If you don't sign in, your lists stay in your browser's local storage and never leave your device.</li>
+    </ul>
+
+    <h2>What other people can see</h2>
+    <p>Signing in creates a share link for your list. Anyone with that link (including friends who follow you) can see your name, photo, ranked spots and bookmarks. Your ratings may also feed into anonymous community averages shown to other jelly users.</p>
+
+    <h2>Third-party services</h2>
+    <ul>
+      <li>Google Firebase for sign-in, storage and hosting.</li>
+      <li>Google Analytics for anonymous usage statistics.</li>
+      <li>Google Maps and Places to search for spots and show maps.</li>
+    </ul>
+    <p>jelly never sells your data or shows ads.</p>
+
+    <h2>Deleting your data</h2>
+    <p>You can delete any spot from within the app. To delete your whole account and everything in it, email <a href="mailto:ofek.gila@gmail.com">ofek.gila@gmail.com</a>.</p>
+
+    <p><a href="/">← Back to jelly</a></p>
+  </main>
+</body>
+</html>
