@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Minus, Plus, RotateCcw } from 'lucide-react';
-import { ratingToBaseElo } from '../../lib/rankingEngine';
 import { getRatingTier } from '../../lib/ratingTiers';
 import { buildList, type SampleSpot } from '../sample';
 import { Demo } from '../ui';
@@ -12,7 +11,7 @@ const START: SampleSpot[] = [
   { name: 'Pho Saigon', gut: 8.0 },
   { name: 'Bao House', gut: 6.5 },
   { name: 'Burger Barn', gut: 6.0 },
-].map((s) => ({ ...s, elo: ratingToBaseElo(s.gut) }));
+];
 
 const iconBtn =
   'grid h-6 w-6 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100 disabled:opacity-25 dark:hover:bg-zinc-800';
@@ -21,16 +20,11 @@ export const ScoreDemo: React.FC = () => {
   const [spots, setSpots] = useState(START);
   const scored = useMemo(() => buildList(spots, 'score'), [spots]);
 
-  /** Same as dragging in the app: the moved spot's Elo lands between its new neighbours */
+  /** Same as dragging in the app: only the order changes, and scores are refit to it */
   const move = (from: number, to: number) => {
     const next = [...spots];
     const [item] = next.splice(from, 1);
     next.splice(to, 0, item);
-    const above = scored[to < from ? to - 1 : to];
-    const below = scored[to < from ? to : to + 1];
-    const elo =
-      above && below ? Math.round((above.elo + below.elo) / 2) : above ? above.elo - 30 : below ? below.elo + 30 : item.elo;
-    next[to] = { ...item, elo };
     setSpots(next);
   };
   const nudge = (i: number, d: number) =>
@@ -87,8 +81,8 @@ export const ScoreDemo: React.FC = () => {
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12.5px] text-zinc-500">
         <span>
-          To start, Pho Saigon felt like an 8.0 but sits below Casa Verde (7.5), so they meet in the middle. Scores
-          always go down the list.
+          To start, Pho Saigon felt like an 8.0 but sits below Casa Verde (7.5), so they meet in the middle. Try moving
+          Burger Barn up: the further it climbs past its 6.0, the less that 6.0 counts.
         </span>
         <button type="button" aria-label="Reset" className={iconBtn} onClick={() => setSpots(START)}>
           <RotateCcw className="h-3.5 w-3.5" />

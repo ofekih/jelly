@@ -23,7 +23,7 @@ const TOC = [
 const STEPS = [
   { icon: Sparkles, title: 'Gut feeling', body: 'One quick tap on a spectrum: roughly how good was it?' },
   { icon: Swords, title: 'Side-by-side', body: 'A handful of “this or that?” questions pin down its place in your list.' },
-  { icon: Scale, title: 'Score', body: 'Your order becomes 1–10 scores, scaled by how good things felt.' },
+  { icon: Scale, title: 'Score', body: 'Your order becomes 1–10 scores that stay true to how good things felt.' },
 ];
 
 /** Tier shares of the bar (see Step 1); "how often" averages MovieLens, Letterboxd and BeerAdvocate */
@@ -308,7 +308,8 @@ export const AboutPage: React.FC = () => (
               (<Tex>K = 14</Tex>).
             </span> A starting Elo comes from the gut rating, <Tex>R = 950 + 100g</Tex>, averaged with the
             Elo of the place whose score is closest. Once placed, its Elo is squeezed in between its new
-            neighbours' if needed, so it always agrees with the final order.
+            neighbours' if needed, so it always agrees with the final order. Elo only guides the search; the score
+            itself comes from Step 3.
           </p>
           <p>
             <b>Order checks.</b> jelly fits a Bradley-Terry model to every stored answer (the latest per pair, with
@@ -326,40 +327,50 @@ export const AboutPage: React.FC = () => (
       <Section id="score" eyebrow="Step 3" title="From order to score">
         <p>
           Once everything is in order, jelly turns positions into the 1–10 scores you see. The order is fixed; only the
-          numbers are being decided. Three ideas do the work:
+          numbers are being decided. Each score is as close to your own gut rating as your order allows:
         </p>
         <ol className="list-decimal space-y-1.5 pl-5 marker:font-bold marker:text-jade-600">
           <li>
-            <b>Your scale, your level.</b> The spread of Elo ratings is mapped onto the average and spread of your own
-            gut ratings. If everything you've ranked felt like a 9, your list lives in the 9s; that's how Alex and Sam
-            end up in different places above.
+            <b>Your gut, your scale.</b> Where your order and your gut agree, a place's score is simply its gut rating.
+            A list of 150 places that all felt amazing stays in the 9s however long it gets, and adding place #151
+            doesn't nudge the others. That's how Alex and Sam end up in different places above.
           </li>
           <li>
-            <b>A little of each gut feeling.</b> 15% of each score comes from that place's own gut rating, so a list of
-            places that all felt amazing doesn't get stretched down to 5.
+            <b>Never against the order.</b> Scores only go down the list. If a place you rated 8.0 beat one you rated
+            8.5, both get 8.3 rather than contradicting your choice. Neighbours can share a score.
           </li>
           <li>
-            <b>Never against the order.</b> A final pass makes sure scores only go down the list. If a place you
-            rated 8.0 lost to one you rated 7.5, they meet in the middle rather than contradicting your choice.
+            <b>Clear overrules win.</b> Drag a place you rated 6.0 above a run of 9s and your order has clearly
+            overruled your gut. jelly then mostly ignores that 6.0 instead of dragging every 9 down to meet it: the
+            moved place joins the 9s and the rest barely move.
           </li>
         </ol>
         <ScoreDemo />
         <Nerd>
           <p>
-            For place <Tex>k</Tex> with Elo <Tex>E_k</Tex> and gut rating <Tex>g_k</Tex>, with <Tex>\mu</Tex>,{' '}
-            <Tex>\sigma</Tex> the mean and spread across the list (floored at 85 Elo and 0.65 points):
+            With gut ratings <Tex>g_1, \dots, g_n</Tex> in list order, the scores are a weighted <b>isotonic
+            regression</b>: the closest scores to your gut ratings that never increase down the list.
           </p>
-          <Tex block>{String.raw`\underbrace{c_k = \mu_g + \frac{E_k - \mu_E}{\sigma_E}\,\sigma_g}_{\text{calibrated to you}}`}</Tex>
-          <Tex block>{String.raw`\underbrace{a_k = \frac{E_k - 950}{100}}_{\text{absolute anchor}}`}</Tex>
-          <Tex block>{String.raw`s_k = 0.85\,\bigl(0.6\,c_k + 0.4\,a_k\bigr) + 0.15\,g_k`}</Tex>
-          <p>
-            Then <b>isotonic regression</b> finds the closest scores that never increase down the list:
-          </p>
-          <Tex block>{String.raw`\hat s = \arg\min_{\hat s_1 \,\ge\, \hat s_2 \,\ge\, \cdots \,\ge\, \hat s_n} \sum_k \bigl(\hat s_k - s_k\bigr)^2`}</Tex>
+          <Tex block>{String.raw`\hat s = \arg\min_{s_1 \,\ge\, s_2 \,\ge\, \cdots \,\ge\, s_n} \sum_k w_k\,\bigl(s_k - g_k\bigr)^2`}</Tex>
           <p>
             It's solved with <i>pool adjacent violators</i>: walk down the list, and whenever two neighbours are out of
-            order, replace them with their average and keep going. The same pass first cleans up the Elo ratings
-            themselves (with a minimum gap of 12 between neighbours), so a drag-to-reorder is respected all the way down.
+            order, replace them with their weighted average and keep going. To make it <b>robust</b>, jelly starts with
+            equal weights, then reweights each place by how far its gut sits from the fit and solves again, 10 times:
+          </p>
+          <Tex block>{String.raw`w_k = \frac{1}{1 + \bigl((g_k - \hat s_k)/c\bigr)^2}`}</Tex>
+          <p>
+            The scale <Tex>c</Tex> adapts to your list: three times the typical gap between your gut ratings and the
+            fit (<Tex>{String.raw`1.48 \times`}</Tex> the median gap, a robust standard deviation), and at least 0.8
+            points. If your gut and your order mostly agree, <Tex>c</Tex> stays at 0.8, so a gut rating 3 points off
+            counts about a fifteenth as much. If your gut ratings are all over the place, <Tex>c</Tex> widens and jelly
+            leans on all of them rather than throwing most away. Scores are rounded to 0.1 and kept within 1–10.
+          </p>
+          <p>
+            <b>Why not Elo?</b> Earlier versions spread the Elo ratings from Step 2 over your scale. But you answer
+            “this or that?” almost deterministically and each place only meets a few others, so the size of an Elo gap
+            says next to nothing. Worse, giving every rank a minimum Elo gap stretched long lists: 150 places you rated
+            9.5 down to 8.0 came out as 10.0 down to 5.0. Elo is still kept in step with the order (a couple of
+            points per rank) so older versions of the app keep working, but it no longer decides any score.
           </p>
         </Nerd>
       </Section>

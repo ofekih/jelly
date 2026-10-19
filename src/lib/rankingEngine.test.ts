@@ -37,6 +37,69 @@ function makeDummySpot(
   };
 }
 
+const scoresOf = (guts: number[]) =>
+  recomputeMagicScores(guts.map((g, i) => makeDummySpot(`${i}`, `Spot ${i}`, g, i, 'restaurants', []))).map(
+    (r) => r.magicScore
+  );
+
+describe('recomputeMagicScores (robust isotonic fit of gut ratings)', () => {
+  it.each([20, 200])('keeps score = gut on a consistent list of %i spots', (n) => {
+    const guts = Array.from({ length: n }, (_, i) => Math.round((9.5 - (i * 1.5) / (n - 1)) * 10) / 10);
+    expect(scoresOf(guts)).toEqual(guts);
+  });
+
+  it('does not stretch a long list of amazing places down the scale', () => {
+    const guts = Array.from({ length: 150 }, (_, i) => 9.5 - (i * 1.5) / 149);
+    const scores = scoresOf(guts);
+    expect(scores[0]).toBe(9.5);
+    expect(scores[149]).toBe(8.0);
+  });
+
+  it('meets in the middle when a gut-8.0 spot is placed above a gut-8.5 spot', () => {
+    expect(scoresOf([8.0, 8.5])).toEqual([8.3, 8.3]);
+    const scores = scoresOf([9.5, 9.0, 8.0, 8.5, 7.5, 7.0]);
+    expect(scores[2]).toBeCloseTo(8.3, 1);
+    expect(scores[3]).toBeCloseTo(8.3, 1);
+    expect([scores[0], scores[1], scores[4], scores[5]]).toEqual([9.5, 9.0, 7.5, 7.0]);
+  });
+
+  it('ignores a gut rating the order clearly overrules', () => {
+    // A gut-6.0 spot dragged to the top of a list of 9s
+    const scores = scoresOf([6.0, 9.2, 9.1, 9.0, 9.0, 8.9, 8.8]);
+    // It shares the top score rather than averaging the 9s down towards 6
+    expect(scores[0]).toBeGreaterThanOrEqual(9.0);
+    [9.2, 9.1, 9.0, 9.0, 8.9, 8.8].forEach((g, i) => expect(Math.abs(scores[i + 1] - g)).toBeLessThanOrEqual(0.2 + 1e-9));
+  });
+
+  it('leaves 9.0 and below untouched when a gut-6.0 spot is dragged to #1', () => {
+    expect(scoresOf([6.0, 9.4, 9.0, 8.6, 8.1, 7.5]).slice(2)).toEqual([9.0, 8.6, 8.1, 7.5]);
+  });
+
+  it('keeps one drag from moving scores far from the moved spot', () => {
+    const guts = Array.from({ length: 40 }, (_, i) => Math.round((9.6 - i * 0.1) * 10) / 10);
+    const before = scoresOf(guts);
+    // Drag the spot at #31 (gut 6.6) up to #6
+    const order = guts.map((_, i) => i);
+    const [moved] = order.splice(30, 1);
+    order.splice(5, 0, moved);
+    const after = scoresOf(order.map((i) => guts[i]));
+    order.forEach((orig, pos) => {
+      if (orig === moved) return;
+      const nearMoved = Math.abs(pos - 5) <= 2;
+      expect(Math.abs(after[pos] - before[orig])).toBeLessThanOrEqual(nearMoved ? 0.3 : 0.1 + 1e-9);
+    });
+    expect(after[5]).toBeGreaterThan(8.5);
+  });
+
+  it('keeps Elo strictly decreasing down the list, even through equal scores', () => {
+    const scored = recomputeMagicScores(
+      [9, 9, 9, 8, 8.5].map((g, i) => makeDummySpot(`${i}`, `Spot ${i}`, g, i))
+    );
+    for (let k = 1; k < scored.length; k++) expect(scored[k].elo).toBeLessThan(scored[k - 1].elo);
+    expect(scored.map((r) => r.rankIndex)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
 describe('rankingEngine (ELO-based)', () => {
   it('enforces monotonic ELO and 1-10 magic scores even when gut ratings have inversions', () => {
     const list: RestaurantEntry[] = [
