@@ -241,10 +241,10 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         rating < 1.8
           ? 'Disaster · Avoid at all costs'
           : rating < 2.5
-          ? 'Rough · Regretted going'
+          ? 'Terrible · Steer clear'
           : rating < 3.3
-          ? 'Not good · Wouldn’t go back'
-          : 'Missed the mark · Skip it';
+          ? 'Bad · Not worth going'
+          : 'Subpar · Probably skip it';
       return {
         label: vibeLabelForGroup(label, group),
         pillClass:
@@ -257,12 +257,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     if (rating < 6.0) {
       const label =
         rating < 4.5
-          ? 'Could’ve been better · Underwhelming'
+          ? 'Underwhelming · Only if there’s no other option'
           : rating < 5.0
-          ? 'Meh · Pretty forgettable'
+          ? 'Meh · Only if someone else picks it'
           : rating < 5.5
-          ? 'It was okay · Gets the job done'
-          : 'Fine in a pinch · Nothing special';
+          ? 'Passable · Fine if it’s convenient'
+          : 'Decent · Solid for what it is';
       return {
         label: vibeLabelForGroup(label, group),
         pillClass:
@@ -275,12 +275,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     if (rating < 7.5) {
       const label =
         rating < 6.4
-          ? 'Pretty good · Glad I went'
+          ? 'Pleasant · Glad I went'
           : rating < 6.8
-          ? 'Liked it · Solid neighborhood spot'
+          ? 'Good · Worth checking out'
           : rating < 7.2
-          ? 'Good spot · Happy to go back'
-          : 'Really liked it · Easy recommendation';
+          ? 'Very good · Well worth it'
+          : 'Really liked it · Easy to recommend';
       return {
         label: vibeLabelForGroup(label, group),
         pillClass:
@@ -293,12 +293,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     if (rating < 8.8) {
       const label =
         rating < 7.8
-          ? 'Great meal · Worth a detour'
+          ? 'Great · A real standout'
           : rating < 8.2
-          ? 'So good · Would happily bring friends'
+          ? 'Really great · Worth going out of your way'
           : rating < 8.5
-          ? 'Loved it · Standout spot'
-          : 'Really loved it · Crave-worthy';
+          ? 'Loved it · Would rave about it'
+          : 'Really loved it · Still thinking about it';
       return {
         label: vibeLabelForGroup(label, group),
         pillClass:
@@ -310,11 +310,11 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     // Tier 5: Incredible (8.8 - 10.0, 80% - 100% of bar -> reserves the far right for true perfection)
     const label =
       rating < 9.1
-        ? 'Obsessed · Top-tier meal'
+        ? 'Incredible · One of my favorites'
         : rating < 9.5
-        ? 'Blown away · All-time favorite'
+        ? 'Unforgettable · An all-time favorite'
         : rating < 9.8
-        ? 'Near perfection · Almost nothing to critique'
+        ? 'Near-perfect · Almost nothing to critique'
         : 'Flawless · Literally nothing could be improved';
 
     return {

@@ -66,7 +66,10 @@ ranking web app. Live at https://eatwithjelly.com.
   (≈1–3.9 / 4–5.9 / 6–7.4 / 7.5–8.7 / 8.8–10), with 5.0 in the middle of Mid. A settings toggle
   (`linearRatingScale`) reverts to linear. Keep gradient + labels consistent with both modes.
 - **Spectrum labels are deliberately calibrated low**: "Loved it" sits near the Great/Incredible
-  boundary (~8.2–8.7), and "Flawless · Literally nothing could be improved" is only 9.8–10. Don't
+  boundary (~8.2–8.7), and "Flawless · Literally nothing could be improved" is only 9.8–10. The words
+  before "·" climb strictly (X → Really X); the text after must never sound weaker than the row
+  below, must fit every group (meal, coffee, museum, country) and must not be a near-synonym of a
+  neighbour. Travel's few overrides live in `groups.ts`. Don't
   inflate them; the goal is to push users to use the whole scale.
 - **Mobile is first-class**: verify touch drag (dnd-kit sensors), autocomplete scroll position,
   Web Share API (`navigator.share`) and layout on iOS/Android, not just desktop.

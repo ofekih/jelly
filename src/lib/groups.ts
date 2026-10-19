@@ -82,24 +82,16 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
   },
 };
 
-// Gut-feeling labels are written for food; these swap the food-specific ones per group
+// Gut-feeling labels are worded to fit every group; these swap the few that don't fit a trip
 const VIBE_LABEL_OVERRIDES: Record<SpotGroup, Record<string, string>> = {
   eat: {},
-  explore: {
-    'Liked it · Solid neighborhood spot': 'Liked it · A solid outing',
-    'Good spot · Happy to go back': 'Good one · Happy to go back',
-    'Great meal · Worth a detour': 'Great visit · Worth a detour',
-    'Loved it · Standout spot': 'Loved it · A standout',
-    'Really loved it · Crave-worthy': 'Really loved it · Can’t wait to go back',
-    'Obsessed · Top-tier meal': 'Obsessed · Top-tier visit',
-  },
+  explore: {},
   travel: {
-    'Liked it · Solid neighborhood spot': 'Liked it · A solid trip',
-    'Good spot · Happy to go back': 'Good place · Happy to go back',
-    'Great meal · Worth a detour': 'Great trip · Worth the journey',
-    'Loved it · Standout spot': 'Loved it · A standout',
-    'Really loved it · Crave-worthy': 'Really loved it · Can’t wait to go back',
-    'Obsessed · Top-tier meal': 'Obsessed · Top-tier trip',
+    'Terrible · Steer clear': 'Terrible · Regretted the trip',
+    'Meh · Only if someone else picks it': 'Meh · Only if someone else plans it',
+    'Passable · Fine if it’s convenient': 'Passable · Fine to pass through',
+    'Really great · Worth going out of your way': 'Really great · Worth the journey',
+    'Really loved it · Still thinking about it': 'Really loved it · Bucket-list worthy',
   },
 };
 
