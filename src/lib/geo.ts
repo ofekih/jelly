@@ -106,3 +106,21 @@ export function resolveManualSpotCity(
   }
   return defaultCity.trim();
 }
+
+/**
+ * Where the user's own spots cluster (the median of their coordinates, so trips don't pull it
+ * away from home). Used to bias place search when live location isn't available.
+ */
+export function homeCoords(items: Array<{ lat?: number; lng?: number }>): UserCoordinates | null {
+  const pts = items.filter(
+    (i): i is { lat: number; lng: number } =>
+      typeof i.lat === 'number' && typeof i.lng === 'number' && !Number.isNaN(i.lat) && !Number.isNaN(i.lng)
+  );
+  if (pts.length === 0) return null;
+  const median = (vals: number[]) => {
+    const s = [...vals].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+  return { lat: median(pts.map((p) => p.lat)), lng: median(pts.map((p) => p.lng)) };
+}

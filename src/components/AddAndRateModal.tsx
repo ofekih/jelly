@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Bookmark, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
 import {
   CATEGORY_EMOJI,
@@ -17,6 +17,7 @@ import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsSer
 import {
   formatDistanceMiles,
   getItemDistanceMiles,
+  homeCoords,
   resolveManualSpotCity,
   UserCoordinates,
 } from '../lib/geo';
@@ -116,6 +117,14 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     }
   }, [isOpen, reRankingEntry]);
 
+  // Without live location, bias search toward where the user's own spots are (not trips)
+  const searchLocation = useMemo(
+    () =>
+      userLocation ??
+      homeCoords(existingRestaurants.filter((r) => CATEGORY_GROUP[r.category] !== 'travel')),
+    [userLocation, existingRestaurants]
+  );
+
   // Live Google Places search debounce
   useEffect(() => {
     if (!isOpen || step !== 'search') return;
@@ -134,7 +143,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         trimmed,
         customPlacesApiKey,
         userLocation ? undefined : defaultCity,
-        userLocation,
+        searchLocation,
         group
       );
       if (!cancelled) {
@@ -152,7 +161,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation]);
+  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation]);
 
   // Ensure scroll container always starts at top when query or results change
   useEffect(() => {
