@@ -88,6 +88,7 @@ import { RestaurantMapView } from './components/RestaurantMapView';
 import { ShareModal } from './components/ShareModal';
 import { SpotDetailModal } from './components/SpotDetailModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
+import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
 
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
@@ -2849,6 +2850,9 @@ export const App: React.FC = () => {
 
       {/* PWA Mobile Install Nudge */}
       <PwaInstallBanner />
+
+      {/* New deploy detected → one-tap reload */}
+      <UpdateAvailableBanner />
 
       {/* Subtle Toast (with optional Undo action) */}
       {toastMessage && (
