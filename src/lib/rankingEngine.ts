@@ -124,28 +124,26 @@ function normalizeWeights(weights: number[]): number[] {
 }
 
 /**
- * Pool-Adjacent-Violators (PAV) algorithm for monotonically non-increasing sequence:
- * Finds z_0 >= z_1 >= ... >= z_{n-1} minimizing sum (z_i - y_i)^2.
+ * Weighted Pool-Adjacent-Violators for a non-increasing sequence:
+ * finds z_0 >= z_1 >= ... >= z_{n-1} minimizing sum w_i (z_i - y_i)^2.
  */
-function isotonicDecreasing(y: number[]): number[] {
+function isotonicDecreasing(y: number[], w: number[] = y.map(() => 1)): number[] {
   interface Block {
-    sum: number;
-    count: number;
+    sum: number; // Weighted sum of y
+    weight: number;
     start: number;
     end: number;
   }
 
   const blocks: Block[] = [];
   for (let i = 0; i < y.length; i++) {
-    blocks.push({ sum: y[i], count: 1, start: i, end: i });
+    blocks.push({ sum: w[i] * y[i], weight: w[i], start: i, end: i });
     while (blocks.length >= 2) {
       const last = blocks[blocks.length - 1];
       const prev = blocks[blocks.length - 2];
-      const prevMean = prev.sum / prev.count;
-      const lastMean = last.sum / last.count;
-      if (prevMean < lastMean) {
+      if (prev.sum / prev.weight < last.sum / last.weight) {
         prev.sum += last.sum;
-        prev.count += last.count;
+        prev.weight += last.weight;
         prev.end = last.end;
         blocks.pop();
       } else {
@@ -156,7 +154,7 @@ function isotonicDecreasing(y: number[]): number[] {
 
   const result = new Array<number>(y.length);
   for (const b of blocks) {
-    const mean = b.sum / b.count;
+    const mean = b.sum / b.weight;
     for (let i = b.start; i <= b.end; i++) {
       result[i] = mean;
     }
@@ -164,89 +162,50 @@ function isotonicDecreasing(y: number[]): number[] {
   return result;
 }
 
+const ROBUST_SCALE = 0.8; // Gut ratings this far off the fit count half as much
+const ROBUST_ITERATIONS = 10;
+const ELO_STEP = 2; // Fixed Elo gap kept between neighbours (Elo no longer feeds the scores)
+
 /**
- * Ensures every entry has a valid ELO that strictly decreases down the ordered list,
- * and converts those ELO scores into 1.0–10.0 displayed scores loosely calibrated by
- * the user's 1–10 gut ratings.
+ * Robust isotonic fit of gut ratings to the list order: the closest non-increasing scores to the
+ * gut ratings, refit with Cauchy weights so a gut rating the order clearly overrules (a 6.0 dragged
+ * above a run of 9s) is mostly ignored instead of dragging its neighbours down.
+ */
+export function fitScoresToOrder(guts: number[]): number[] {
+  let fit = isotonicDecreasing(guts);
+  for (let iter = 0; iter < ROBUST_ITERATIONS; iter++) {
+    const weights = guts.map((g, i) => 1 / (1 + ((g - fit[i]) / ROBUST_SCALE) ** 2));
+    fit = isotonicDecreasing(guts, weights);
+  }
+  return fit;
+}
+
+/**
+ * Turns an ordered category list into 1.0–10.0 scores: a robust isotonic fit of each spot's gut
+ * rating to its position, so scores stay on the gut-label scale and never rise down the list.
+ * Elo is kept only for compatibility: it tracks the score and steps down by at least ELO_STEP.
  */
 export function recomputeMagicScores(orderedList: RestaurantEntry[]): RestaurantEntry[] {
   const n = orderedList.length;
   if (n === 0) return [];
 
-  if (n === 1) {
-    const single = orderedList[0];
-    const elo = typeof single.elo === 'number' && !Number.isNaN(single.elo)
-      ? Math.round(single.elo)
-      : ratingToBaseElo(single.initialRating);
-    return [
-      {
-        ...single,
-        elo,
-        rankIndex: 0,
-        magicScore: clamp(round1(single.initialRating), 1.0, 10.0),
-      },
-    ];
-  }
+  const guts = orderedList.map((r) => {
+    if (Number.isFinite(r.initialRating)) return clamp(r.initialRating, 1.0, 10.0);
+    return Number.isFinite(r.magicScore) ? clamp(r.magicScore, 1.0, 10.0) : 5.0;
+  });
+  const scores = fitScoresToOrder(guts).map((s) => round1(clamp(s, 1.0, 10.0)));
 
-  // 1. Ensure each item has an ELO and enforce monotonic decreasing ELO along orderedList
-  const rawElos = orderedList.map((r) =>
-    typeof r.elo === 'number' && !Number.isNaN(r.elo)
-      ? r.elo
-      : ratingToBaseElo(r.initialRating)
-  );
-
-  const minEloStep = 12;
-  const shiftedElos = rawElos.map((e, k) => e + k * minEloStep);
-  const monotonicShiftedElos = isotonicDecreasing(shiftedElos);
-  const cleanElos = monotonicShiftedElos.map((z, k) =>
-    Math.round(clamp(z - k * minEloStep, 800, 2600))
-  );
-
-  // 2. Convert ELOs to 1.0–10.0 scale, loosely calibrated by the user's 1–10 gut ratings
-  const ratings = orderedList.map((r) => clamp(r.initialRating, 1.0, 10.0));
-  const meanRating = ratings.reduce((a, b) => a + b, 0) / n;
-  const ratingVar = ratings.reduce((a, r) => a + (r - meanRating) ** 2, 0) / n;
-  const stdRating = Math.max(0.65, Math.sqrt(ratingVar));
-
-  const meanElo = cleanElos.reduce((a, b) => a + b, 0) / n;
-  const eloVar = cleanElos.reduce((a, e) => a + (e - meanElo) ** 2, 0) / n;
-  const stdElo = Math.max(85, Math.sqrt(eloVar));
-
-  const rawScores = new Array<number>(n);
+  const elos = new Array<number>(n);
   for (let k = 0; k < n; k++) {
-    const elo = cleanElos[k];
-    // Standardized ELO mapped onto the user's personal rating mean & spread
-    const calibratedEloScore = meanRating + ((elo - meanElo) / stdElo) * stdRating;
-    // Absolute ELO anchor (where 1050 = 1.0 and 1950 = 10.0)
-    const absoluteEloScore = (elo - 950) / 100;
-    const pureElo10 = 0.60 * calibratedEloScore + 0.40 * absoluteEloScore;
-
-    // 85% ELO-derived score + 15% individual initial 1-10 gut rating
-    rawScores[k] = 0.85 * pureElo10 + 0.15 * ratings[k];
-  }
-
-  const maxRating = Math.max(...ratings);
-  const minRating = Math.min(...ratings);
-  const spread = Math.max(0.5, maxRating - minRating + 0.4);
-  const minScoreStep = Math.min(0.08, spread / (2 * (n - 1)));
-
-  const shiftedScores = rawScores.map((s, k) => s + k * minScoreStep);
-  const monotonicShiftedScores = isotonicDecreasing(shiftedScores);
-  const finalScores = monotonicShiftedScores.map((z, k) =>
-    round1(clamp(z - k * minScoreStep, 1.0, 10.0))
-  );
-
-  for (let k = 1; k < n; k++) {
-    if (finalScores[k] > finalScores[k - 1]) {
-      finalScores[k] = finalScores[k - 1];
-    }
+    const base = ratingToBaseElo(scores[k]);
+    elos[k] = clamp(k === 0 ? base : Math.min(base, elos[k - 1] - ELO_STEP), 0, 5000);
   }
 
   return orderedList.map((item, idx) => ({
     ...item,
-    elo: cleanElos[idx],
+    elo: elos[idx],
     rankIndex: idx,
-    magicScore: finalScores[idx],
+    magicScore: scores[idx],
   }));
 }
 

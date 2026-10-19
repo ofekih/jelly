@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.1.0',
+    date: '2026-10-19',
+    title: 'Scores that match how you felt',
+    highlights: [
+      'Scores now follow your own gut ratings as closely as your order allows, so long lists no longer get stretched down the scale',
+      'Your scores may shift a little—most on long lists, where spots lower down move back up toward how you rated them',
+      'Dragging a place far from its gut rating no longer pulls its new neighbours’ scores along with it',
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-10-19',
     title: 'Explore and Travel',
