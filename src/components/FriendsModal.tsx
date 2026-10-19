@@ -342,8 +342,36 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               <span className="ml-1.5 font-normal text-zinc-400">@{res.handle}</span>
                             )}
                           </div>
-                          <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                            {res.restaurants?.length || 0} ranked · {res.bookmarks?.length || 0} want to try
+                          <div className="text-[11px] text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
+                            <span>{res.restaurants?.length || 0} ranked</span>
+                            <span>·</span>
+                            {followGraph ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const list = getFollowersForUser(followGraph, res.ownerUid || res.id);
+                                    onOpenFollowList?.(`${res.ownerName || 'Friend'}'s Followers`, list);
+                                  }}
+                                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                                >
+                                  {getFollowersForUser(followGraph, res.ownerUid || res.id).length} followers
+                                </button>
+                                <span>·</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const list = getFollowingForUser(followGraph, res.ownerUid || res.id);
+                                    onOpenFollowList?.(`${res.ownerName || 'Friend'} is Following`, list);
+                                  }}
+                                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                                >
+                                  {getFollowingForUser(followGraph, res.ownerUid || res.id).length} following
+                                </button>
+                              </>
+                            ) : (
+                              <span>{res.bookmarks?.length || 0} want to try</span>
+                            )}
                           </div>
                         </div>
 
