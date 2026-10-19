@@ -86,12 +86,9 @@ export const AboutPage: React.FC = () => (
         <p>
           A common approach is to first make you sort a place into <i>bad</i>, <i>okay</i> or <i>good</i>, give each
           bucket a fixed score range (say good = 6.7–10), and only then compare it with the rest of that bucket. Koren
-          (Ofek's brother) put the problem best:
+          (Ofek's brother) spotted the contradiction: the premise is that people are bad at scoring, yet the very
+          first step asks them to score, and a place can never leave its bucket no matter how the comparisons go.
         </p>
-        <Callout>
-          “If the premise is that people are bad at scoring, why start by making them pick bad/okay/good, and then
-          never let a spot cross that line no matter how the comparisons go?”
-        </Callout>
         <p>
           The bottom of “good” is probably better than the top of “okay”. That's the whole premise. In jelly, the
           comparisons are the source of truth for the order, and nothing ever overrules them.
