@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { BookmarkEntry, MealCategory, RestaurantEntry, SharedListPayload } from '../types';
+import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { getSpotSocialMetrics } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
@@ -8,7 +8,6 @@ import { JellyBeanIcon } from './JellyBeanIcon';
 
 interface SwipeableBookmarkRowProps {
   item: BookmarkEntry;
-  selectedMealsFilter: MealCategory[];
   userLocation: UserCoordinates | null;
   readOnly: boolean;
   myUid?: string | null;
@@ -27,7 +26,6 @@ interface SwipeableBookmarkRowProps {
 
 const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   item,
-  selectedMealsFilter,
   userLocation,
   readOnly,
   myUid = null,
@@ -63,7 +61,6 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   const rawMiles = getItemDistanceMiles(item, userLocation);
   const distLabel = formatDistanceMiles(rawMiles);
   const subtitleParts = [
-    selectedMealsFilter.length !== 1 ? item.meal : null,
     primaryCuisine,
     locationLabel,
     distLabel,
@@ -345,7 +342,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
 interface BookmarkListProps {
   bookmarks: BookmarkEntry[];
   isFiltered: boolean;
-  selectedMealsFilter: MealCategory[];
+  selectedCategory: SpotCategory;
   totalUnfilteredCount: number;
   userLocation?: UserCoordinates | null;
   readOnly?: boolean;
@@ -365,7 +362,7 @@ interface BookmarkListProps {
 export const BookmarkList: React.FC<BookmarkListProps> = ({
   bookmarks,
   isFiltered,
-  selectedMealsFilter,
+  selectedCategory,
   totalUnfilteredCount,
   userLocation = null,
   readOnly = false,
@@ -474,7 +471,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
         </div>
         <div className="space-y-1">
           <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-            Your Want to Try list is empty
+            No {CATEGORY_LABEL[selectedCategory]} to try yet
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-xs mx-auto">
             Search any spot and tap the bookmark icon to save places friends recommend before you go.
@@ -519,7 +516,6 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
             <SwipeableBookmarkRow
               key={item.id}
               item={item}
-              selectedMealsFilter={selectedMealsFilter}
               userLocation={userLocation}
               readOnly={readOnly}
               myUid={myUid}

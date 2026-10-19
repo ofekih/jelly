@@ -1,39 +1,47 @@
-export type MealCategory =
-  | 'Breakfast'
-  | 'Lunch'
-  | 'Dinner'
-  | 'Coffee'
-  | 'Dessert'
-  | 'Drinks';
+/**
+ * Each category is its own completely separate ranked list: spots are only ever
+ * compared against (and ranked within) spots of the same category.
+ * The string values are persisted in Firestore and used in entry IDs.
+ */
+export type SpotCategory =
+  | 'restaurants'
+  | 'brunch'
+  | 'dessert'
+  | 'bakeries'
+  | 'coffee_tea'
+  | 'bars';
 
-export const ALL_MEAL_CATEGORIES: MealCategory[] = [
-  'Dinner',
-  'Lunch',
-  'Breakfast',
-  'Coffee',
-  'Dessert',
-  'Drinks',
+export const ALL_CATEGORIES: SpotCategory[] = [
+  'restaurants',
+  'brunch',
+  'dessert',
+  'bakeries',
+  'coffee_tea',
+  'bars',
 ];
 
-export const MEAL_EMOJI: Record<MealCategory, string> = {
-  Dinner: '🍽️',
-  Lunch: '🥪',
-  Breakfast: '🥐',
-  Coffee: '☕',
-  Dessert: '🍦',
-  Drinks: '🍸',
+export const DEFAULT_CATEGORY: SpotCategory = 'restaurants';
+
+export const CATEGORY_LABEL: Record<SpotCategory, string> = {
+  restaurants: 'Restaurants',
+  brunch: 'Brunch',
+  dessert: 'Dessert',
+  bakeries: 'Bakeries',
+  coffee_tea: 'Coffee & Tea',
+  bars: 'Bars',
 };
 
-export function normalizeMealCategory(raw?: string): MealCategory {
-  if (!raw) return 'Dinner';
-  const lower = raw.toLowerCase();
-  if (lower.includes('breakfast') || lower.includes('brunch')) return 'Breakfast';
-  if (lower.includes('lunch')) return 'Lunch';
-  if (lower.includes('coffee') || lower.includes('cafe') || lower.includes('tea')) return 'Coffee';
-  if (lower.includes('dessert') || lower.includes('bakery') || lower.includes('ice cream'))
-    return 'Dessert';
-  if (lower.includes('drink') || lower.includes('bar') || lower.includes('wine')) return 'Drinks';
-  return 'Dinner';
+export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
+  restaurants: '🍽️',
+  brunch: '🥞',
+  dessert: '🍦',
+  bakeries: '🥐',
+  coffee_tea: '☕',
+  bars: '🍸',
+};
+
+export function isSpotCategory(raw: unknown): raw is SpotCategory {
+  return typeof raw === 'string' && (ALL_CATEGORIES as string[]).includes(raw);
 }
 
 export const COMMON_CUISINES: string[] = [
@@ -71,7 +79,7 @@ export interface RankedHistoryEvent {
 }
 
 export interface RestaurantEntry {
-  id: string; // Unique per (placeId + meal)
+  id: string; // Unique per (placeId + category)
   placeId?: string;
   name: string;
   formattedAddress: string;
@@ -82,16 +90,17 @@ export interface RestaurantEntry {
   googleMapsUri?: string;
   priceLevel?: number; // 1 ($) to 4 ($$$$)
 
-  // Each listing is for ONE specific meal of the day (same restaurant can appear for different meals)
-  meal: MealCategory;
-  meals: MealCategory[]; // Potential meals this venue serves (for Firestore backwards-compat & edit)
+  // Each listing belongs to exactly ONE category list (the same place can appear in several lists
+  // as separate, independently ranked entries)
+  category: SpotCategory;
+  categories: SpotCategory[]; // Auto-detected categories this venue could fit
   cuisines: string[];
   primaryTypeDisplay?: string;
 
   // ELO + Rating & Ranking
   initialRating: number; // Integer 1 to 10 gut rating from Q1
   elo: number; // Canonical ELO rating driving the ranking order
-  rankIndex: number; // 0 = #1 ranked spot
+  rankIndex: number; // 0 = #1 ranked spot within its category list
   magicScore: number; // 1.0 to 10.0 displayed score derived from ELO + loosely calibrated by 1-10 ratings
   comparisonsCount: number;
 
@@ -113,7 +122,7 @@ export interface PlaceCandidate {
   lng?: number;
   googleMapsUri?: string;
   priceLevel?: number;
-  meals: MealCategory[]; // Auto-detected meals this place works for
+  categories: SpotCategory[]; // Auto-detected categories, best match first
   cuisines: string[]; // Auto-detected cuisines
   primaryTypeDisplay?: string;
   source: 'google_places' | 'osm_photon' | 'manual';
@@ -130,8 +139,8 @@ export interface BookmarkEntry {
   lng?: number;
   googleMapsUri?: string;
   priceLevel?: number;
-  meal: MealCategory;
-  meals: MealCategory[];
+  category: SpotCategory;
+  categories: SpotCategory[];
   cuisines: string[];
   primaryTypeDisplay?: string;
   notes?: string;
@@ -172,7 +181,7 @@ export interface FriendSpotMatch {
   status: 'ranked' | 'want_to_try';
   magicScore?: number;
   rankIndex?: number;
-  meal: MealCategory;
+  category: SpotCategory;
   notes?: string;
   favoriteDishes?: string;
 }

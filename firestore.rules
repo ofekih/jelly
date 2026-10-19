@@ -11,7 +11,6 @@ rules_version = '2';
 // Fields:
 //   - updatedAt: number | timestamp (optional) - last update time
 //   - createdAt: number | timestamp (optional) - creation time
-//   - comparisonScope: string (optional, <= 100 chars) - comparison filter scope preference
 //   - customPlacesApiKey: string (optional, <= 200 chars) - optional user-provided Google Places API key
 //   - displayName: string (optional, <= 200 chars) - user display name
 //   - email: string (optional, <= 254 chars) - user email
@@ -39,8 +38,8 @@ rules_version = '2';
 //   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
 //   - priceLevel: number (optional, 0..5) - price tier (1..4)
 //   - status: string (optional, 'ranked' | 'want_to_try') - listing status
-//   - meal: string (optional, <= 100 chars) - primary meal category
-//   - meals: list<string> (optional, <= 20 items) - meal categories
+//   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars') - spot category
+//   - categories: list<string> (optional, <= 10 items) - suggested categories
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
 //   - initialRating: number (required, 1..10) - initial gut rating
@@ -68,8 +67,8 @@ rules_version = '2';
 //   - lng: number (optional, -180..180) - longitude coordinate
 //   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
 //   - priceLevel: number (optional, 0..5) - price tier (1..4)
-//   - meal: string (optional, <= 100 chars) - target meal category
-//   - meals: list<string> (optional, <= 20 items) - meal categories
+//   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars') - spot category
+//   - categories: list<string> (optional, <= 10 items) - suggested categories
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
 //   - notes: string (optional, <= 5000 chars) - personal notes / why want to try
@@ -146,6 +145,13 @@ service cloud.firestore {
       return listVal is list && listVal.size() <= maxSize;
     }
 
+    // Validate optional spot category (if present and non-null, must be one of the allowed values)
+    function isValidOptionalCategory(data) {
+      return !('category' in data) ||
+        data.category == null ||
+        data.category in ['restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars'];
+    }
+
     // ===============================================================
     // Domain Validators (Used in BOTH create and update rules)
     // ===============================================================
@@ -154,7 +160,6 @@ service cloud.firestore {
       return data.keys().size() <= 30 &&
         !('role' in data) &&
         !('isAdmin' in data) &&
-        isValidOptionalString('comparisonScope', 0, 100) &&
         isValidOptionalString('customPlacesApiKey', 0, 200) &&
         isValidOptionalString('displayName', 0, 200) &&
         isValidOptionalString('email', 0, 254) &&
@@ -185,7 +190,7 @@ service cloud.firestore {
         isValidOptionalString('city', 0, 200) &&
         isValidOptionalString('googleMapsUri', 0, 1000) &&
         isValidOptionalString('primaryTypeDisplay', 0, 200) &&
-        isValidOptionalString('meal', 0, 100) &&
+        isValidOptionalCategory(data) &&
         isValidOptionalString('notes', 0, 5000) &&
         isValidOptionalString('favoriteDishes', 0, 2000) &&
         (!('status' in data) || data.status == null || data.status in ['ranked', 'want_to_try']) &&
@@ -193,7 +198,7 @@ service cloud.firestore {
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
         (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
-        (!('meals' in data) || isValidList(data.meals, 20)) &&
+        (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
         (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
         (!('rankedHistory' in data) || isValidList(data.rankedHistory, 100)) &&
         (!('comparisonsCount' in data) || (data.comparisonsCount is number && data.comparisonsCount >= 0 && data.comparisonsCount <= 1000000)) &&
@@ -213,14 +218,14 @@ service cloud.firestore {
         isValidOptionalString('city', 0, 200) &&
         isValidOptionalString('googleMapsUri', 0, 1000) &&
         isValidOptionalString('primaryTypeDisplay', 0, 200) &&
-        isValidOptionalString('meal', 0, 100) &&
+        isValidOptionalCategory(data) &&
         isValidOptionalString('notes', 0, 5000) &&
         isValidOptionalString('recommendedBy', 0, 120) &&
         isValidOptionalString('recommendedByUid', 0, 150) &&
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
         (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
-        (!('meals' in data) || isValidList(data.meals, 20)) &&
+        (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
         (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
@@ -251,7 +256,7 @@ service cloud.firestore {
         isValidOptionalString('handle', 0, 60) &&
         isValidOptionalString('photoURL', 0, 1000) &&
         isValidOptionalString('title', 0, 300) &&
-        isValidOptionalString('mealFilter', 0, 100) &&
+        isValidOptionalString('categoryFilter', 0, 100) &&
         isValidOptionalString('cityFilter', 0, 200) &&
         isValidOptionalString('cuisineFilter', 0, 200) &&
         (!('restaurants' in data) || isValidList(data.restaurants, 500)) &&

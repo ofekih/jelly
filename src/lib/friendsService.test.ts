@@ -18,8 +18,8 @@ function makeRestaurant(overrides: Partial<RestaurantEntry> & { name: string }):
     name: overrides.name,
     formattedAddress: overrides.formattedAddress || '123 Main St',
     city: overrides.city || 'Irvine',
-    meal: overrides.meal || 'Dinner',
-    meals: overrides.meals || ['Dinner'],
+    category: overrides.category || 'restaurants',
+    categories: overrides.categories || ['restaurants'],
     cuisines: overrides.cuisines || ['Japanese'],
     initialRating: overrides.initialRating ?? 8.5,
     elo: overrides.elo ?? 1600,
@@ -39,8 +39,8 @@ function makeBookmark(overrides: Partial<BookmarkEntry> & { name: string }): Boo
     name: overrides.name,
     formattedAddress: overrides.formattedAddress || '123 Main St',
     city: overrides.city || 'Irvine',
-    meal: overrides.meal || 'Dinner',
-    meals: overrides.meals || ['Dinner'],
+    category: overrides.category || 'restaurants',
+    categories: overrides.categories || ['restaurants'],
     cuisines: overrides.cuisines || ['Japanese'],
     createdAt: 1000,
     updatedAt: 1000,
@@ -262,7 +262,7 @@ describe('friendsService', () => {
     };
 
     const metrics = getSpotSocialMetrics(
-      { placeId: 'target_hayato', name: 'Hayato', cuisines: ['Japanese'], meals: ['Dinner'] },
+      { placeId: 'target_hayato', name: 'Hayato', cuisines: ['Japanese'], categories: ['restaurants'] },
       {
         myUid: 'me_uid',
         myRestaurants,

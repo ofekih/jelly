@@ -1,4 +1,4 @@
-import { MealCategory } from '../types';
+import { SpotCategory } from '../types';
 
 export interface RawPlaceSignals {
   name: string;
@@ -88,21 +88,41 @@ const KEYWORD_CUISINE_RULES: Array<[RegExp, string]> = [
   [/\b(cocktail|speakeasy|lounge|tavern|bar)\b/i, 'Cocktail Bar'],
 ];
 
-const KEYWORD_MEAL_RULES: Array<[RegExp, MealCategory[]]> = [
-  [/\b(coffee|espresso|roasters|roastery|matcha|cafe|café|tea)\b/i, ['Coffee', 'Breakfast']],
-  [/\b(bakery|bakehouse|boulangerie|patisserie|bagel|donut|doughnut|croissant)\b/i, ['Breakfast', 'Coffee', 'Dessert']],
-  [/\b(ice cream|gelato|sorbet|dessert|sweet|cookie|cupcake|boba)\b/i, ['Dessert']],
-  [/\b(brunch|breakfast|pancake|waffle|diner)\b/i, ['Breakfast', 'Lunch']],
-  [/\b(bar|pub|tavern|speakeasy|taproom|brewery|wine bar|cocktail)\b/i, ['Drinks', 'Dinner']],
-  [/\b(deli|sandwich|sub|salad|poke|taco|taqueria|burger|pizza)\b/i, ['Lunch', 'Dinner']],
+// Keyword fallbacks (venue name / display type) when Google types are inconclusive.
+// Order matters: earlier rules produce higher-priority categories.
+const KEYWORD_CATEGORY_RULES: Array<[RegExp, SpotCategory[]]> = [
+  [/\b(boba|bubble tea|milk tea|teahouse|tea house|tea bar)\b/i, ['coffee_tea']],
+  [/\b(coffee|espresso|roasters|roastery|matcha|cafe|café|tea)\b/i, ['coffee_tea']],
+  [/\b(bakery|bakehouse|boulangerie|patisserie|pâtisserie|bagel|bagels|donut|donuts|doughnut|doughnuts|croissant|bread)\b/i, ['bakeries']],
+  [/\b(ice cream|gelato|gelateria|sorbet|dessert|desserts|creamery|frozen yogurt|froyo|cookie|cookies|cupcake|cupcakes|chocolate|churro|churros|mochi)\b/i, ['dessert']],
+  [/\b(brunch|breakfast|pancake|pancakes|waffle|waffles|diner)\b/i, ['brunch']],
+  [/\b(bar|pub|tavern|speakeasy|taproom|brewery|brewing|wine bar|cocktail|cocktails|lounge|saloon|biergarten)\b/i, ['bars']],
 ];
 
+const COFFEE_TEA_TYPES = ['coffee_shop', 'cafe', 'tea_house', 'coffee_roastery', 'coffee_stand'];
+const BAKERY_TYPES = ['bakery', 'bagel_shop', 'donut_shop'];
+const DESSERT_TYPES = [
+  'ice_cream_shop',
+  'dessert_shop',
+  'dessert_restaurant',
+  'confectionery',
+  'chocolate_shop',
+  'candy_store',
+  'frozen_yogurt_shop',
+];
+const BAR_TYPES = ['bar', 'wine_bar', 'cocktail_bar', 'pub', 'brewery', 'brewpub', 'beer_garden', 'lounge_bar', 'sports_bar', 'night_club'];
+const BRUNCH_TYPES = ['breakfast_restaurant', 'brunch_restaurant', 'diner', 'pancake_restaurant'];
+
 export function autoCategorizePlace(signals: RawPlaceSignals): {
-  meals: MealCategory[];
+  categories: SpotCategory[];
   cuisines: string[];
   primaryTypeDisplay: string;
 } {
-  const mealsSet = new Set<MealCategory>();
+  // Ordered list of categories, best match first (the first one is the default pick)
+  const categories: SpotCategory[] = [];
+  const add = (c: SpotCategory) => {
+    if (!categories.includes(c)) categories.push(c);
+  };
   const cuisinesSet = new Set<string>();
   const allTypes = new Set<string>(signals.types || []);
   if (signals.primaryType) allTypes.add(signals.primaryType);
@@ -145,78 +165,68 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
     }
   }
 
-  // 4. Primary venue type priority for Meals
-  if (
-    signals.primaryType === 'coffee_shop' ||
-    signals.primaryType === 'cafe' ||
-    signals.primaryType === 'tea_house' ||
-    signals.osmAmenity === 'cafe'
-  ) {
-    mealsSet.add('Coffee');
-    if (signals.servesBreakfast || allTypes.has('breakfast_restaurant') || allTypes.has('bakery')) {
-      mealsSet.add('Breakfast');
-    }
-    if (signals.servesLunch) {
-      mealsSet.add('Lunch');
-    }
-  } else if (
-    signals.primaryType === 'ice_cream_shop' ||
-    signals.primaryType === 'dessert_shop' ||
-    signals.primaryType === 'dessert_restaurant' ||
-    signals.osmAmenity === 'ice_cream'
-  ) {
-    mealsSet.add('Dessert');
-  } else if (signals.primaryType === 'bakery') {
-    mealsSet.add('Breakfast');
-    mealsSet.add('Coffee');
-    mealsSet.add('Dessert');
-    if (signals.servesLunch) mealsSet.add('Lunch');
-  } else if (
-    signals.primaryType === 'bar' ||
-    signals.primaryType === 'wine_bar' ||
-    signals.primaryType === 'cocktail_bar' ||
-    signals.primaryType === 'pub' ||
-    signals.primaryType === 'brewery' ||
-    signals.osmAmenity === 'bar' ||
-    signals.osmAmenity === 'pub'
-  ) {
-    mealsSet.add('Drinks');
-    if (signals.servesDinner) mealsSet.add('Dinner');
-  } else {
-    // Standard restaurant meal detection
-    if (signals.servesDinner) mealsSet.add('Dinner');
-    if (signals.servesLunch) mealsSet.add('Lunch');
-    if (signals.servesBreakfast || signals.servesBrunch) mealsSet.add('Breakfast');
+  // 4. Category detection, led by the venue's primary type
+  const primary = signals.primaryType || '';
+  const amenity = signals.osmAmenity || '';
+  const hasAnyType = (list: string[]) => list.some((t) => allTypes.has(t));
+  const servesBrunchish = Boolean(signals.servesBreakfast || signals.servesBrunch);
 
-    if (
-      allTypes.has('breakfast_restaurant') ||
-      allTypes.has('brunch_restaurant') ||
-      allTypes.has('bagel_shop') ||
-      allTypes.has('donut_shop')
-    ) {
-      mealsSet.add('Breakfast');
+  if (COFFEE_TEA_TYPES.includes(primary) || amenity === 'cafe') {
+    add('coffee_tea');
+    if (hasAnyType(BAKERY_TYPES)) add('bakeries');
+    if (servesBrunchish && (signals.servesLunch || hasAnyType(BRUNCH_TYPES))) add('brunch');
+  } else if (DESSERT_TYPES.includes(primary) || amenity === 'ice_cream') {
+    add('dessert');
+    if (hasAnyType(BAKERY_TYPES)) add('bakeries');
+  } else if (BAKERY_TYPES.includes(primary)) {
+    add('bakeries');
+    if (signals.servesCoffee || hasAnyType(COFFEE_TEA_TYPES)) add('coffee_tea');
+    if (hasAnyType(DESSERT_TYPES)) add('dessert');
+    if (signals.servesBrunch || (signals.servesBreakfast && signals.servesLunch)) add('brunch');
+  } else if (BAR_TYPES.includes(primary) || ['bar', 'pub', 'biergarten', 'nightclub'].includes(amenity)) {
+    add('bars');
+    if (signals.servesDinner) add('restaurants');
+    if (signals.servesBrunch) add('brunch');
+  } else if (BRUNCH_TYPES.includes(primary)) {
+    add('brunch');
+    if (signals.servesDinner) add('restaurants');
+    if (hasAnyType(COFFEE_TEA_TYPES)) add('coffee_tea');
+  } else if (primary || allTypes.size > 0 || amenity) {
+    // General restaurant (or an unknown primary type with secondary signals)
+    const looksLikeRestaurant =
+      primary.endsWith('_restaurant') ||
+      primary === 'restaurant' ||
+      allTypes.has('restaurant') ||
+      amenity === 'restaurant' ||
+      Boolean(signals.servesDinner || signals.servesLunch);
+
+    // Daytime-only spots that serve breakfast lean Brunch first
+    if (servesBrunchish && !signals.servesDinner) {
+      add('brunch');
+      if (looksLikeRestaurant) add('restaurants');
+    } else if (looksLikeRestaurant) {
+      add('restaurants');
+      if (servesBrunchish || hasAnyType(BRUNCH_TYPES)) add('brunch');
     }
-    if (allTypes.has('coffee_shop') || allTypes.has('cafe')) {
-      mealsSet.add('Coffee');
-    }
-    if (allTypes.has('bar') || allTypes.has('wine_bar') || allTypes.has('cocktail_bar')) {
-      mealsSet.add('Drinks');
-    }
+    if (hasAnyType(BRUNCH_TYPES)) add('brunch');
+    if (hasAnyType(BAR_TYPES)) add('bars');
+    if (hasAnyType(COFFEE_TEA_TYPES)) add('coffee_tea');
+    if (hasAnyType(BAKERY_TYPES)) add('bakeries');
+    if (hasAnyType(DESSERT_TYPES)) add('dessert');
   }
 
-  // 5. Keyword fallback for meals if still empty
-  if (mealsSet.size === 0) {
-    for (const [regex, mealList] of KEYWORD_MEAL_RULES) {
+  // 5. Keyword fallback (name / display type) if still empty or only weakly detected
+  if (categories.length === 0) {
+    for (const [regex, list] of KEYWORD_CATEGORY_RULES) {
       if (regex.test(combinedText)) {
-        for (const m of mealList) mealsSet.add(m);
+        for (const c of list) add(c);
       }
     }
   }
 
-  // 6. Default fallback if a general restaurant had no explicit meal service booleans
-  if (mealsSet.size === 0) {
-    mealsSet.add('Dinner');
-    mealsSet.add('Lunch');
+  // 6. Default: a regular restaurant
+  if (categories.length === 0) {
+    add('restaurants');
   }
 
   let primaryTypeDisplay = signals.primaryTypeDisplayName || '';
@@ -224,18 +234,23 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
     const firstCuisine = Array.from(cuisinesSet)[0];
     if (firstCuisine) {
       primaryTypeDisplay = firstCuisine;
-    } else if (mealsSet.has('Coffee')) {
-      primaryTypeDisplay = 'Coffee';
-    } else if (mealsSet.has('Drinks')) {
-      primaryTypeDisplay = 'Bar';
     } else {
-      primaryTypeDisplay = 'Restaurant';
+      primaryTypeDisplay = CATEGORY_FALLBACK_DISPLAY[categories[0]];
     }
   }
 
   return {
-    meals: Array.from(mealsSet),
+    categories,
     cuisines: Array.from(cuisinesSet),
     primaryTypeDisplay,
   };
 }
+
+const CATEGORY_FALLBACK_DISPLAY: Record<SpotCategory, string> = {
+  restaurants: 'Restaurant',
+  brunch: 'Brunch',
+  dessert: 'Dessert',
+  bakeries: 'Bakery',
+  coffee_tea: 'Cafe',
+  bars: 'Bar',
+};

@@ -9,22 +9,22 @@ import {
   recordSxSComparison,
   spectrumRatingToPct,
 } from './rankingEngine';
-import { MealCategory, RestaurantEntry } from '../types';
+import { RestaurantEntry, SpotCategory } from '../types';
 
 function makeDummySpot(
   id: string,
   name: string,
   initialRating: number,
   rankIndex: number,
-  meal: MealCategory = 'Dinner',
+  category: SpotCategory = 'restaurants',
   cuisines: string[] = ['Italian']
 ): RestaurantEntry {
   return {
     id,
     name,
     formattedAddress: '123 Main St',
-    meal,
-    meals: [meal],
+    category,
+    categories: [category],
     cuisines,
     initialRating,
     elo: ratingToBaseElo(initialRating),
@@ -65,7 +65,7 @@ describe('rankingEngine (ELO-based)', () => {
       makeDummySpot('5', 'Meh Place', 5, 4),
     ]);
 
-    let state = initSxSSearch(existing, 9, 'Dinner', ['Italian']);
+    let state = initSxSSearch(existing, 9, ['Italian']);
     const initialElo = state.candidateElo;
 
     const firstPick = pickNextOpponent(state, existing);
@@ -83,48 +83,16 @@ describe('rankingEngine (ELO-based)', () => {
     expect(state.candidateElo).toBeGreaterThan(initialElo);
   });
 
-  it('always compares against at least one same-meal spot above and one same-meal spot below when they exist', () => {
-    // Mixed-meal list where Dinner spots are separated by Breakfast, Coffee, and Lunch spots
-    const existing = recomputeMagicScores([
-      makeDummySpot('1', 'Top Dinner', 9.6, 0, 'Dinner'),
-      makeDummySpot('2', 'Top Breakfast', 9.2, 1, 'Breakfast'),
-      makeDummySpot('3', 'Great Coffee', 8.8, 2, 'Coffee'),
-      makeDummySpot('4', 'Good Lunch', 8.4, 3, 'Lunch'),
-      makeDummySpot('5', 'Mid Dinner', 8.0, 4, 'Dinner'),
-      makeDummySpot('6', 'Lower Dinner', 7.2, 5, 'Dinner'),
-    ]);
-
-    // Candidate is a Dinner spot with gut rating 8.6 (sits between Top Dinner at 0 and Mid Dinner at 4)
-    let state = initSxSSearch(existing, 8.6, 'Dinner', ['Italian']);
-
-    while (true) {
-      const next = pickNextOpponent(state, existing);
-      if (!next) break;
-      // Candidate loses to spots ranked 0..2 and beats spots ranked 3..5
-      const outcome = next.opponentIndex <= 2 ? 'opponent_wins' : 'new_wins';
-      state = recordSxSComparison(state, next.opponentIndex, next.opponent, outcome);
-    }
-
-    const { insertIndex } = getBestInsertionIndex(state);
-    expect(insertIndex).toBe(3);
-
-    const comparedSet = new Set(state.comparedIndices);
-    // Must have compared against the Dinner spot above insertIndex (index 0: Top Dinner)
-    expect(comparedSet.has(0)).toBe(true);
-    // Must have compared against the Dinner spot below insertIndex (index 4: Mid Dinner)
-    expect(comparedSet.has(4)).toBe(true);
-  });
-
   it('prioritizes same-cuisine tags (e.g. Japanese) during SxS comparisons', () => {
     const existing = recomputeMagicScores([
-      makeDummySpot('1', 'Top Sushi', 9.5, 0, 'Dinner', ['Japanese', 'Sushi']),
-      makeDummySpot('2', 'French Bistro', 9.0, 1, 'Dinner', ['French']),
-      makeDummySpot('3', 'Steakhouse', 8.6, 2, 'Dinner', ['Steakhouse']),
-      makeDummySpot('4', 'Ramen Bar', 8.2, 3, 'Dinner', ['Japanese', 'Ramen']),
-      makeDummySpot('5', 'Trattoria', 7.8, 4, 'Dinner', ['Italian']),
+      makeDummySpot('1', 'Top Sushi', 9.5, 0, 'restaurants', ['Japanese', 'Sushi']),
+      makeDummySpot('2', 'French Bistro', 9.0, 1, 'restaurants', ['French']),
+      makeDummySpot('3', 'Steakhouse', 8.6, 2, 'restaurants', ['Steakhouse']),
+      makeDummySpot('4', 'Ramen Bar', 8.2, 3, 'restaurants', ['Japanese', 'Ramen']),
+      makeDummySpot('5', 'Trattoria', 7.8, 4, 'restaurants', ['Italian']),
     ]);
 
-    let state = initSxSSearch(existing, 8.6, 'Dinner', ['Japanese']);
+    let state = initSxSSearch(existing, 8.6, ['Japanese']);
     const firstPick = pickNextOpponent(state, existing);
     expect(firstPick).not.toBeNull();
     // Even though index 2 (Steakhouse) is the exact midpoint, index 3 (Ramen Bar) or index 0 (Top Sushi) is Japanese and should be picked first!

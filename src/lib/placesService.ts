@@ -182,7 +182,7 @@ function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate
     p.addressComponents
   );
 
-  const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
+  const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
     name,
     types: p.types,
     primaryType: p.primaryType,
@@ -212,7 +212,7 @@ function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate
         `${name} ${formattedAddress}`
       )}`,
     priceLevel: p.priceLevel ? GOOGLE_PRICE_MAP[p.priceLevel] : undefined,
-    meals,
+    categories,
     cuisines,
     primaryTypeDisplay,
     source: 'google_places',
@@ -352,7 +352,7 @@ export async function searchRestaurants(
             if (detailed) return detailed;
             // Instant fallback from prediction metadata if details call fails
             const { neighborhood, city } = extractNeighborhoodAndCity(pred.secondaryText);
-            const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
+            const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
               name: pred.mainText,
               types: pred.types,
             });
@@ -365,7 +365,7 @@ export async function searchRestaurants(
               googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
                 `${pred.mainText} ${pred.secondaryText}`
               )}`,
-              meals,
+              categories,
               cuisines,
               primaryTypeDisplay,
               source: 'google_places' as const,
@@ -452,7 +452,7 @@ export async function searchRestaurants(
         if (seenKeys.has(dedupeKey)) continue;
         seenKeys.add(dedupeKey);
 
-        const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
+        const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
           name,
           osmAmenity: osmValue,
           osmCuisine: props.cuisine,
@@ -473,7 +473,7 @@ export async function searchRestaurants(
           googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
             `${name} ${formattedAddress}`
           )}`,
-          meals,
+          categories,
           cuisines,
           primaryTypeDisplay,
           source: 'osm_photon',
@@ -498,7 +498,7 @@ export async function searchRestaurants(
 export function createManualPlaceCandidate(name: string, cityOrNeighborhood = ''): PlaceCandidate {
   const cleanName = name.trim();
   const cleanLoc = cityOrNeighborhood.trim();
-  const { meals, cuisines, primaryTypeDisplay } = autoCategorizePlace({
+  const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
     name: cleanName,
   });
 
@@ -511,7 +511,7 @@ export function createManualPlaceCandidate(name: string, cityOrNeighborhood = ''
     googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
       `${cleanName} ${cleanLoc}`
     )}`,
-    meals,
+    categories,
     cuisines,
     primaryTypeDisplay,
     source: 'manual',

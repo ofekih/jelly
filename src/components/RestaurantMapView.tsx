@@ -662,7 +662,6 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
             </div>
             <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
               {[
-                selectedRanked.meal,
                 selectedRanked.cuisines[0] || selectedRanked.primaryTypeDisplay,
                 selectedRanked.neighborhood || selectedRanked.city,
                 (() => {
@@ -710,7 +709,6 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
             </div>
             <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
               {[
-                selectedBookmark.meal,
                 selectedBookmark.cuisines[0] || selectedBookmark.primaryTypeDisplay,
                 selectedBookmark.neighborhood || selectedBookmark.city,
                 (() => {

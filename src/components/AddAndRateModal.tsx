@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Bookmark, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
 import {
-  ALL_MEAL_CATEGORIES,
-  MEAL_EMOJI,
-  MealCategory,
+  ALL_CATEGORIES,
+  CATEGORY_EMOJI,
+  CATEGORY_LABEL,
+  DEFAULT_CATEGORY,
   PlaceCandidate,
   RestaurantEntry,
   SharedListPayload,
+  SpotCategory,
 } from '../types';
 import { createManualPlaceCandidate, searchRestaurants } from '../lib/placesService';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
@@ -18,6 +20,7 @@ interface AddAndRateModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingRestaurants: RestaurantEntry[];
+  defaultCategory?: SpotCategory; // The list the user is currently viewing
   myUid?: string | null;
   bookmarkedPlaceIds?: Set<string>;
   friendLists?: SharedListPayload[];
@@ -30,7 +33,7 @@ interface AddAndRateModalProps {
   onCompleteQuestions: (
     candidate: PlaceCandidate,
     initialRating: number,
-    selectedMeal: MealCategory,
+    category: SpotCategory,
     existingIdToReplace?: string
   ) => void;
   onAddBookmark?: (candidate: PlaceCandidate) => void;
@@ -40,6 +43,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   isOpen,
   onClose,
   existingRestaurants,
+  defaultCategory = DEFAULT_CATEGORY,
   myUid = null,
   bookmarkedPlaceIds,
   friendLists = [],
@@ -52,7 +56,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   onCompleteQuestions,
   onAddBookmark,
 }) => {
-  const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_meal'>('search');
+  const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceCandidate[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -61,7 +65,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const [selectedRating, setSelectedRating] = useState<number>(8.0);
   const [previewRating, setPreviewRating] = useState<number | null>(null);
   const [isDraggingLine, setIsDraggingLine] = useState(false);
-  const [showAllMeals, setShowAllMeals] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const resultsScrollRef = React.useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -78,7 +82,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         lng: reRankingEntry.lng,
         googleMapsUri: reRankingEntry.googleMapsUri,
         priceLevel: reRankingEntry.priceLevel,
-        meals: reRankingEntry.meals?.length ? reRankingEntry.meals : [reRankingEntry.meal],
+        categories: reRankingEntry.categories?.length
+          ? reRankingEntry.categories
+          : [reRankingEntry.category],
         cuisines: reRankingEntry.cuisines,
         primaryTypeDisplay: reRankingEntry.primaryTypeDisplay,
         source: 'google_places',
@@ -87,7 +93,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       setSelectedRating(roundedPrev);
       setPreviewRating(roundedPrev);
       setStep('q1_rating');
-      setShowAllMeals(false);
+      setShowAllCategories(false);
     } else {
       setStep('search');
       setSearchQuery('');
@@ -95,7 +101,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       setSelectedCandidate(null);
       setSelectedRating(8.0);
       setPreviewRating(null);
-      setShowAllMeals(false);
+      setShowAllCategories(false);
     }
   }, [isOpen, reRankingEntry]);
 
@@ -143,21 +149,33 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     }
   }, [searchQuery, searchResults]);
 
-  const finishWithMeal = (candidate: PlaceCandidate, rating: number, meal: MealCategory) => {
-    // Check if this exact (placeId + meal) or (name + address + meal) already exists in the list
-    const existingMatch =
-      reRankingEntry ||
-      existingRestaurants.find(
-        (r) =>
-          r.meal === meal &&
-          ((r.placeId && candidate.placeId && r.placeId === candidate.placeId) ||
-            (r.name.toLowerCase() === candidate.name.toLowerCase() &&
-              r.formattedAddress === candidate.formattedAddress))
-      );
+  const findExistingInCategory = (candidate: PlaceCandidate, category: SpotCategory) =>
+    existingRestaurants.find(
+      (r) =>
+        r.category === category &&
+        ((r.placeId && candidate.placeId && r.placeId === candidate.placeId) ||
+          (r.name.toLowerCase() === candidate.name.toLowerCase() &&
+            r.formattedAddress === candidate.formattedAddress))
+    );
 
-    onCompleteQuestions(candidate, rating, meal, existingMatch?.id);
+  // Lists to offer for a candidate: its auto-detected categories, plus the list being viewed
+  const getCategoryOptions = (candidate: PlaceCandidate): SpotCategory[] =>
+    Array.from(
+      new Set([...(candidate.categories || []), defaultCategory].filter(Boolean))
+    ) as SpotCategory[];
+
+  const finishWithCategory = (
+    candidate: PlaceCandidate,
+    rating: number,
+    category: SpotCategory
+  ) => {
+    // Check if this exact (placeId + category) or (name + address + category) already exists
+    const existingMatch = reRankingEntry || findExistingInCategory(candidate, category);
+
+    onCompleteQuestions(candidate, rating, category, existingMatch?.id);
   };
 
+          
   const handlePickRating = (rawRating: number) => {
     if (!selectedCandidate) return;
     const rating = Math.max(1.0, Math.min(10.0, Math.round(rawRating * 10) / 10));
@@ -168,22 +186,20 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       is_rerank: Boolean(reRankingEntry),
     });
 
-    // If re-ranking an existing entry, its meal is already fixed -> go straight to Q3+ (SxS)
+    // If re-ranking an existing entry, its list is already fixed -> go straight to Q3+ (SxS)
     if (reRankingEntry) {
-      finishWithMeal(selectedCandidate, rating, reRankingEntry.meal);
+      finishWithCategory(selectedCandidate, rating, reRankingEntry.category);
       return;
     }
 
-    const detectedMeals =
-      selectedCandidate.meals.length > 0 ? selectedCandidate.meals : (['Dinner'] as MealCategory[]);
-
-    // If this place only serves 1 meal type, skip Q2 and go straight to Q3+ (SxS)
-    if (detectedMeals.length === 1) {
-      finishWithMeal(selectedCandidate, rating, detectedMeals[0]);
+    // If only one list fits, skip Q2 and go straight to Q3+ (SxS)
+    const options = getCategoryOptions(selectedCandidate);
+    if (options.length === 1) {
+      finishWithCategory(selectedCandidate, rating, options[0]);
       return;
     }
 
-    setStep('q2_meal');
+    setStep('q2_category');
   };
 
   const computeRatingFromClientX = (clientX: number, rect: DOMRect): number => {
@@ -301,7 +317,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     });
     setSelectedCandidate(candidate);
     setPreviewRating(null);
-    setShowAllMeals(false);
+    setShowAllCategories(false);
     setStep('q1_rating');
   };
 
@@ -311,14 +327,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     handleSelectCandidate(manual);
   };
 
-  const candidateMeals =
-    selectedCandidate && selectedCandidate.meals.length > 0
-      ? selectedCandidate.meals
-      : (['Dinner', 'Lunch'] as MealCategory[]);
+  const candidateCategories = selectedCandidate
+    ? getCategoryOptions(selectedCandidate)
+    : [defaultCategory];
 
-  const displayedMeals = showAllMeals
-    ? Array.from(new Set([...candidateMeals, ...ALL_MEAL_CATEGORIES]))
-    : candidateMeals;
+  const displayedCategories = showAllCategories
+    ? Array.from(new Set([...candidateCategories, ...ALL_CATEGORIES]))
+    : candidateCategories;
 
   return (
     <div
@@ -349,7 +364,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           {step !== 'search' && !reRankingEntry ? (
             <button
               type="button"
-              onClick={() => setStep(step === 'q2_meal' ? 'q1_rating' : 'search')}
+              onClick={() => setStep(step === 'q2_category' ? 'q1_rating' : 'search')}
               className="p-1.5 -ml-1.5 rounded-full text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               aria-label="Back"
             >
@@ -358,7 +373,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           ) : (
             <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
               {reRankingEntry
-                ? `Re-rank · ${reRankingEntry.meal}`
+                ? `Re-rank · ${CATEGORY_LABEL[reRankingEntry.category]}`
                 : 'Add a Place'}
             </span>
           )}
@@ -728,44 +743,36 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
             </div>
           )}
 
-          {/* Q2: Pick One Meal (when a restaurant works for multiple meals) */}
-          {step === 'q2_meal' && selectedCandidate && (
+          {/* Q2: Pick a list (when a place fits more than one category) */}
+          {step === 'q2_category' && selectedCandidate && (
             <div className="py-3 space-y-5">
               <div className="text-center space-y-1">
                 <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                   {selectedCandidate.name}
                 </h2>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Which meal was this for?
+                  Which list does this go in?
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-2">
-                {displayedMeals.map((meal) => {
-                  const existingForMeal = existingRestaurants.find(
-                    (r) =>
-                      r.meal === meal &&
-                      ((r.placeId &&
-                        selectedCandidate.placeId &&
-                        r.placeId === selectedCandidate.placeId) ||
-                        (r.name.toLowerCase() === selectedCandidate.name.toLowerCase() &&
-                          r.formattedAddress === selectedCandidate.formattedAddress))
-                  );
+                {displayedCategories.map((category) => {
+                  const existingInCategory = findExistingInCategory(selectedCandidate, category);
 
                   return (
                     <button
-                      key={meal}
+                      key={category}
                       type="button"
-                      onClick={() => finishWithMeal(selectedCandidate, selectedRating, meal)}
+                      onClick={() => finishWithCategory(selectedCandidate, selectedRating, category)}
                       className="w-full py-3.5 px-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/60 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/30 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 text-zinc-900 dark:text-zinc-100 font-semibold text-sm flex items-center justify-between transition-all active:scale-[0.99]"
                     >
                       <span className="flex items-center gap-2.5">
-                        <span className="text-base">{MEAL_EMOJI[meal]}</span>
-                        <span>{meal}</span>
+                        <span className="text-base">{CATEGORY_EMOJI[category]}</span>
+                        <span>{CATEGORY_LABEL[category]}</span>
                       </span>
-                      {existingForMeal && (
+                      {existingInCategory && (
                         <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                          Already ranked ({existingForMeal.magicScore.toFixed(1)}) · Re-rank
+                          Already ranked ({existingInCategory.magicScore.toFixed(1)}) · Re-rank
                         </span>
                       )}
                     </button>
@@ -773,13 +780,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 })}
               </div>
 
-              {!showAllMeals && displayedMeals.length < ALL_MEAL_CATEGORIES.length && (
+              {!showAllCategories && displayedCategories.length < ALL_CATEGORIES.length && (
                 <button
                   type="button"
-                  onClick={() => setShowAllMeals(true)}
+                  onClick={() => setShowAllCategories(true)}
                   className="w-full text-center text-xs font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 pt-1"
                 >
-                  Show other meal options...
+                  Show other lists...
                 </button>
               )}
             </div>

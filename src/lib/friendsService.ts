@@ -1,7 +1,7 @@
 import {
   BookmarkEntry,
   FriendSpotMatch,
-  MealCategory,
+  SpotCategory,
   RestaurantEntry,
   SharedListPayload,
 } from '../types';
@@ -75,7 +75,7 @@ export function getFriendMatchesForSpot(
   const matches: FriendSpotMatch[] = [];
 
   for (const fl of friendLists) {
-    // Check ranked restaurants first (if multiple meals, pick the highest scored one)
+    // Check ranked restaurants first (if in multiple lists, pick the highest scored one)
     const rankedMatches = (fl.restaurants || []).filter((r) => isSameSpot(spot, r));
     if (rankedMatches.length > 0) {
       rankedMatches.sort((a, b) => b.magicScore - a.magicScore);
@@ -87,7 +87,7 @@ export function getFriendMatchesForSpot(
         status: 'ranked',
         magicScore: best.magicScore,
         rankIndex: best.rankIndex,
-        meal: best.meal,
+        category: best.category,
         notes: best.notes,
         favoriteDishes: best.favoriteDishes,
       });
@@ -102,7 +102,7 @@ export function getFriendMatchesForSpot(
         friendName: fl.ownerName || 'Friend',
         friendPhotoURL: fl.photoURL,
         status: 'want_to_try',
-        meal: bmMatch.meal,
+        category: bmMatch.category,
         notes: bmMatch.notes,
       });
     }
@@ -127,8 +127,8 @@ export interface BlendSpotItem {
   lng?: number;
   googleMapsUri?: string;
   priceLevel?: number;
-  meal: MealCategory;
-  meals: MealCategory[];
+  category: SpotCategory;
+  categories: SpotCategory[];
   cuisines: string[];
   primaryTypeDisplay?: string;
   combinedScore?: number;
@@ -167,20 +167,22 @@ export function computeGroupBlend(
     lng?: number;
     googleMapsUri?: string;
     priceLevel?: number;
-    meal: MealCategory;
-    meals?: MealCategory[];
+    category: SpotCategory;
+    categories?: SpotCategory[];
     cuisines?: string[];
     primaryTypeDisplay?: string;
   }): BlendSpotItem => {
+    // Buckets are per (spot, category list): scores from different lists are never mixed
     for (const existing of buckets.values()) {
-      if (isSameSpot(existing, source)) {
+      if (existing.category === source.category && isSameSpot(existing, source)) {
         return existing;
       }
     }
-    const key =
+    const spotKey =
       source.placeId && !source.placeId.startsWith('manual_')
         ? source.placeId
         : `${normalizeName(source.name)}|${(source.city || '').toLowerCase()}`;
+    const key = `${spotKey}__${source.category}`;
 
     const created: BlendSpotItem = {
       key,
@@ -193,8 +195,8 @@ export function computeGroupBlend(
       lng: source.lng,
       googleMapsUri: source.googleMapsUri,
       priceLevel: source.priceLevel,
-      meal: source.meal,
-      meals: source.meals?.length ? source.meals : [source.meal],
+      category: source.category,
+      categories: source.categories?.length ? source.categories : [source.category],
       cuisines: source.cuisines || [],
       primaryTypeDisplay: source.primaryTypeDisplay,
       friendBreakdown: [],
@@ -385,7 +387,7 @@ export function computeUserRatingStats(restaurants: RestaurantEntry[]): UserRati
   if (!restaurants || restaurants.length === 0) {
     return { mean: 7.4, std: 1.1, count: 0 };
   }
-  // Deduplicate by spot (take highest score if ranked across multiple meals)
+  // Deduplicate by spot (take highest score if ranked across multiple lists)
   const scores = restaurants.map((r) => r.magicScore);
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
   if (scores.length < 2) {
@@ -439,7 +441,11 @@ export function computeUserTasteSimilarity(
     let bestScore = -Infinity;
     for (let j = 0; j < otherRestaurants.length; j++) {
       if (usedOtherIndices.has(j)) continue;
-      if (isSameSpot(mySpot, otherRestaurants[j])) {
+      // Only pair up scores from the same category list
+      if (
+        mySpot.category === otherRestaurants[j].category &&
+        isSameSpot(mySpot, otherRestaurants[j])
+      ) {
         if (otherRestaurants[j].magicScore > bestScore) {
           bestScore = otherRestaurants[j].magicScore;
           bestIdx = j;
@@ -570,7 +576,7 @@ export interface SpotSocialMetrics {
  * 2. `communityAvg`: Average score across all unique jelly users who ranked this spot
  * 3. `predictedScore`: Personalized 1.0–10.0 score prediction for the active user using
  *    Resnick's Z-Score Collaborative Filtering (weighted by Pearson + Kendall palate similarity)
- *    blended with the user's personal Cuisine & Meal affinity prior.
+ *    blended with the user's personal Cuisine & Category affinity prior.
  */
 export function getSpotSocialMetrics(
   spot: {
@@ -578,8 +584,8 @@ export function getSpotSocialMetrics(
     name: string;
     city?: string;
     formattedAddress?: string;
-    meal?: MealCategory;
-    meals?: MealCategory[];
+    category?: SpotCategory;
+    categories?: SpotCategory[];
     cuisines?: string[];
   },
   options: {
@@ -598,10 +604,14 @@ export function getSpotSocialMetrics(
 
   const friendUidSet = new Set(friendLists.map((fl) => fl.ownerUid || fl.id));
 
+  // When the spot belongs to a specific list, only scores from that same list count
+  const matchesSpot = (r: RestaurantEntry) =>
+    (!spot.category || r.category === spot.category) && isSameSpot(spot, r);
+
   // 1. Friends Average
   const friendScores: number[] = [];
   for (const fl of friendLists) {
-    const matches = (fl.restaurants || []).filter((r) => isSameSpot(spot, r));
+    const matches = (fl.restaurants || []).filter(matchesSpot);
     if (matches.length > 0) {
       const best = Math.max(...matches.map((m) => m.magicScore));
       friendScores.push(best);
@@ -615,7 +625,7 @@ export function getSpotSocialMetrics(
 
   // 2. Global jelly Community Average (all unique users including current user if ranked)
   const communityScores: number[] = [];
-  const myMatches = myRestaurants.filter((r) => isSameSpot(spot, r));
+  const myMatches = myRestaurants.filter(matchesSpot);
   if (myMatches.length > 0) {
     communityScores.push(Math.max(...myMatches.map((m) => m.magicScore)));
   }
@@ -631,7 +641,7 @@ export function getSpotSocialMetrics(
   for (const cl of allExternalLists) {
     const uid = cl.ownerUid || cl.id;
     if (options.myUid && uid === options.myUid) continue;
-    const matches = (cl.restaurants || []).filter((r) => isSameSpot(spot, r));
+    const matches = (cl.restaurants || []).filter(matchesSpot);
     if (matches.length > 0) {
       const bestScore = Math.max(...matches.map((m) => m.magicScore));
       // If we didn't already include the user's own local score, or if this is a distinct user:
@@ -671,10 +681,10 @@ export function getSpotSocialMetrics(
 
   const myStats = computeUserRatingStats(myRestaurants);
 
-  // 3a. Personal Cuisine & Meal Affinity Prior
+  // 3a. Personal Cuisine & Category Affinity Prior
   const spotCuisines = (spot.cuisines || []).map((c) => c.toLowerCase());
-  const spotMeals = new Set<MealCategory>(
-    spot.meals?.length ? spot.meals : spot.meal ? [spot.meal] : []
+  const spotCategories = new Set<SpotCategory>(
+    spot.category ? [spot.category] : spot.categories || []
   );
 
   let cuisineDelta = 0;
@@ -695,19 +705,19 @@ export function getSpotSocialMetrics(
     }
   }
 
-  let mealDelta = 0;
-  if (spotMeals.size > 0) {
-    const sameMealSpots = myRestaurants.filter((r) => spotMeals.has(r.meal));
-    if (sameMealSpots.length >= 2) {
-      const rawMealAvg =
-        sameMealSpots.reduce((acc, r) => acc + r.magicScore, 0) / sameMealSpots.length;
-      mealDelta = ((rawMealAvg - myStats.mean) * sameMealSpots.length) / (sameMealSpots.length + 3);
+  let categoryDelta = 0;
+  if (spotCategories.size > 0) {
+    const sameCategorySpots = myRestaurants.filter((r) => spotCategories.has(r.category));
+    if (sameCategorySpots.length >= 2) {
+      const rawCategoryAvg =
+        sameCategorySpots.reduce((acc, r) => acc + r.magicScore, 0) / sameCategorySpots.length;
+      categoryDelta = ((rawCategoryAvg - myStats.mean) * sameCategorySpots.length) / (sameCategorySpots.length + 3);
     }
   }
 
   const personalAffinityPrior = Math.max(
     1.0,
-    Math.min(10.0, myStats.mean + cuisineDelta + 0.35 * mealDelta)
+    Math.min(10.0, myStats.mean + cuisineDelta + 0.35 * categoryDelta)
   );
 
   // 3b. Collaborative Filtering across positively correlated raters (Resnick's Z-score projection)
@@ -761,7 +771,7 @@ export function getSpotSocialMetrics(
   if (weightSum > 0.02) {
     const predictedZ = weightedZSum / weightSum;
     const cfEstimate = myStats.mean + myStats.std * predictedZ;
-    // Blend CF estimate with personal cuisine/meal affinity prior based on total weight evidence
+    // Blend CF estimate with personal cuisine/category affinity prior based on total weight evidence
     const cfAlpha = weightSum / (weightSum + 0.35);
     predictedRaw = cfAlpha * cfEstimate + (1 - cfAlpha) * personalAffinityPrior;
   } else {

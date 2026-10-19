@@ -13,10 +13,9 @@ import {
   X,
 } from 'lucide-react';
 import {
-  ALL_MEAL_CATEGORIES,
+  CATEGORY_LABEL,
   COMMON_CUISINES,
   FriendSpotMatch,
-  MealCategory,
   RankedHistoryEvent,
   RestaurantEntry,
 } from '../types';
@@ -49,7 +48,6 @@ interface SpotDetailModalProps {
   onSaveEdits: (
     id: string,
     updates: {
-      meal: MealCategory;
       cuisines: string[];
       priceLevel?: number;
       notes?: string;
@@ -73,7 +71,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isEditingNoteInline, setIsEditingNoteInline] = useState(false);
-  const [meal, setMeal] = useState<MealCategory>('Dinner');
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [priceLevel, setPriceLevel] = useState<number | undefined>(undefined);
   const [notes, setNotes] = useState('');
@@ -92,7 +89,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
     if (!restaurant) return;
     setIsEditMode(false);
     setIsEditingNoteInline(false);
-    setMeal(restaurant.meal || 'Dinner');
     setCuisines(restaurant.cuisines || []);
     setPriceLevel(restaurant.priceLevel);
     setNotes(restaurant.notes || '');
@@ -108,7 +104,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     onSaveEdits(restaurant.id, {
-      meal,
       cuisines,
       priceLevel,
       notes: notes.trim() || undefined,
@@ -119,7 +114,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
 
   const handleSaveInlineNote = () => {
     onSaveEdits(restaurant.id, {
-      meal: restaurant.meal,
       cuisines: restaurant.cuisines || [],
       priceLevel: restaurant.priceLevel,
       notes: notes.trim() || undefined,
@@ -130,7 +124,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   const handleShareSpot = async () => {
     const shareTitle = `${restaurant.name} on jelly`;
     const sub = [
-      restaurant.meal,
+      CATEGORY_LABEL[restaurant.category],
       restaurant.cuisines[0] || restaurant.primaryTypeDisplay,
       restaurant.neighborhood || restaurant.city,
     ]
@@ -201,9 +195,12 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
         <div className="px-5 pt-3 sm:pt-5 pb-4 flex items-start justify-between gap-3 touch-none select-none">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              <span>#{restaurant.rankIndex + 1} Overall</span>
-              <span>·</span>
-              <span className="text-emerald-600 dark:text-emerald-400">{restaurant.meal}</span>
+              <span>
+                #{restaurant.rankIndex + 1} in{' '}
+                <span className="text-emerald-600 dark:text-emerald-400">
+                  {CATEGORY_LABEL[restaurant.category]}
+                </span>
+              </span>
             </div>
             <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mt-0.5 leading-snug">
               {restaurant.name}
@@ -447,8 +444,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                           </span>
                           <span className="text-[11px] text-zinc-400">
                             {fm.status === 'ranked' && fm.rankIndex !== undefined
-                              ? `#${fm.rankIndex + 1} · ${fm.meal}`
-                              : `Want to Try · ${fm.meal}`}
+                              ? `#${fm.rankIndex + 1} in ${CATEGORY_LABEL[fm.category]}`
+                              : `Want to Try · ${CATEGORY_LABEL[fm.category]}`}
                           </span>
                         </div>
 
@@ -609,28 +606,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
         ) : (
           /* Edit Menu */
           <form ref={scrollContainerRef} onSubmit={handleSave} className="px-5 pb-6 space-y-4 overflow-y-auto">
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block mb-1.5">
-                Meal
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {ALL_MEAL_CATEGORIES.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMeal(m)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                      meal === m
-                        ? 'bg-zinc-900 text-white dark:bg-emerald-500 dark:text-zinc-950'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300'
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">

@@ -39,17 +39,28 @@ import {
 } from 'lucide-react';
 import { auth, db, googleProvider, setAnalyticsUser, trackEvent } from './firebase';
 import {
-  ALL_MEAL_CATEGORIES,
+  ALL_CATEGORIES,
   BookmarkEntry,
+  CATEGORY_EMOJI,
+  CATEGORY_LABEL,
+  DEFAULT_CATEGORY,
   FriendProfile,
-  MealCategory,
-  normalizeMealCategory,
+  SpotCategory,
   PlaceCandidate,
   RestaurantEntry,
   SharedListPayload,
 } from './types';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
-import { ratingToBaseElo, recomputeMagicScores } from './lib/rankingEngine';
+import { ratingToBaseElo } from './lib/rankingEngine';
+import {
+  buildEntryId,
+  getCategoryList,
+  isLegacyDoc,
+  loadRestaurants,
+  recomputeAllCategoryScores,
+  replaceCategoryList,
+  sanitizeLoadedBookmark,
+} from './lib/categoryLists';
 import {
   deduplicateUserLists,
   deriveDefaultHandle,
@@ -79,49 +90,10 @@ const LOCAL_FRIENDS_KEY = 'jelly_friends_v1';
 const LOCAL_SEEN_FOLLOWERS_KEY = 'jelly_seen_followers_v1';
 const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
 
-function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
-  const meal = normalizeMealCategory(raw.meal || raw.meals?.[0]);
-  const normalizedMeals: MealCategory[] =
-    Array.isArray(raw.meals) && raw.meals.length > 0
-      ? Array.from(new Set(raw.meals.map((m: string) => normalizeMealCategory(m))))
-      : [meal];
-  const initialRating = typeof raw.initialRating === 'number' ? raw.initialRating : 8;
-  const elo =
-    typeof raw.elo === 'number' && !Number.isNaN(raw.elo)
-      ? raw.elo
-      : ratingToBaseElo(initialRating);
-
-  return {
-    ...raw,
-    meal,
-    meals: normalizedMeals,
-    cuisines: Array.isArray(raw.cuisines) ? raw.cuisines : [],
-    initialRating,
-    elo,
-  };
-}
-
-function sanitizeLoadedBookmark(raw: any): BookmarkEntry {
-  const meal = normalizeMealCategory(raw.meal || raw.meals?.[0]);
-  const normalizedMeals: MealCategory[] =
-    Array.isArray(raw.meals) && raw.meals.length > 0
-      ? Array.from(new Set(raw.meals.map((m: string) => normalizeMealCategory(m))))
-      : [meal];
-  return {
-    ...raw,
-    meal,
-    meals: normalizedMeals,
-    cuisines: Array.isArray(raw.cuisines) ? raw.cuisines : [],
-    createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : Date.now(),
-    updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : Date.now(),
-  };
-}
-
 function parseSharedListDoc(id: string, data: any): SharedListPayload {
-  const loadedRestaurants: RestaurantEntry[] = Array.isArray(data.restaurants)
-    ? data.restaurants.map(sanitizeLoadedRestaurant)
-    : [];
-  loadedRestaurants.sort((a, b) => a.rankIndex - b.rankIndex);
+  const loadedRestaurants: RestaurantEntry[] = loadRestaurants(
+    Array.isArray(data.restaurants) ? data.restaurants : []
+  );
   const loadedBookmarks: BookmarkEntry[] = Array.isArray(data.bookmarks)
     ? data.bookmarks.map(sanitizeLoadedBookmark)
     : [];
@@ -136,7 +108,7 @@ function parseSharedListDoc(id: string, data: any): SharedListPayload {
     handle: data.handle || undefined,
     photoURL: data.photoURL || undefined,
     title: data.title,
-    restaurants: recomputeMagicScores(loadedRestaurants),
+    restaurants: loadedRestaurants,
     bookmarks: loadedBookmarks,
     followingIds,
     createdAt: data.createdAt || Date.now(),
@@ -172,9 +144,7 @@ export const App: React.FC = () => {
         localStorage.getItem(LOCAL_STORAGE_KEY) ||
         localStorage.getItem('palate_personal_restaurants_v1');
       if (raw) {
-        const parsed = (JSON.parse(raw) as any[]).map(sanitizeLoadedRestaurant);
-        parsed.sort((a, b) => a.rankIndex - b.rankIndex);
-        return recomputeMagicScores(parsed);
+        return loadRestaurants(JSON.parse(raw) as any[]);
       }
     } catch {
       // Ignore
@@ -281,7 +251,8 @@ export const App: React.FC = () => {
   // View & Filter State
   const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try'>('ranked');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [selectedMeals, setSelectedMeals] = useState<MealCategory[]>([]);
+  // Each category is a fully separate list; exactly one is shown at a time
+  const [selectedCategory, setSelectedCategory] = useState<SpotCategory>(DEFAULT_CATEGORY);
   const [selectedCity, setSelectedCity] = useState<string | 'ALL'>('ALL');
   const [selectedCuisine, setSelectedCuisine] = useState<string | 'ALL'>('ALL');
   const [sortByNearest, setSortByNearest] = useState<boolean>(false);
@@ -614,7 +585,7 @@ export const App: React.FC = () => {
           const localRaw = localStorage.getItem(LOCAL_STORAGE_KEY);
           if (localRaw) {
             try {
-              const localItems = (JSON.parse(localRaw) as any[]).map(sanitizeLoadedRestaurant);
+              const localItems = loadRestaurants(JSON.parse(localRaw) as any[]);
               if (localItems.length > 0) {
                 const batch = writeBatch(db);
                 for (const item of localItems) {
@@ -636,12 +607,38 @@ export const App: React.FC = () => {
           return;
         }
 
-        const loaded: RestaurantEntry[] = [];
+        const rawDocs: any[] = [];
+        const legacyDocIds: string[] = [];
         snapshot.forEach((docSnap) => {
-          loaded.push(sanitizeLoadedRestaurant(docSnap.data()));
+          const data = docSnap.data();
+          rawDocs.push(data);
+          if (isLegacyDoc(data)) legacyDocIds.push(docSnap.id);
         });
-        loaded.sort((a, b) => a.rankIndex - b.rankIndex);
-        const normalized = recomputeMagicScores(loaded);
+        const normalized = loadRestaurants(rawDocs);
+
+        // One-time migration from legacy meal occasions to separate category lists:
+        // drop the old meal-keyed docs and write the re-keyed, per-category ranked docs.
+        if (legacyDocIds.length > 0) {
+          try {
+            const batch = writeBatch(db);
+            const keepIds = new Set(normalized.map((r) => r.id));
+            for (const id of legacyDocIds) {
+              if (!keepIds.has(id)) batch.delete(doc(db, 'users', user.uid, 'restaurants', id));
+            }
+            for (const item of normalized) {
+              const cleanDoc: Record<string, any> = {};
+              Object.entries(item).forEach(([k, v]) => {
+                if (v !== undefined) cleanDoc[k] = v;
+              });
+              batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), cleanDoc);
+            }
+            await batch.commit();
+            return; // The snapshot listener fires again with the migrated docs
+          } catch (err) {
+            console.error('Failed to migrate restaurants to category lists:', err);
+          }
+        }
+
         cloudLoadedRef.current = true;
         setRestaurants(normalized);
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
@@ -688,9 +685,25 @@ export const App: React.FC = () => {
         }
 
         const loaded: BookmarkEntry[] = [];
+        const legacyBookmarks: BookmarkEntry[] = [];
         snapshot.forEach((docSnap) => {
-          loaded.push(sanitizeLoadedBookmark(docSnap.data()));
+          const data = docSnap.data();
+          const bm = sanitizeLoadedBookmark(data);
+          loaded.push(bm);
+          if (isLegacyDoc(data)) legacyBookmarks.push(bm);
         });
+        // One-time migration: rewrite legacy bookmarks without the old meal fields
+        if (legacyBookmarks.length > 0) {
+          const batch = writeBatch(db);
+          for (const bm of legacyBookmarks) {
+            const cleanDoc: Record<string, any> = {};
+            Object.entries(bm).forEach(([k, v]) => {
+              if (v !== undefined) cleanDoc[k] = v;
+            });
+            batch.set(doc(db, 'users', user.uid, 'bookmarks', bm.id), cleanDoc);
+          }
+          batch.commit().catch(() => {});
+        }
         loaded.sort((a, b) => b.createdAt - a.createdAt);
         setBookmarks(loaded);
         localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(loaded));
@@ -748,8 +761,9 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [user, restaurants, bookmarks, userHandle, friends]);
 
+  // `ordered` may contain every category; each category list is re-scored independently
   const persistOrderedRestaurants = async (ordered: RestaurantEntry[], deletedId?: string) => {
-    const recomputed = recomputeMagicScores(ordered);
+    const recomputed = recomputeAllCategoryScores(ordered);
     setRestaurants(recomputed);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(recomputed));
 
@@ -777,8 +791,7 @@ export const App: React.FC = () => {
     candidate: PlaceCandidate,
     recommendedBy?: { name: string; uid?: string }
   ) => {
-    const primaryMeal: MealCategory =
-      candidate.meals && candidate.meals.length > 0 ? candidate.meals[0] : 'Dinner';
+    const primaryCategory: SpotCategory = candidate.categories?.[0] || DEFAULT_CATEGORY;
     const bookmarkId = candidate.placeId || `bm_${Date.now()}`;
     const now = Date.now();
 
@@ -793,8 +806,8 @@ export const App: React.FC = () => {
       lng: candidate.lng,
       googleMapsUri: candidate.googleMapsUri,
       priceLevel: candidate.priceLevel,
-      meal: primaryMeal,
-      meals: candidate.meals?.length ? candidate.meals : [primaryMeal],
+      category: primaryCategory,
+      categories: candidate.categories?.length ? candidate.categories : [primaryCategory],
       cuisines: candidate.cuisines || [],
       primaryTypeDisplay: candidate.primaryTypeDisplay,
       recommendedBy: recommendedBy?.name,
@@ -821,7 +834,7 @@ export const App: React.FC = () => {
     trackEvent('add_bookmark', {
       restaurant_name: candidate.name,
       city: candidate.city || '',
-      meal: primaryMeal,
+      category: primaryCategory,
       recommended_by: recommendedBy?.name || '',
     });
     setIsAddModalOpen(false);
@@ -846,7 +859,8 @@ export const App: React.FC = () => {
       executeDeleteBookmark(existingBookmark.id);
       return;
     }
-    const fallbackMeal: MealCategory = 'meal' in spot && spot.meal ? spot.meal : 'Dinner';
+    const fallbackCategory: SpotCategory =
+      'category' in spot && spot.category ? spot.category : DEFAULT_CATEGORY;
     const candidate: PlaceCandidate = {
       placeId: spot.placeId || ('id' in spot ? spot.id : `bm_${Date.now()}`),
       name: spot.name,
@@ -857,7 +871,8 @@ export const App: React.FC = () => {
       lng: spot.lng,
       googleMapsUri: spot.googleMapsUri,
       priceLevel: spot.priceLevel,
-      meals: spot.meals?.length ? spot.meals : [fallbackMeal],
+      // The spot's own list first, so the bookmark lands in the same category
+      categories: Array.from(new Set([fallbackCategory, ...(spot.categories || [])])),
       cuisines: spot.cuisines || [],
       primaryTypeDisplay: spot.primaryTypeDisplay,
       source: 'source' in spot ? spot.source : 'google_places',
@@ -1116,7 +1131,7 @@ export const App: React.FC = () => {
   const handleStartRankFromBookmark = (bookmark: BookmarkEntry) => {
     setRankingBookmark(bookmark);
     const pseudoEntry: RestaurantEntry = {
-      id: `${bookmark.placeId || bookmark.id}__${bookmark.meal}`,
+      id: buildEntryId(bookmark.placeId || bookmark.id, bookmark.category),
       placeId: bookmark.placeId || bookmark.id,
       name: bookmark.name,
       formattedAddress: bookmark.formattedAddress,
@@ -1126,8 +1141,8 @@ export const App: React.FC = () => {
       lng: bookmark.lng,
       googleMapsUri: bookmark.googleMapsUri,
       priceLevel: bookmark.priceLevel,
-      meal: bookmark.meal,
-      meals: bookmark.meals,
+      category: bookmark.category,
+      categories: bookmark.categories,
       cuisines: bookmark.cuisines,
       primaryTypeDisplay: bookmark.primaryTypeDisplay,
       initialRating: 8,
@@ -1237,11 +1252,11 @@ export const App: React.FC = () => {
     }
   };
 
-  // Called when Q1 (1-10 rating) and Q2 (single meal) are completed
+  // Called when Q1 (1-10 rating) and Q2 (which list) are completed
   const handleCompleteQuestions = async (
     candidate: PlaceCandidate,
     initialRating: number,
-    selectedMealChoice: MealCategory,
+    selectedCategory: SpotCategory,
     existingIdToReplace?: string
   ) => {
     setIsAddModalOpen(false);
@@ -1253,14 +1268,17 @@ export const App: React.FC = () => {
 
     trackEvent('complete_initial_questions', {
       restaurant_name: candidate.name,
-      meal: selectedMealChoice,
+      category: selectedCategory,
       initial_rating: initialRating,
       is_rerank: Boolean(effectiveReplaceId),
     });
 
-    const pool = restaurants.filter((r) => r.id !== effectiveReplaceId);
+    // Re-ranking into a different list replaces the old entry too
+    const pool = getCategoryList(restaurants, selectedCategory).filter(
+      (r) => r.id !== effectiveReplaceId
+    );
 
-    // If this is the very first restaurant in the list, save immediately without needing SxS
+    // If this is the very first spot in this category list, save immediately without needing SxS
     if (pool.length === 0) {
       const now = Date.now();
       const prevHistory = actualExisting?.rankedHistory?.length
@@ -1268,7 +1286,7 @@ export const App: React.FC = () => {
         : actualExisting
         ? [{ timestamp: actualExisting.createdAt, initialRating: actualExisting.initialRating }]
         : [];
-      const entryId = effectiveReplaceId || `${candidate.placeId}__${selectedMealChoice}`;
+      const entryId = buildEntryId(candidate.placeId, selectedCategory);
       const newEntry: RestaurantEntry = {
         id: entryId,
         placeId: candidate.placeId,
@@ -1280,8 +1298,8 @@ export const App: React.FC = () => {
         lng: candidate.lng,
         googleMapsUri: candidate.googleMapsUri,
         priceLevel: candidate.priceLevel,
-        meal: selectedMealChoice,
-        meals: Array.from(new Set([selectedMealChoice, ...(candidate.meals || [])])),
+        category: selectedCategory,
+        categories: Array.from(new Set([selectedCategory, ...(candidate.categories || [])])),
         cuisines: candidate.cuisines,
         primaryTypeDisplay: candidate.primaryTypeDisplay,
         initialRating,
@@ -1293,19 +1311,23 @@ export const App: React.FC = () => {
         createdAt: actualExisting?.createdAt || now,
         updatedAt: now,
       };
-      await persistOrderedRestaurants([newEntry]);
+      await persistOrderedRestaurants(
+        [...restaurants.filter((r) => r.id !== effectiveReplaceId && r.id !== entryId), newEntry],
+        effectiveReplaceId && effectiveReplaceId !== entryId ? effectiveReplaceId : undefined
+      );
+      setSelectedCategory(selectedCategory);
       await cleanupBookmarkIfRanked(candidate.placeId, candidate.name);
       setActiveTab('ranked');
       trackEvent('complete_ranking', {
         restaurant_name: candidate.name,
-        meal: selectedMealChoice,
+        category: selectedCategory,
         initial_rating: initialRating,
         magic_score: initialRating,
         rank_position: 1,
         comparisons_count: 0,
         is_rerank: Boolean(effectiveReplaceId),
       });
-      showToast(`Added ${candidate.name} (#1)`);
+      showToast(`Added ${candidate.name} (#1 in ${CATEGORY_LABEL[selectedCategory]})`);
       return;
     }
 
@@ -1313,7 +1335,7 @@ export const App: React.FC = () => {
     setPendingPlacement({
       candidate,
       initialRating,
-      meal: selectedMealChoice,
+      category: selectedCategory,
       cuisines: candidate.cuisines,
       existingIdToReplace: effectiveReplaceId,
     });
@@ -1323,7 +1345,7 @@ export const App: React.FC = () => {
   // Finish Q3+ SxS Placement
   const handleFinishPlacement = async (
     placement: PendingPlacement,
-    insertIndexInFullList: number,
+    insertIndexInCategory: number,
     comparisonsDone: number,
     finalCandidateElo: number,
     opponentEloAdjustments: Record<string, number>
@@ -1339,17 +1361,15 @@ export const App: React.FC = () => {
       ? [{ timestamp: existingObj.createdAt, initialRating: existingObj.initialRating }]
       : [];
 
-    // Apply opponent ELO adjustments from the head-to-head matches
-    const basePool = restaurants
-      .filter((r) => r.id !== placement.existingIdToReplace)
+    const entryId = buildEntryId(placement.candidate.placeId, placement.category);
+
+    // Apply opponent ELO adjustments from the head-to-head matches (same category list only)
+    const basePool = getCategoryList(restaurants, placement.category)
+      .filter((r) => r.id !== placement.existingIdToReplace && r.id !== entryId)
       .map((r) => {
         const delta = opponentEloAdjustments[r.id];
         return delta ? { ...r, elo: (r.elo || ratingToBaseElo(r.initialRating)) + delta } : r;
       });
-
-    const entryId =
-      placement.existingIdToReplace ||
-      `${placement.candidate.placeId}__${placement.meal}`;
 
     const newEntry: RestaurantEntry = {
       id: entryId,
@@ -1362,13 +1382,15 @@ export const App: React.FC = () => {
       lng: placement.candidate.lng,
       googleMapsUri: placement.candidate.googleMapsUri,
       priceLevel: existingObj?.priceLevel ?? placement.candidate.priceLevel,
-      meal: placement.meal,
-      meals: Array.from(new Set([placement.meal, ...(placement.candidate.meals || [])])),
+      category: placement.category,
+      categories: Array.from(
+        new Set([placement.category, ...(placement.candidate.categories || [])])
+      ),
       cuisines: existingObj?.cuisines?.length ? existingObj.cuisines : placement.cuisines,
       primaryTypeDisplay: placement.candidate.primaryTypeDisplay,
       initialRating: placement.initialRating,
       elo: finalCandidateElo,
-      rankIndex: insertIndexInFullList,
+      rankIndex: insertIndexInCategory,
       magicScore: placement.initialRating,
       comparisonsCount: (existingObj?.comparisonsCount || 0) + comparisonsDone,
       notes: existingObj?.notes,
@@ -1378,18 +1400,26 @@ export const App: React.FC = () => {
       updatedAt: now,
     };
 
-    const clampedIdx = Math.max(0, Math.min(basePool.length, insertIndexInFullList));
+    const clampedIdx = Math.max(0, Math.min(basePool.length, insertIndexInCategory));
     const nextList = [...basePool];
     nextList.splice(clampedIdx, 0, newEntry);
-    const recomputed = recomputeMagicScores(nextList);
+    // The old entry may have lived in another list (re-ranked into a new category)
+    const withoutOld = restaurants.filter((r) => r.id !== placement.existingIdToReplace);
+    const recomputed = replaceCategoryList(withoutOld, placement.category, nextList);
     const placedItem = recomputed.find((r) => r.id === entryId);
 
-    await persistOrderedRestaurants(recomputed);
+    await persistOrderedRestaurants(
+      recomputed,
+      placement.existingIdToReplace && placement.existingIdToReplace !== entryId
+        ? placement.existingIdToReplace
+        : undefined
+    );
+    setSelectedCategory(placement.category);
     await cleanupBookmarkIfRanked(placement.candidate.placeId, placement.candidate.name);
     setActiveTab('ranked');
     trackEvent('complete_ranking', {
       restaurant_name: newEntry.name,
-      meal: newEntry.meal,
+      category: newEntry.category,
       initial_rating: newEntry.initialRating,
       magic_score: placedItem ? placedItem.magicScore : newEntry.initialRating,
       rank_position: clampedIdx + 1,
@@ -1397,7 +1427,7 @@ export const App: React.FC = () => {
       is_rerank: Boolean(placement.existingIdToReplace),
     });
     showToast(
-      `Ranked ${newEntry.name} (${newEntry.meal}) #${clampedIdx + 1} · ${
+      `Ranked ${newEntry.name} #${clampedIdx + 1} in ${CATEGORY_LABEL[newEntry.category]} · ${
         placedItem ? placedItem.magicScore.toFixed(1) : newEntry.initialRating.toFixed(1)
       }`
     );
@@ -1406,11 +1436,15 @@ export const App: React.FC = () => {
   // Drag-and-drop reorder
   const handleReorderDragEnd = async (activeId: string, overId: string) => {
     if (sharedList) return;
-    const oldIndex = restaurants.findIndex((r) => r.id === activeId);
-    const newIndex = restaurants.findIndex((r) => r.id === overId);
+    const activeItem = restaurants.find((r) => r.id === activeId);
+    if (!activeItem) return;
+    // Drag only ever reorders within a single category list
+    const list = getCategoryList(restaurants, activeItem.category);
+    const oldIndex = list.findIndex((r) => r.id === activeId);
+    const newIndex = list.findIndex((r) => r.id === overId);
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
-    const moved = arrayMove(restaurants, oldIndex, newIndex);
+    const moved = arrayMove(list, oldIndex, newIndex);
     // Interpolate ELO of the moved item to sit cleanly between its new neighbors
     const targetItem = { ...moved[newIndex] };
     const above = newIndex > 0 ? moved[newIndex - 1] : null;
@@ -1430,13 +1464,12 @@ export const App: React.FC = () => {
       from_rank: oldIndex + 1,
       to_rank: newIndex + 1,
     });
-    await persistOrderedRestaurants(moved);
+    await persistOrderedRestaurants(replaceCategoryList(restaurants, activeItem.category, moved));
   };
 
   const handleSaveSpotEdits = async (
     id: string,
     updates: {
-      meal: MealCategory;
       cuisines: string[];
       priceLevel?: number;
       notes?: string;
@@ -1446,8 +1479,6 @@ export const App: React.FC = () => {
       r.id === id
         ? {
             ...r,
-            meal: updates.meal,
-            meals: Array.from(new Set([updates.meal, ...(r.meals || [])])),
             cuisines: updates.cuisines,
             priceLevel: updates.priceLevel,
             notes: updates.notes,
@@ -1457,7 +1488,6 @@ export const App: React.FC = () => {
     );
     trackEvent('edit_spot_details', {
       restaurant_id: id,
-      meal: updates.meal,
     });
     await persistOrderedRestaurants(updated);
     showToast('Updated details');
@@ -1473,7 +1503,7 @@ export const App: React.FC = () => {
     const remaining = restaurants.filter((r) => r.id !== id);
     trackEvent('delete_spot', {
       restaurant_name: target.name,
-      meal: target.meal,
+      category: target.category,
     });
     await persistOrderedRestaurants(remaining, id);
     showToast(
@@ -1494,7 +1524,7 @@ export const App: React.FC = () => {
     if (!target) return;
     setConfirmDialog({
       title: `Remove ${target.name}?`,
-      message: `Are you sure you want to remove ${target.name} (${target.meal}) from your ranked list?`,
+      message: `Are you sure you want to remove ${target.name} from your ${CATEGORY_LABEL[target.category]} list?`,
       confirmLabel: 'Remove Spot',
       onConfirm: () => executeDeleteRestaurant(id),
     });
@@ -1644,42 +1674,42 @@ export const App: React.FC = () => {
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [currentSourceItems]);
 
-  // Meal counts (respecting active city filter)
-  const mealCounts = useMemo(() => {
-    const map = new Map<MealCategory, number>();
-    for (const m of ALL_MEAL_CATEGORIES) map.set(m, 0);
+  const selectedCategoryTotal = useMemo(
+    () => currentSourceItems.filter((item) => item.category === selectedCategory).length,
+    [currentSourceItems, selectedCategory]
+  );
+
+  // Category list sizes (respecting active city filter)
+  const categoryCounts = useMemo(() => {
+    const map = new Map<SpotCategory, number>();
+    for (const c of ALL_CATEGORIES) map.set(c, 0);
     for (const item of currentSourceItems) {
       if (selectedCity !== 'ALL' && item.city !== selectedCity) continue;
-      map.set(item.meal, (map.get(item.meal) || 0) + 1);
+      map.set(item.category, (map.get(item.category) || 0) + 1);
     }
     return map;
   }, [currentSourceItems, selectedCity]);
 
-  // Cuisines available in the currently selected meal(s) & city
+  // Cuisines available in the currently selected category & city
   const cuisineCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of currentSourceItems) {
       if (selectedCity !== 'ALL' && item.city !== selectedCity) continue;
-      if (selectedMeals.length > 0 && !selectedMeals.includes(item.meal)) {
-        continue;
-      }
+      if (item.category !== selectedCategory) continue;
       for (const c of item.cuisines) {
         map.set(c, (map.get(c) || 0) + 1);
       }
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [currentSourceItems, selectedMeals, selectedCity]);
+  }, [currentSourceItems, selectedCategory, selectedCity]);
 
   const filteredRestaurants = useMemo(() => {
-    const base = activeRestaurants.filter((r) => {
+    const base = getCategoryList(activeRestaurants, selectedCategory).filter((r) => {
       if (selectedCity !== 'ALL' && r.city !== selectedCity) return false;
-      if (selectedMeals.length > 0 && !selectedMeals.includes(r.meal)) {
-        return false;
-      }
       if (selectedCuisine !== 'ALL' && !r.cuisines.includes(selectedCuisine)) return false;
       if (listSearchQuery.trim()) {
         const q = listSearchQuery.toLowerCase();
-        const hay = `${r.name} ${r.formattedAddress} ${r.city || ''} ${r.cuisines.join(' ')} ${r.meal}`.toLowerCase();
+        const hay = `${r.name} ${r.formattedAddress} ${r.city || ''} ${r.cuisines.join(' ')}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1700,7 +1730,7 @@ export const App: React.FC = () => {
   }, [
     activeRestaurants,
     selectedCity,
-    selectedMeals,
+    selectedCategory,
     selectedCuisine,
     listSearchQuery,
     sortByNearest,
@@ -1710,13 +1740,11 @@ export const App: React.FC = () => {
   const filteredBookmarks = useMemo(() => {
     const base = activeBookmarks.filter((b) => {
       if (selectedCity !== 'ALL' && b.city !== selectedCity) return false;
-      if (selectedMeals.length > 0 && !selectedMeals.includes(b.meal)) {
-        return false;
-      }
+      if (b.category !== selectedCategory) return false;
       if (selectedCuisine !== 'ALL' && !b.cuisines.includes(selectedCuisine)) return false;
       if (listSearchQuery.trim()) {
         const q = listSearchQuery.toLowerCase();
-        const hay = `${b.name} ${b.formattedAddress} ${b.city || ''} ${b.cuisines.join(' ')} ${b.meal}`.toLowerCase();
+        const hay = `${b.name} ${b.formattedAddress} ${b.city || ''} ${b.cuisines.join(' ')}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1737,7 +1765,7 @@ export const App: React.FC = () => {
   }, [
     activeBookmarks,
     selectedCity,
-    selectedMeals,
+    selectedCategory,
     selectedCuisine,
     listSearchQuery,
     userLocation,
@@ -1745,7 +1773,6 @@ export const App: React.FC = () => {
 
   const isFiltered =
     selectedCity !== 'ALL' ||
-    selectedMeals.length > 0 ||
     selectedCuisine !== 'ALL' ||
     listSearchQuery.trim().length > 0;
 
@@ -2269,7 +2296,44 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Clean Filters: Multi-Select Meal Tabs + Near Me Toggle + City Filter Pill + Cuisine Chips */}
+        {/* Category Lists: single-select tabs (each list is ranked completely separately) */}
+        <div
+          role="tablist"
+          aria-label="List"
+          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1"
+        >
+          {ALL_CATEGORIES.map((category) => {
+            const count = categoryCounts.get(category) || 0;
+            const active = selectedCategory === category;
+            return (
+              <button
+                key={category}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  if (active) return;
+                  setSelectedCategory(category);
+                  setSelectedCuisine('ALL');
+                  trackEvent('select_category', { category });
+                }}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 flex items-center gap-1.5 transition-colors ${
+                  active
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                    : 'bg-zinc-200/60 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <span aria-hidden="true">{CATEGORY_EMOJI[category]}</span>
+                <span>{CATEGORY_LABEL[category]}</span>
+                {count > 0 && (
+                  <span className={active ? 'opacity-60' : 'opacity-50'}>{count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Secondary Filters: Near Me Toggle + City Filter Pill + Cuisine Chips */}
         {currentSourceItems.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
@@ -2337,47 +2401,6 @@ export const App: React.FC = () => {
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedMeals([]);
-                  setSelectedCuisine('ALL');
-                  trackEvent('filter_meal', { meal: 'ALL' });
-                }}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-                  selectedMeals.length === 0
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'bg-zinc-200/60 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
-                }`}
-              >
-                All
-              </button>
-              {ALL_MEAL_CATEGORIES.map((meal) => {
-                const count = mealCounts.get(meal) || 0;
-                const active = selectedMeals.includes(meal);
-                if (count === 0 && !active) return null;
-                return (
-                  <button
-                    key={meal}
-                    type="button"
-                    onClick={() => {
-                      const nextMeals = active
-                        ? selectedMeals.filter((m) => m !== meal)
-                        : [...selectedMeals, meal];
-                      setSelectedMeals(nextMeals);
-                      setSelectedCuisine('ALL');
-                      trackEvent('filter_meal', { meal: nextMeals.join(',') || 'ALL' });
-                    }}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-                      active
-                        ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                        : 'bg-zinc-200/60 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    {meal}
-                  </button>
-                );
-              })}
             </div>
 
             {/* Subtle Secondary Cuisine Chips */}
@@ -2424,7 +2447,7 @@ export const App: React.FC = () => {
             onSelectSpot={(spot) => {
               trackEvent('view_spot_detail', {
                 restaurant_name: spot.name,
-                meal: spot.meal,
+                category: spot.category,
                 magic_score: spot.magicScore,
                 rank_position: spot.rankIndex + 1,
                 from_map: true,
@@ -2440,8 +2463,8 @@ export const App: React.FC = () => {
             sortByNearest={sortByNearest && Boolean(userLocation)}
             userLocation={userLocation}
             readOnly={isReadOnly}
-            selectedMealsFilter={selectedMeals}
-            totalUnfilteredCount={activeRestaurants.length}
+            selectedCategory={selectedCategory}
+            totalUnfilteredCount={selectedCategoryTotal}
             myUid={user?.uid}
             myRestaurants={restaurants}
             friendLists={friendLists}
@@ -2461,7 +2484,7 @@ export const App: React.FC = () => {
             onSelectSpot={(spot) => {
               trackEvent('view_spot_detail', {
                 restaurant_name: spot.name,
-                meal: spot.meal,
+                category: spot.category,
                 magic_score: spot.magicScore,
                 rank_position: spot.rankIndex + 1,
               });
@@ -2470,7 +2493,7 @@ export const App: React.FC = () => {
             onReRankSpot={(spot) => {
               trackEvent('open_rerank_modal', {
                 restaurant_name: spot.name,
-                meal: spot.meal,
+                category: spot.category,
                 from_swipe: true,
               });
               setReRankingEntry(spot);
@@ -2489,8 +2512,8 @@ export const App: React.FC = () => {
             bookmarks={filteredBookmarks}
             isFiltered={isFiltered}
             userLocation={userLocation}
-            selectedMealsFilter={selectedMeals}
-            totalUnfilteredCount={activeBookmarks.length}
+            selectedCategory={selectedCategory}
+            totalUnfilteredCount={selectedCategoryTotal}
             readOnly={isReadOnly}
             myUid={user?.uid}
             myRestaurants={restaurants}
@@ -2521,7 +2544,7 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Add & Rate Wizard (Search -> Q1: 1-10 -> Q2: Meal) */}
+      {/* Add & Rate Wizard (Search -> Q1: 1-10 -> Q2: List) */}
       <AddAndRateModal
         isOpen={isAddModalOpen}
         onClose={() => {
@@ -2530,6 +2553,7 @@ export const App: React.FC = () => {
           setRankingBookmark(null);
         }}
         existingRestaurants={restaurants}
+        defaultCategory={selectedCategory}
         myUid={user?.uid}
         bookmarkedPlaceIds={myBookmarkedPlaceIds}
         friendLists={friendLists}
@@ -2576,7 +2600,7 @@ export const App: React.FC = () => {
         onReRank={(spot) => {
           trackEvent('open_rerank_modal', {
             restaurant_name: spot.name,
-            meal: spot.meal,
+            category: spot.category,
           });
           setReRankingEntry(spot);
           setIsAddModalOpen(true);
@@ -2650,9 +2674,13 @@ export const App: React.FC = () => {
       <ShareModal
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
-        restaurants={filteredRestaurants.length > 0 ? filteredRestaurants : activeRestaurants}
-        bookmarks={activeBookmarks}
-        selectedMeals={selectedMeals}
+        restaurants={
+          filteredRestaurants.length > 0
+            ? filteredRestaurants
+            : getCategoryList(activeRestaurants, selectedCategory)
+        }
+        bookmarks={activeBookmarks.filter((b) => b.category === selectedCategory)}
+        selectedCategory={selectedCategory}
         selectedCity={selectedCity}
         selectedCuisine={selectedCuisine}
         ownerName={

@@ -22,12 +22,13 @@ ranking web app. Live at https://eatwithjelly.com.
 | Path | Role |
 |------|------|
 | `src/App.tsx` (~2.7k lines) | App shell, all top-level state, auth, Firestore/localStorage sync, header, filters, settings |
-| `src/types.ts` | Core types: `RestaurantEntry`, `BookmarkEntry`, `PlaceCandidate`, `SharedListPayload`, `FriendProfile`, `MealCategory` |
+| `src/types.ts` | Core types: `RestaurantEntry`, `BookmarkEntry`, `PlaceCandidate`, `SharedListPayload`, `FriendProfile`, `SpotCategory` (+ `CATEGORY_LABEL`/`CATEGORY_EMOJI`) |
 | `src/firebase.ts` | Firebase init, `trackEvent` (Analytics), `DEFAULT_PLACES_API_KEY` |
 | `src/lib/rankingEngine.ts` | Rating ⇄ Elo, non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` |
 | `src/lib/friendsService.ts` | Friend matching (`isSameSpot`), group blend ("Eat Together"), taste similarity / predicted rating, social metrics (friends + all-jelly averages) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
-| `src/lib/categorizer.ts` | Maps Google place types → meal occasions (breakfast/lunch/dinner/dessert…) + cuisines |
+| `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + cuisines |
+| `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
 | `src/lib/geo.ts` | Distances, city fallback coords |
 | `src/components/AddAndRateModal.tsx` | Search → gut-feeling spectrum bar (`getGutVibeMeta` labels) → SxS |
 | `src/components/SxSArenaModal.tsx` | Pairwise comparisons; prefers same-cuisine opponents |
@@ -38,13 +39,17 @@ ranking web app. Live at https://eatwithjelly.com.
 | `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (original artwork), `favicon.png` (crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`) |
 
 ## Data model (Firestore)
-- `users/{uid}` – settings/profile (`comparisonScope`, `customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, …)
-- `users/{uid}/restaurants/{id}` – `RestaurantEntry` (ranked spots: `initialRating`, `rankIndex`, `magicScore`, meals, cuisines, notes…)
+- `users/{uid}` – settings/profile (`customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, …)
+- `users/{uid}/restaurants/{id}` – `RestaurantEntry` (ranked spots: `category`, `initialRating`, `rankIndex`/`magicScore` within its category, cuisines, notes…; ID = `${placeId}__${category}`)
 - `users/{uid}/bookmarks/{id}` – `BookmarkEntry` (want-to-try)
 - `sharedLists/{shareId}` – public `SharedListPayload` snapshot of a user's list (used by friends, follower notifications via `followingIds`, community averages)
 - Signed-out users persist to `localStorage` (keys defined at top of `App.tsx`); signed-in users sync to Firestore.
 
 ## Conventions & gotchas
+- **Six completely separate lists**: Restaurants, Brunch, Dessert, Bakeries, Coffee & Tea, Bars
+  (`SpotCategory`). Every entry belongs to exactly one; ranks, magic scores, SxS opponents,
+  drag-reorder, friend/community score matching and Eat Together never cross lists. The same place
+  may appear in several lists as separate entries. The main screen shows one list at a time (tabs).
 - **Adding a field to any Firestore doc requires updating `firestore.rules` validators**,
   otherwise writes silently fail (writes use `.catch(() => {})`). Delegate rules edits to the
   `firestore-rules-author` subagent, then deploy rules.

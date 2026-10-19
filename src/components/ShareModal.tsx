@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Copy, Download, Link2, Loader2, Share2, X } from 'lucide-react';
-import { BookmarkEntry, MealCategory, RestaurantEntry } from '../types';
+import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SpotCategory } from '../types';
 import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
@@ -10,7 +10,7 @@ interface ShareModalProps {
   onClose: () => void;
   restaurants: RestaurantEntry[];
   bookmarks: BookmarkEntry[];
-  selectedMeals: MealCategory[];
+  selectedCategory: SpotCategory;
   selectedCity: string | 'ALL';
   selectedCuisine: string | 'ALL';
   ownerName: string;
@@ -40,7 +40,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   isOpen,
   onClose,
   restaurants,
-  selectedMeals,
+  selectedCategory,
   selectedCity,
   selectedCuisine,
   ownerName,
@@ -66,14 +66,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const topSpots = restaurants.slice(0, 10);
 
-  const filterParts = [
-    selectedCity !== 'ALL' ? selectedCity : null,
-    selectedCuisine !== 'ALL' ? selectedCuisine : null,
-    selectedMeals.length > 0 ? selectedMeals.join(' + ') : null,
-  ].filter(Boolean);
-
-  const cardTitle =
-    filterParts.length > 0 ? `Top ${filterParts.join(' · ')}` : 'Top Ranked Spots';
+  // e.g. "Top Japanese Restaurants · Seattle" or "Top Coffee & Tea"
+  const cardTitle = `Top ${selectedCuisine !== 'ALL' ? `${selectedCuisine} ` : ''}${
+    CATEGORY_LABEL[selectedCategory]
+  }${selectedCity !== 'ALL' ? ` · ${selectedCity}` : ''}`;
 
   const canNativeShare =
     typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -84,7 +80,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       ...topSpots.map(
         (r, i) =>
           `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) — ${[
-            r.meal,
             r.cuisines[0] || r.primaryTypeDisplay,
             r.neighborhood || r.city,
           ]
@@ -258,7 +253,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
       // Subtitle
       const sub = [
-        spot.meal,
         spot.cuisines[0] || spot.primaryTypeDisplay,
         spot.neighborhood || spot.city,
       ]
@@ -488,8 +482,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                       </div>
                       <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
                         {[
-                          spot.meal,
-                          spot.cuisines[0] || spot.primaryTypeDisplay,
+                                            spot.cuisines[0] || spot.primaryTypeDisplay,
                           spot.neighborhood || spot.city,
                         ]
                           .filter(Boolean)

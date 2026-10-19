@@ -17,7 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { MealCategory, RestaurantEntry, SharedListPayload } from '../types';
+import { CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
@@ -30,7 +30,6 @@ interface SortableRestaurantRowProps {
   isFiltered: boolean;
   sortByNearest?: boolean;
   readOnly?: boolean;
-  selectedMealsFilter: MealCategory[];
   userLocation?: UserCoordinates | null;
   myUid?: string | null;
   myRestaurants?: RestaurantEntry[];
@@ -52,7 +51,6 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   isFiltered,
   sortByNearest = false,
   readOnly = false,
-  selectedMealsFilter,
   userLocation = null,
   myUid = null,
   myRestaurants = [],
@@ -139,7 +137,6 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
       : null;
 
   const subtitleParts = [
-    selectedMealsFilter.length !== 1 ? restaurant.meal : null,
     primaryCuisine,
     locationLabel,
     distLabel,
@@ -455,7 +452,7 @@ interface RestaurantListProps {
   isFiltered: boolean;
   sortByNearest?: boolean;
   readOnly?: boolean;
-  selectedMealsFilter: MealCategory[];
+  selectedCategory: SpotCategory;
   totalUnfilteredCount: number;
   userLocation?: UserCoordinates | null;
   myUid?: string | null;
@@ -476,7 +473,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   isFiltered,
   sortByNearest = false,
   readOnly = false,
-  selectedMealsFilter,
+  selectedCategory,
   totalUnfilteredCount,
   userLocation = null,
   myUid = null,
@@ -610,7 +607,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
         </div>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {totalUnfilteredCount === 0
-            ? 'No places ranked yet.'
+            ? `No ${CATEGORY_LABEL[selectedCategory]} ranked yet.`
             : 'No places match this filter.'}
         </p>
         {totalUnfilteredCount === 0 && !readOnly && (
@@ -648,7 +645,6 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
                     isFiltered={isFiltered}
                     sortByNearest={sortByNearest}
                     readOnly={readOnly}
-                    selectedMealsFilter={selectedMealsFilter}
                     userLocation={userLocation}
                     myUid={myUid}
                     myRestaurants={myRestaurants}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
-import { MealCategory, PlaceCandidate, RestaurantEntry } from '../types';
+import { CATEGORY_LABEL, PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
+import { getCategoryList } from '../lib/categoryLists';
 import {
   getBestInsertionIndex,
   initSxSSearch,
@@ -14,7 +15,7 @@ import { trackEvent } from '../firebase';
 export interface PendingPlacement {
   candidate: PlaceCandidate;
   initialRating: number;
-  meal: MealCategory;
+  category: SpotCategory; // The candidate is only ever compared within this list
   cuisines: string[];
   existingIdToReplace?: string;
 }
@@ -22,11 +23,11 @@ export interface PendingPlacement {
 interface SxSArenaModalProps {
   isOpen: boolean;
   onClose: () => void;
-  existingRestaurants: RestaurantEntry[];
+  existingRestaurants: RestaurantEntry[]; // All lists; filtered to the candidate's category
   pendingPlacement: PendingPlacement | null;
   onFinishPlacement: (
     placement: PendingPlacement,
-    insertIndexInFullList: number,
+    insertIndexInCategory: number,
     comparisonsDone: number,
     finalCandidateElo: number,
     opponentEloAdjustments: Record<string, number>
@@ -43,8 +44,10 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
   const [searchState, setSearchState] = useState<SxSSearchState | null>(null);
 
   const pool = useMemo(() => {
-    if (!pendingPlacement) return existingRestaurants;
-    return existingRestaurants.filter((r) => r.id !== pendingPlacement.existingIdToReplace);
+    if (!pendingPlacement) return [];
+    return getCategoryList(existingRestaurants, pendingPlacement.category).filter(
+      (r) => r.id !== pendingPlacement.existingIdToReplace
+    );
   }, [existingRestaurants, pendingPlacement]);
 
   useEffect(() => {
@@ -52,7 +55,6 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
     const initial = initSxSSearch(
       pool,
       pendingPlacement.initialRating,
-      pendingPlacement.meal,
       pendingPlacement.cuisines
     );
     setSearchState(initial);
@@ -199,7 +201,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
             >
               <div className="space-y-1.5">
                 <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  {[pendingPlacement.meal, pendingPlacement.cuisines[0]]
+                  {[CATEGORY_LABEL[pendingPlacement.category], pendingPlacement.cuisines[0]]
                     .filter(Boolean)
                     .join(' · ')}
                 </span>
@@ -225,7 +227,6 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
               <div className="space-y-1.5">
                 <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                   {[
-                    currentMatch.opponent.meal,
                     currentMatch.opponent.cuisines[0],
                     `#${currentMatch.opponent.rankIndex + 1}`,
                   ]

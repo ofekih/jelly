@@ -9,10 +9,13 @@ import {
   X,
 } from 'lucide-react';
 import {
-  ALL_MEAL_CATEGORIES,
+  ALL_CATEGORIES,
   BookmarkEntry,
+  CATEGORY_EMOJI,
+  CATEGORY_LABEL,
+  DEFAULT_CATEGORY,
   FriendProfile,
-  MealCategory,
+  SpotCategory,
   PlaceCandidate,
   RestaurantEntry,
   SharedListPayload,
@@ -57,7 +60,8 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
   const [activeSection, setActiveSection] = useState<
     'both_want' | 'shared_favorites' | 'from_friends'
   >('shared_favorites');
-  const [mealFilter, setMealFilter] = useState<MealCategory | 'ALL'>('ALL');
+  // Lists are never mixed: the blend always shows a single category
+  const [categoryFilter, setCategoryFilter] = useState<SpotCategory>(DEFAULT_CATEGORY);
   const [sortByNearest, setSortByNearest] = useState(false);
 
   const {
@@ -129,7 +133,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
       : blend.forYouFromFriends;
 
   const filteredList = rawList
-    .filter((item) => mealFilter === 'ALL' || item.meal === mealFilter || item.meals.includes(mealFilter))
+    .filter((item) => item.category === categoryFilter)
     .slice()
     .sort((a, b) => {
       if (sortByNearest && userLocation) {
@@ -271,7 +275,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
               </button>
             </div>
 
-            {/* Meal & Near Me Filter Bar */}
+            {/* Category & Near Me Filter Bar */}
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {userLocation && (
                 <button
@@ -287,29 +291,19 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                   <span>Near Me</span>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setMealFilter('ALL')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-colors ${
-                  mealFilter === 'ALL'
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
-                }`}
-              >
-                All Meals
-              </button>
-              {ALL_MEAL_CATEGORIES.map((m) => (
+              {ALL_CATEGORIES.map((c) => (
                 <button
-                  key={m}
+                  key={c}
                   type="button"
-                  onClick={() => setMealFilter(mealFilter === m ? 'ALL' : m)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-colors ${
-                    mealFilter === m
+                  onClick={() => setCategoryFilter(c)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 flex items-center gap-1 transition-colors ${
+                    categoryFilter === c
                       ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                       : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
                   }`}
                 >
-                  {m}
+                  <span aria-hidden="true">{CATEGORY_EMOJI[c]}</span>
+                  <span>{CATEGORY_LABEL[c]}</span>
                 </button>
               ))}
             </div>
@@ -331,7 +325,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                   const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
                   const locationShort = item.neighborhood || item.city;
                   const distLabel = formatDistanceMiles(getItemDistanceMiles(item, userLocation));
-                  const subParts = [item.meal, primaryCuisine, locationShort, distLabel].filter(
+                  const subParts = [primaryCuisine, locationShort, distLabel].filter(
                     Boolean
                   );
 
@@ -401,7 +395,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                                   lng: item.lng,
                                   googleMapsUri: item.googleMapsUri,
                                   priceLevel: item.priceLevel,
-                                  meals: item.meals,
+                                  categories: item.categories,
                                   cuisines: item.cuisines,
                                   primaryTypeDisplay: item.primaryTypeDisplay,
                                   source: 'google_places',
