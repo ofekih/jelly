@@ -162,19 +162,35 @@ function isotonicDecreasing(y: number[], w: number[] = y.map(() => 1)): number[]
   return result;
 }
 
-const ROBUST_SCALE = 0.8; // Gut ratings this far off the fit count half as much
+// Cauchy scale = max(floor, 3 robust SDs of the residuals): tight when your guts mostly agree with
+// your order, wider when they're noisy, so only clear outliers get ignored
+const ROBUST_SCALE_FLOOR = 0.8;
+const ROBUST_SCALE_MADS = 3;
 const ROBUST_ITERATIONS = 10;
 const ELO_STEP = 2; // Fixed Elo gap kept between neighbours (Elo no longer feeds the scores)
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : 0.5 * (sorted[mid - 1] + sorted[mid]);
+}
 
 /**
  * Robust isotonic fit of gut ratings to the list order: the closest non-increasing scores to the
  * gut ratings, refit with Cauchy weights so a gut rating the order clearly overrules (a 6.0 dragged
- * above a run of 9s) is mostly ignored instead of dragging its neighbours down.
+ * above a run of 9s) is mostly ignored instead of dragging its neighbours down. The Cauchy scale
+ * adapts to how noisy this list's guts are (1.4826·MAD ≈ SD of the residuals). Simulated on noisy
+ * users, it matches plain isotonic regression when guts are noisy and still ignores clear overrules.
  */
 export function fitScoresToOrder(guts: number[]): number[] {
   let fit = isotonicDecreasing(guts);
   for (let iter = 0; iter < ROBUST_ITERATIONS; iter++) {
-    const weights = guts.map((g, i) => 1 / (1 + ((g - fit[i]) / ROBUST_SCALE) ** 2));
+    const residuals = guts.map((g, i) => g - fit[i]);
+    const scale = Math.max(
+      ROBUST_SCALE_FLOOR,
+      ROBUST_SCALE_MADS * 1.4826 * median(residuals.map(Math.abs))
+    );
+    const weights = residuals.map((r) => 1 / (1 + (r / scale) ** 2));
     fit = isotonicDecreasing(guts, weights);
   }
   return fit;

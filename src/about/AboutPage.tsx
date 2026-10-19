@@ -340,10 +340,13 @@ export const AboutPage: React.FC = () => (
             order, replace them with their weighted average and keep going. To make it <b>robust</b>, jelly starts with
             equal weights, then reweights each place by how far its gut sits from the fit and solves again, 10 times:
           </p>
-          <Tex block>{String.raw`w_k = \frac{1}{1 + \bigl((g_k - \hat s_k)/0.8\bigr)^2}`}</Tex>
+          <Tex block>{String.raw`w_k = \frac{1}{1 + \bigl((g_k - \hat s_k)/c\bigr)^2}`}</Tex>
           <p>
-            A gut rating within a few tenths of the fit keeps nearly full weight; one 3 points off counts about a
-            fifteenth as much. Scores are rounded to 0.1 and kept within 1–10.
+            The scale <Tex>c</Tex> adapts to your list: three times the typical gap between your gut ratings and the
+            fit (<Tex>{String.raw`1.48 \times`}</Tex> the median gap, a robust standard deviation), and at least 0.8
+            points. If your gut and your order mostly agree, <Tex>c</Tex> stays at 0.8, so a gut rating 3 points off
+            counts about a fifteenth as much. If your gut ratings are all over the place, <Tex>c</Tex> widens and jelly
+            leans on all of them rather than throwing most away. Scores are rounded to 0.1 and kept within 1–10.
           </p>
           <p>
             <b>Why not Elo?</b> Earlier versions spread the Elo ratings from Step 2 over your scale. But you answer

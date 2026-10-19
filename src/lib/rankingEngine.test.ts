@@ -71,6 +71,10 @@ describe('recomputeMagicScores (robust isotonic fit of gut ratings)', () => {
     [9.2, 9.1, 9.0, 9.0, 8.9, 8.8].forEach((g, i) => expect(Math.abs(scores[i + 1] - g)).toBeLessThanOrEqual(0.2 + 1e-9));
   });
 
+  it('leaves 9.0 and below untouched when a gut-6.0 spot is dragged to #1', () => {
+    expect(scoresOf([6.0, 9.4, 9.0, 8.6, 8.1, 7.5]).slice(2)).toEqual([9.0, 8.6, 8.1, 7.5]);
+  });
+
   it('keeps one drag from moving scores far from the moved spot', () => {
     const guts = Array.from({ length: 40 }, (_, i) => Math.round((9.6 - i * 0.1) * 10) / 10);
     const before = scoresOf(guts);
