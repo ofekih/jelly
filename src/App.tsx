@@ -69,7 +69,8 @@ import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
 import { CURRENT_VERSION, displayVersion, hasUnseenRelease } from './lib/changelog';
 import { GROUP_COPY, wantLabel } from './lib/groups';
-import { ratingToBaseElo } from './lib/rankingEngine';
+import { ratingToBaseElo, spectrumGradient, spectrumRatingToPct } from './lib/rankingEngine';
+import { RATING_TIERS } from './lib/ratingTiers';
 import {
   buildEntryId,
   getCategoryList,
@@ -2984,6 +2985,31 @@ export const App: React.FC = () => {
                   >
                     Linear
                   </button>
+                </div>
+                <div className="pt-1">
+                  <div
+                    className="relative h-8 w-full rounded-xl ring-1 ring-inset ring-black/10 dark:ring-white/15"
+                    style={{ backgroundImage: spectrumGradient(linearRatingScale), backgroundOrigin: 'border-box' }}
+                  >
+                    {RATING_TIERS.slice(1).map((tier) => (
+                      <div
+                        key={tier.name}
+                        className="absolute top-1.5 bottom-1.5 w-px bg-white/35 dark:bg-black/25"
+                        style={{ left: `${spectrumRatingToPct(tier.from, linearRatingScale)}%` }}
+                      />
+                    ))}
+                  </div>
+                  <div className="relative h-5 mt-1.5 text-[10px] font-semibold select-none">
+                    {RATING_TIERS.map((zone) => (
+                      <span
+                        key={zone.name}
+                        className={`absolute -translate-x-1/2 ${zone.zoneClass}`}
+                        style={{ left: `${spectrumRatingToPct(zone.zoneRating, linearRatingScale)}%` }}
+                      >
+                        {zone.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug">
                   {linearRatingScale
