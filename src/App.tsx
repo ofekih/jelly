@@ -3011,7 +3011,7 @@ export const App: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug">
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug min-h-[2.75em]">
                   {linearRatingScale
                     ? 'Uniform spacing across the entire spectrum.'
                     : 'Equal width for each vibe tier, giving top spots more room to breathe.'}
