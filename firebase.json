@@ -34,7 +34,7 @@
   "auth": {
     "providers": {
       "googleSignIn": {
-        "oAuthBrandDisplayName": "Palate Personal Restaurant Ranker",
+        "oAuthBrandDisplayName": "jelly",
         "supportEmail": "ofek.gila@gmail.com"
       }
     }

@@ -18,7 +18,7 @@ const firebaseConfig = {
   appId: '1:628127085340:web:7e56cafaa22699796b80d9',
   storageBucket: 'ofek-beli-ranker.firebasestorage.app',
   apiKey: 'AIzaSyAHvloEBjincUxAh_McuhS32oVcjuOvIsY',
-  authDomain: 'ofek-beli-ranker.firebaseapp.com',
+  authDomain: 'eatwithjelly.com',
   messagingSenderId: '628127085340',
   measurementId: 'G-FEYZ9V0TQ5',
 };
