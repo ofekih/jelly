@@ -2972,7 +2972,7 @@ export const App: React.FC = () => {
                         : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                     }`}
                   >
-                    5 Equal Tiers
+                    Tiered
                   </button>
                   <button
                     type="button"
@@ -3014,7 +3014,7 @@ export const App: React.FC = () => {
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug min-h-[2.75em]">
                   {linearRatingScale
                     ? 'Uniform spacing across the entire spectrum.'
-                    : 'Equal width for each vibe tier, giving top spots more room to breathe.'}
+                    : 'Each vibe tier gets room by how often people feel it, so the common middle is easier to tell apart.'}
                 </p>
               </div>
 
