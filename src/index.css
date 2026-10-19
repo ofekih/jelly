@@ -64,14 +64,6 @@ html[data-group='travel'] {
   scrollbar-width: none;
 }
 
-.dark .leaflet-tile-pane {
-  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
-}
-
-.dark .leaflet-container {
-  background: #09090b;
-}
-
 /* Modal & Bottom-Sheet animations */
 @keyframes jelly-modal-fade-in {
   from {

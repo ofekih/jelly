@@ -6,7 +6,7 @@ export function stripUndefined<T extends object>(obj: T): Record<string, unknown
 }
 
 /** Firestore caps a single write batch at 500 operations. */
-export const MAX_BATCH_WRITES = 500;
+const MAX_BATCH_WRITES = 500;
 
 export function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];

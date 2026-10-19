@@ -1,6 +1,7 @@
 import { RestaurantEntry } from '../types';
+import { RATING_TIERS } from './ratingTiers';
 
-export interface SxSHistoryStep {
+interface SxSHistoryStep {
   opponentId: string;
   opponentName: string;
   opponentIndex: number;
@@ -44,19 +45,11 @@ export function ratingToBaseElo(initialRating: number): number {
 }
 
 /**
- * 5 Equal Visual Divisions (20% each):
- * - 0.00..0.20: Skip (1.0..4.0)
- * - 0.20..0.40: Mid (4.0..6.0) -> 5.0 is at 0.30 (exact middle of Mid)
- * - 0.40..0.60: Good (6.0..7.5)
- * - 0.60..0.80: Great (7.5..8.8)
- * - 0.80..1.00: Incredible (8.8..10.0)
+ * 5 Equal Visual Divisions (20% each), one per rating tier:
+ * Skip 1.0, Mid 4.0 (5.0 sits at the exact middle), Good 6.0, Great 7.5, Incredible 8.8..10.0
  */
 const BALANCED_SPECTRUM_STOPS: Array<{ pct: number; rating: number }> = [
-  { pct: 0.0, rating: 1.0 },
-  { pct: 0.2, rating: 4.0 },
-  { pct: 0.4, rating: 6.0 },
-  { pct: 0.6, rating: 7.5 },
-  { pct: 0.8, rating: 8.8 },
+  ...RATING_TIERS.map((tier, i) => ({ pct: i / RATING_TIERS.length, rating: tier.from })),
   { pct: 1.0, rating: 10.0 },
 ];
 
@@ -94,7 +87,7 @@ export function spectrumRatingToPct(rating: number, linear = false): number {
   return 100;
 }
 
-export function expectedEloWinProbability(eloA: number, eloB: number): number {
+function expectedEloWinProbability(eloA: number, eloB: number): number {
   return 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
 }
 
@@ -237,7 +230,7 @@ export function recomputeMagicScores(orderedList: RestaurantEntry[]): Restaurant
 /**
  * Seeds a starting ELO for a restaurant given its 1–10 gut rating and existing ranked spots.
  */
-export function seedEloFromRating(
+function seedEloFromRating(
   existingRanked: RestaurantEntry[],
   initialRating: number
 ): number {

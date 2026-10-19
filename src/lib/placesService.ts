@@ -145,7 +145,7 @@ function normalizeForMatch(str: string): string {
  * Returns > 0 if the query matches the restaurant's name, or 0 if it only matched
  * unrelated review/category text (e.g. shabu-shabu places appearing for "boil").
  */
-export function computeNameMatchScore(candidateName: string, rawQuery: string): number {
+function computeNameMatchScore(candidateName: string, rawQuery: string): number {
   const normName = normalizeForMatch(candidateName);
   const normQuery = normalizeForMatch(rawQuery);
   if (!normName || !normQuery) return 0;

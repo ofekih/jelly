@@ -24,13 +24,14 @@ ranking web app. Live at https://eatwithjelly.com.
 | `src/App.tsx` (~2.7k lines) | App shell, all top-level state, auth, Firestore/localStorage sync, header, filters, settings |
 | `src/types.ts` | Core types: `RestaurantEntry`, `BookmarkEntry`, `PlaceCandidate`, `SharedListPayload`, `FriendProfile`, `SpotCategory` (+ `CATEGORY_LABEL`/`CATEGORY_EMOJI`) |
 | `src/firebase.ts` | Firebase init, `trackEvent` (Analytics), `DEFAULT_PLACES_API_KEY` |
+| `src/lib/ratingTiers.ts` | Rating tiers (Skip…Incredible) and their gut-feeling labels; source of the spectrum's tier boundaries |
 | `src/lib/rankingEngine.ts` | Rating ⇄ Elo, non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` |
 | `src/lib/friendsService.ts` | Friend matching (`isSameSpot`), group blend ("Eat Together"), taste similarity / predicted rating, social metrics (friends + all-jelly averages) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
 | `src/lib/geo.ts` | Distances, city fallback coords |
-| `src/components/AddAndRateModal.tsx` | Search → gut-feeling spectrum bar (`getGutVibeMeta` labels) → SxS |
+| `src/components/AddAndRateModal.tsx` | Search → gut-feeling spectrum bar (labels from `ratingTiers`) → SxS |
 | `src/components/SxSArenaModal.tsx` | Pairwise comparisons; prefers same-cuisine opponents |
 | `src/components/RestaurantList.tsx` | Ranked list, drag-to-rerank, swipe actions |
 | `src/components/RestaurantMapView.tsx` | Google Map with custom score pins (light/dark styles) |
@@ -69,7 +70,7 @@ ranking web app. Live at https://eatwithjelly.com.
   boundary (~8.2–8.7), and "Flawless · Literally nothing could be improved" is only 9.8–10. The words
   before "·" climb strictly (X → Really X); the text after must never sound weaker than the row
   below, must fit every group (meal, coffee, museum, country) and must not be a near-synonym of a
-  neighbour. Travel's few overrides live in `groups.ts`. Don't
+  neighbour. Tiers, labels and Travel's few overrides live in `src/lib/ratingTiers.ts`. Don't
   inflate them; the goal is to push users to use the whole scale.
 - **Mobile is first-class**: verify touch drag (dnd-kit sensors), autocomplete scroll position,
   Web Share API (`navigator.share`) and layout on iOS/Android, not just desktop.

@@ -123,7 +123,7 @@ function stripLegacyFields<T extends Record<string, any>>(obj: T): T {
   return rest as T;
 }
 
-export function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
+function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
   const category = resolveCategory(raw);
   const initialRating = typeof raw.initialRating === 'number' ? raw.initialRating : 8;
   const elo =

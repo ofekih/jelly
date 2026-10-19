@@ -6,9 +6,9 @@
  * so we re-fetch that file and compare.
  */
 
-export const VERSION_URL = '/version.json';
+const VERSION_URL = '/version.json';
 
-export const CURRENT_APP_VERSION: string = __APP_VERSION__;
+const CURRENT_APP_VERSION: string = __APP_VERSION__;
 
 /** True when the server reports a valid version that differs from the running one. */
 export function isUpdateAvailable(current: string, remote: unknown): boolean {

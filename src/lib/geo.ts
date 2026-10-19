@@ -3,7 +3,7 @@ export interface UserCoordinates {
   lng: number;
 }
 
-export const CITY_FALLBACK_COORDS: Record<string, [number, number]> = {
+const CITY_FALLBACK_COORDS: Record<string, [number, number]> = {
   'san francisco': [37.7749, -122.4194],
   'new york': [40.7128, -74.006],
   brooklyn: [40.7181, -73.9571],

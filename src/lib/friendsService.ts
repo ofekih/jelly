@@ -378,13 +378,13 @@ export function deduplicateUserLists(lists: SharedListPayload[]): SharedListPayl
   return Array.from(byOwner.values());
 }
 
-export interface UserRatingStats {
+interface UserRatingStats {
   mean: number;
   std: number;
   count: number;
 }
 
-export function computeUserRatingStats(restaurants: RestaurantEntry[]): UserRatingStats {
+function computeUserRatingStats(restaurants: RestaurantEntry[]): UserRatingStats {
   if (!restaurants || restaurants.length === 0) {
     return { mean: 7.4, std: 1.1, count: 0 };
   }

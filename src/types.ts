@@ -88,10 +88,6 @@ export function isSpotCategory(raw: unknown): raw is SpotCategory {
   return typeof raw === 'string' && (ALL_CATEGORIES as string[]).includes(raw);
 }
 
-export function isSpotGroup(raw: unknown): raw is SpotGroup {
-  return typeof raw === 'string' && (ALL_GROUPS as string[]).includes(raw);
-}
-
 export const COMMON_CUISINES: string[] = [
   'Italian',
   'Japanese',

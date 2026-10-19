@@ -13,7 +13,7 @@ import {
   persistentMultipleTabManager,
 } from 'firebase/firestore';
 
-export const firebaseConfig = {
+const firebaseConfig = {
   projectId: 'ofek-beli-ranker',
   appId: '1:628127085340:web:7e56cafaa22699796b80d9',
   storageBucket: 'ofek-beli-ranker.firebasestorage.app',
@@ -25,7 +25,7 @@ export const firebaseConfig = {
 
 export const DEFAULT_PLACES_API_KEY = 'AIzaSyAi7dipjBO3RrtEaFc9tBHmOjG0v4RxQqY';
 
-export const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

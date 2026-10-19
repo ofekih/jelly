@@ -12,7 +12,7 @@ import {
   SpotCategory,
 } from '../types';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
-import { GROUP_COPY, vibeLabelForGroup, wantLabel } from '../lib/groups';
+import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import {
   formatDistanceMiles,
@@ -21,6 +21,7 @@ import {
   UserCoordinates,
 } from '../lib/geo';
 import { pctToSpectrumRating, spectrumRatingToPct } from '../lib/rankingEngine';
+import { RATING_TIERS, getRatingTier, getVibeLabel } from '../lib/ratingTiers';
 import { trackEvent } from '../firebase';
 
 interface AddAndRateModalProps {
@@ -225,105 +226,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     return pctToSpectrumRating(pct, linearRatingScale);
   };
 
-  const getGutVibeMeta = (rating: number | null) => {
-    if (rating === null) {
-      return {
-        label: 'Slide or tap anywhere on the line',
-        pillClass:
-          'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
-        thumbBorder: '#10b981',
-      };
-    }
-
-    // Tier 1: Skip (1.0 - 3.9, 0% - 20% of bar)
-    if (rating < 4.0) {
-      const label =
-        rating < 1.8
-          ? 'Disaster · Avoid at all costs'
-          : rating < 2.5
-          ? 'Terrible · Steer clear'
-          : rating < 3.3
-          ? 'Bad · Not worth going'
-          : 'Subpar · Probably skip it';
-      return {
-        label: vibeLabelForGroup(label, group),
-        pillClass:
-          'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/70',
-        thumbBorder: '#f43f5e',
-      };
-    }
-
-    // Tier 2: Mid (4.0 - 5.9, 20% - 40% of bar, 5.0 at center)
-    if (rating < 6.0) {
-      const label =
-        rating < 4.5
-          ? 'Underwhelming · Only if there’s no other option'
-          : rating < 5.0
-          ? 'Meh · Only if someone else picks it'
-          : rating < 5.5
-          ? 'Passable · Fine if it’s convenient'
-          : 'Decent · Solid for what it is';
-      return {
-        label: vibeLabelForGroup(label, group),
-        pillClass:
-          'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70',
-        thumbBorder: '#f59e0b',
-      };
-    }
-
-    // Tier 3: Good (6.0 - 7.4, 40% - 60% of bar)
-    if (rating < 7.5) {
-      const label =
-        rating < 6.4
-          ? 'Pleasant · Glad I went'
-          : rating < 6.8
-          ? 'Good · Worth checking out'
-          : rating < 7.2
-          ? 'Very good · Well worth it'
-          : 'Really liked it · Easy to recommend';
-      return {
-        label: vibeLabelForGroup(label, group),
-        pillClass:
-          'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800/70',
-        thumbBorder: '#06b6d4',
-      };
-    }
-
-    // Tier 4: Great (7.5 - 8.7, 60% - 80% of bar -> culminates in "Loved it" near the Incredible boundary)
-    if (rating < 8.8) {
-      const label =
-        rating < 7.8
-          ? 'Great · A real standout'
-          : rating < 8.2
-          ? 'Really great · Worth going out of your way'
-          : rating < 8.5
-          ? 'Loved it · Would rave about it'
-          : 'Really loved it · Still thinking about it';
-      return {
-        label: vibeLabelForGroup(label, group),
-        pillClass:
-          'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70',
-        thumbBorder: '#14b8a6',
-      };
-    }
-
-    // Tier 5: Incredible (8.8 - 10.0, 80% - 100% of bar -> reserves the far right for true perfection)
-    const label =
-      rating < 9.1
-        ? 'Incredible · One of my favorites'
-        : rating < 9.5
-        ? 'Unforgettable · An all-time favorite'
-        : rating < 9.8
-        ? 'Near-perfect · Almost nothing to critique'
-        : 'Flawless · Literally nothing could be improved';
-
-    return {
-      label: vibeLabelForGroup(label, group),
-      pillClass:
-        'bg-jade-100/90 text-jade-800 border-jade-300 dark:bg-jade-900/70 dark:text-jade-200 dark:border-jade-700',
-      thumbBorder: '#059669',
-    };
-  };
+  const previewTier = previewRating === null ? null : getRatingTier(previewRating);
 
   if (!isOpen) return null;
 
@@ -616,10 +519,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 <div className="flex justify-center pt-0.5">
                   <span
                     className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                      getGutVibeMeta(previewRating).pillClass
+                      previewTier?.pillClass ??
+                      'bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700'
                     }`}
                   >
-                    {getGutVibeMeta(previewRating).label}
+                    {previewRating === null
+                      ? 'Slide or tap anywhere on the line'
+                      : getVibeLabel(previewRating, group)}
                   </span>
                 </div>
 
@@ -675,15 +581,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     }}
                   >
                     {/* Subtle Zone Boundary Dividers along the number line (5 equal 20% divisions by default, or linear 1-10) */}
-                    {(linearRatingScale ? [33.3, 55.6, 72.2, 86.7] : [20, 40, 60, 80]).map(
-                      (leftPct) => (
-                        <div
-                          key={leftPct}
-                          className="absolute top-2 bottom-2 w-px bg-white/35 dark:bg-black/25 pointer-events-none"
-                          style={{ left: `${leftPct}%` }}
-                        />
-                      )
-                    )}
+                    {RATING_TIERS.slice(1).map((tier) => (
+                      <div
+                        key={tier.name}
+                        className="absolute top-2 bottom-2 w-px bg-white/35 dark:bg-black/25 pointer-events-none"
+                        style={{ left: `${spectrumRatingToPct(tier.from, linearRatingScale)}%` }}
+                      />
+                    ))}
 
                     {/* Center baseline axis line */}
                     <div className="w-full h-0.5 bg-white/30 mx-3 rounded-full pointer-events-none" />
@@ -699,12 +603,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                           )}%`,
                           borderWidth: '3px',
                           borderStyle: 'solid',
-                          borderColor: getGutVibeMeta(previewRating).thumbBorder,
+                          borderColor: previewTier?.thumbColor,
                         }}
                       >
                         <div
                           className="w-2 h-2 rounded-full"
-                          style={{ backgroundColor: getGutVibeMeta(previewRating).thumbBorder }}
+                          style={{ backgroundColor: previewTier?.thumbColor }}
                         />
                       </div>
                     )}
@@ -712,26 +616,11 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
                   {/* Vibe Zone Labels aligned under the spectrum line */}
                   <div className="relative h-6 mt-2 select-none text-[11px] font-semibold">
-                    {(linearRatingScale
-                      ? [
-                          { label: 'Skip', rating: 2.5, leftPct: '16.7%', color: 'text-rose-500 dark:text-rose-400' },
-                          { label: 'Mid', rating: 5.0, leftPct: '44.4%', color: 'text-amber-600 dark:text-amber-400' },
-                          { label: 'Good', rating: 6.8, leftPct: '63.9%', color: 'text-cyan-600 dark:text-cyan-400' },
-                          { label: 'Great', rating: 8.2, leftPct: '79.4%', color: 'text-teal-600 dark:text-teal-400' },
-                          { label: 'Incredible', rating: 9.4, leftPct: '93.3%', color: 'text-jade-600 dark:text-jade-400' },
-                        ]
-                      : [
-                          { label: 'Skip', rating: 2.5, leftPct: '10%', color: 'text-rose-500 dark:text-rose-400' },
-                          { label: 'Mid', rating: 5.0, leftPct: '30%', color: 'text-amber-600 dark:text-amber-400' },
-                          { label: 'Good', rating: 6.8, leftPct: '50%', color: 'text-cyan-600 dark:text-cyan-400' },
-                          { label: 'Great', rating: 8.2, leftPct: '70%', color: 'text-teal-600 dark:text-teal-400' },
-                          { label: 'Incredible', rating: 9.4, leftPct: '90%', color: 'text-jade-600 dark:text-jade-400' },
-                        ]
-                    ).map((zone) => (
+                    {RATING_TIERS.map((zone) => (
                       <button
-                        key={zone.label}
+                        key={zone.name}
                         type="button"
-                        onMouseEnter={() => setPreviewRating(zone.rating)}
+                        onMouseEnter={() => setPreviewRating(zone.zoneRating)}
                         onMouseLeave={() =>
                           setPreviewRating(
                             reRankingEntry
@@ -739,11 +628,11 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                               : null
                           )
                         }
-                        onClick={() => handlePickRating(zone.rating)}
-                        style={{ left: zone.leftPct }}
-                        className={`absolute -translate-x-1/2 px-1 py-0.5 rounded hover:opacity-100 transition-opacity ${zone.color} opacity-85 hover:underline`}
+                        onClick={() => handlePickRating(zone.zoneRating)}
+                        style={{ left: `${spectrumRatingToPct(zone.zoneRating, linearRatingScale)}%` }}
+                        className={`absolute -translate-x-1/2 px-1 py-0.5 rounded hover:opacity-100 transition-opacity ${zone.zoneClass} opacity-85 hover:underline`}
                       >
-                        {zone.label}
+                        {zone.name}
                       </button>
                     ))}
                   </div>

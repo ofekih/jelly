@@ -1517,14 +1517,6 @@ export const App: React.FC = () => {
     return set;
   }, [bookmarks]);
 
-  const bookmarkedPlaceIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const b of activeBookmarks) {
-      if (b.placeId) set.add(b.placeId);
-    }
-    return set;
-  }, [activeBookmarks]);
-
   const friendLists = useMemo(() => {
     const list: SharedListPayload[] = [];
     const seen = new Set<string>();
