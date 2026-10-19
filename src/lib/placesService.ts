@@ -190,6 +190,31 @@ function computeNameMatchScore(candidateName: string, rawQuery: string): number 
   return 0;
 }
 
+const FAR_AWAY_KM = 150;
+
+/**
+ * Adjusts a name-match score by where the place is: a far-away namesake (the Natural History
+ * Museum in London when searching from LA) drops below nearby matches, unless the query names
+ * the place's area ("natural history museum london"), which instead gives it a small boost.
+ */
+export function locationAdjustedScore(
+  nameScore: number,
+  cand: Pick<PlaceCandidate, 'name' | 'formattedAddress' | 'lat' | 'lng'>,
+  rawQuery: string,
+  userLocation?: UserCoordinates | null
+): number {
+  const nameWords = normalizeForMatch(cand.name).split(' ');
+  const addressWords = normalizeForMatch(cand.formattedAddress || '').split(' ');
+  const areaWords = normalizeForMatch(rawQuery)
+    .split(' ')
+    .filter((w) => w.length >= 3 && !nameWords.some((nw) => nw.startsWith(w)));
+  if (areaWords.some((w) => addressWords.some((aw) => aw.startsWith(w)))) return nameScore + 10;
+
+  if (!userLocation || typeof cand.lat !== 'number' || typeof cand.lng !== 'number') return nameScore;
+  const km = haversineDistanceMiles(userLocation.lat, userLocation.lng, cand.lat, cand.lng) * 1.609344;
+  return km > FAR_AWAY_KM ? nameScore - 30 : nameScore;
+}
+
 function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate {
   const name = p.displayName?.text || fallbackName;
   const formattedAddress = p.formattedAddress || p.shortFormattedAddress || '';
@@ -432,6 +457,7 @@ export async function searchPlaces(
         return {
           cand,
           nameScore,
+          score: nameScore > 0 ? locationAdjustedScore(nameScore, cand, trimmed, userLocation) : 0,
           isFromAutocomplete,
           autoRank: isFromAutocomplete ? autoRank : 999,
           originalIdx,
@@ -444,7 +470,7 @@ export async function searchPlaces(
         : scored;
 
       filtered.sort((a, b) => {
-        if (b.nameScore !== a.nameScore) return b.nameScore - a.nameScore;
+        if (b.score !== a.score) return b.score - a.score;
         if (a.isFromAutocomplete !== b.isFromAutocomplete) {
           return a.isFromAutocomplete ? -1 : 1;
         }
