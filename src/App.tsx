@@ -2566,6 +2566,10 @@ export const App: React.FC = () => {
 
       <footer className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
         jelly – rank the restaurants, sights and places you've been ·{' '}
+        <a href="/about" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
+          About
+        </a>{' '}
+        ·{' '}
         <a href="/privacy.html" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
           Privacy
         </a>

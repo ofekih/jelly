@@ -26,6 +26,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Reworked gut-feeling labels so the whole 1–10 scale gets used',
       'Search favors spots near you (or your home city) over far-away namesakes',
       'Installed app shows a one-tap reload when an update is ready',
+      'New About page (linked at the bottom) explaining how jelly ranks, with live demos',
     ],
   },
   {

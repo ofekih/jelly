@@ -5,6 +5,19 @@ import tailwindcss from '@tailwindcss/vite';
 const APP_VERSION = Date.now().toString(36);
 
 /** Serves (dev) and emits (build) `/version.json` containing the current APP_VERSION. */
+/** Dev-only: serves the about page at /about like Hosting does in production. */
+function aboutRoute(): Plugin {
+  return {
+    name: 'jelly-about-route',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url === '/about' || req.url?.startsWith('/about?')) req.url = req.url.replace('/about', '/about.html');
+        next();
+      });
+    },
+  };
+}
+
 function versionJson(): Plugin {
   const body = JSON.stringify({ version: APP_VERSION });
   return {
@@ -23,7 +36,12 @@ function versionJson(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [tailwindcss(), versionJson()],
+  plugins: [tailwindcss(), versionJson(), aboutRoute()],
+  build: {
+    rollupOptions: {
+      input: { main: 'index.html', about: 'about.html' },
+    },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
