@@ -19,6 +19,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import {
   Bookmark,
   Check,
+  ChevronRight,
   Download,
   List,
   LogIn,
@@ -65,6 +66,7 @@ import {
 } from './lib/firestoreDoc';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
+import { CURRENT_VERSION, displayVersion, hasUnseenRelease } from './lib/changelog';
 import { GROUP_COPY, wantLabel } from './lib/groups';
 import { ratingToBaseElo } from './lib/rankingEngine';
 import {
@@ -97,6 +99,7 @@ import { RestaurantList } from './components/RestaurantList';
 import { RestaurantMapView } from './components/RestaurantMapView';
 import { ShareModal } from './components/ShareModal';
 import { SpotDetailModal } from './components/SpotDetailModal';
+import { WhatsNewModal } from './components/WhatsNewModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
@@ -290,6 +293,16 @@ export const App: React.FC = () => {
   const [isEatTogetherOpen, setIsEatTogetherOpen] = useState(false);
   const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  // Dot on Settings after a new major/minor release; brand-new visitors start caught up.
+  const [hasUnseenChangelog, setHasUnseenChangelog] = useState(() => {
+    const settings = readLocalSettings();
+    if (!settings.lastSeenVersion && Object.keys(settings).length === 0) {
+      updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
+      return false;
+    }
+    return hasUnseenRelease(settings.lastSeenVersion);
+  });
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
     message: string;
@@ -2039,10 +2052,15 @@ export const App: React.FC = () => {
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}
                 className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                aria-label="Settings"
+                aria-label={hasUnseenChangelog ? 'Settings · new features' : 'Settings'}
                 title="Settings"
               >
-                <Settings className="w-4 h-4" />
+                <span className="relative block">
+                  <Settings className="w-4 h-4" />
+                  {hasUnseenChangelog && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-950" />
+                  )}
+                </span>
               </button>
             )}
 
@@ -2544,6 +2562,13 @@ export const App: React.FC = () => {
         )}
       </main>
 
+      <footer className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
+        jelly – rank the restaurants, sights and places you've been ·{' '}
+        <a href="/privacy.html" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
+          Privacy
+        </a>
+      </footer>
+
       {/* Add & Rate Wizard (Search -> Q1: 1-10 -> Q2: List) */}
       <AddAndRateModal
         isOpen={isAddModalOpen}
@@ -2891,6 +2916,31 @@ export const App: React.FC = () => {
                 </button>
               </div>
 
+              <button
+                type="button"
+                onClick={() => {
+                  trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
+                  setIsWhatsNewOpen(true);
+                  setHasUnseenChangelog(false);
+                  updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
+                }}
+                className="w-full pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2 text-xs text-left group"
+              >
+                <span className="flex items-center gap-2 font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  What’s new
+                  {hasUnseenChangelog && (
+                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                      New
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 tabular-nums">
+                  v{displayVersion(CURRENT_VERSION)}
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </span>
+              </button>
+
               {user && (
                 <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs text-zinc-500">
                   <span className="truncate">{user.email}</span>
@@ -2917,6 +2967,8 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      <WhatsNewModal isOpen={isWhatsNewOpen} onClose={() => setIsWhatsNewOpen(false)} />
 
       {/* PWA Mobile Install Nudge */}
       <PwaInstallBanner />
