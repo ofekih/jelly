@@ -240,7 +240,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
           transition: isTouchTracking ? 'none' : 'transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
           WebkitTouchCallout: 'none',
         }}
-        className="relative flex items-center gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors"
+        className="relative flex items-center gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors touch-pan-y"
       >
         <div className="w-6 flex items-center justify-center shrink-0">
           <JellyBeanIcon size={18} />

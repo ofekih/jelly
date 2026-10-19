@@ -349,7 +349,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
         }}
         className={`group relative flex items-center justify-between gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/60 transition-colors ${
           !isDragDisabled
-            ? 'cursor-grab active:cursor-grabbing touch-manipulation'
+            ? 'cursor-grab active:cursor-grabbing touch-pan-y'
             : 'cursor-pointer'
         } ${isDragging ? 'scale-[1.01] opacity-95 touch-none' : ''}`}
       >

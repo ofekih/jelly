@@ -58,18 +58,6 @@ export function useSwipeDownDismiss({
     scrollContainerNodeRef.current = node;
   };
 
-  // Lock body scroll and overscroll chaining while modal is open
-  useEffect(() => {
-    const origOverflow = document.body.style.overflow;
-    const origOverscroll = document.body.style.overscrollBehavior;
-    document.body.style.overflow = 'hidden';
-    document.body.style.overscrollBehavior = 'none';
-
-    return () => {
-      document.body.style.overflow = origOverflow;
-      document.body.style.overscrollBehavior = origOverscroll;
-    };
-  }, []);
 
   // Attach non-passive touchmove listener to the sheet to physically prevent Android pull-to-refresh
   useEffect(() => {
