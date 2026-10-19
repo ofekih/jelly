@@ -13,7 +13,7 @@ import {
   getDocs,
   onSnapshot,
   setDoc,
-  writeBatch,
+  WriteBatch,
 } from 'firebase/firestore';
 import { arrayMove } from '@dnd-kit/sortable';
 import {
@@ -50,7 +50,12 @@ import {
   RestaurantEntry,
   SharedListPayload,
 } from './types';
-import { stripUndefined } from './lib/firestoreDoc';
+import {
+  changedDocs,
+  commitInBatches,
+  logWriteError,
+  stripUndefined,
+} from './lib/firestoreDoc';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
 import { ratingToBaseElo } from './lib/rankingEngine';
@@ -145,6 +150,9 @@ export const App: React.FC = () => {
     }
     return [];
   });
+  // Latest list for diffing writes; callbacks like toast Undo would otherwise see a stale closure
+  const restaurantsRef = useRef(restaurants);
+  restaurantsRef.current = restaurants;
 
   const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
     try {
@@ -381,7 +389,7 @@ export const App: React.FC = () => {
           doc(db, 'users', user.uid),
           { darkMode: next, updatedAt: Date.now() },
           { merge: true }
-        ).catch(() => {});
+        ).catch(logWriteError('dark mode'));
       }
       return next;
     });
@@ -473,7 +481,7 @@ export const App: React.FC = () => {
           doc(db, 'users', user.uid),
           { seenFollowerIds: arr, updatedAt: Date.now() },
           { merge: true }
-        ).catch(() => {});
+        ).catch(logWriteError('seen followers'));
       }
       return next;
     });
@@ -546,11 +554,12 @@ export const App: React.FC = () => {
             try {
               const localItems = loadRestaurants(JSON.parse(localRaw) as any[]);
               if (localItems.length > 0) {
-                const batch = writeBatch(db);
-                for (const item of localItems) {
-                  batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item));
-                }
-                await batch.commit();
+                await commitInBatches(
+                  db,
+                  localItems.map((item) => (b) =>
+                    b.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item))
+                  )
+                );
                 return;
               }
             } catch {
@@ -575,15 +584,15 @@ export const App: React.FC = () => {
         // drop the old meal-keyed docs and write the re-keyed, per-category ranked docs.
         if (legacyDocIds.length > 0) {
           try {
-            const batch = writeBatch(db);
             const keepIds = new Set(normalized.map((r) => r.id));
-            for (const id of legacyDocIds) {
-              if (!keepIds.has(id)) batch.delete(doc(db, 'users', user.uid, 'restaurants', id));
-            }
-            for (const item of normalized) {
-              batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item));
-            }
-            await batch.commit();
+            await commitInBatches(db, [
+              ...legacyDocIds
+                .filter((id) => !keepIds.has(id))
+                .map((id) => (b: WriteBatch) => b.delete(doc(db, 'users', user.uid, 'restaurants', id))),
+              ...normalized.map((item) => (b: WriteBatch) =>
+                b.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item))
+              ),
+            ]);
             return; // The snapshot listener fires again with the migrated docs
           } catch (err) {
             console.error('Failed to migrate restaurants to category lists:', err);
@@ -616,11 +625,12 @@ export const App: React.FC = () => {
             try {
               const localItems = (JSON.parse(localRaw) as any[]).map(sanitizeLoadedBookmark);
               if (localItems.length > 0) {
-                const batch = writeBatch(db);
-                for (const item of localItems) {
-                  batch.set(doc(db, 'users', user.uid, 'bookmarks', item.id), stripUndefined(item));
-                }
-                await batch.commit();
+                await commitInBatches(
+                  db,
+                  localItems.map((item) => (b) =>
+                    b.set(doc(db, 'users', user.uid, 'bookmarks', item.id), stripUndefined(item))
+                  )
+                );
                 return;
               }
             } catch {
@@ -641,11 +651,12 @@ export const App: React.FC = () => {
         });
         // One-time migration: rewrite legacy bookmarks without the old meal fields
         if (legacyBookmarks.length > 0) {
-          const batch = writeBatch(db);
-          for (const bm of legacyBookmarks) {
-            batch.set(doc(db, 'users', user.uid, 'bookmarks', bm.id), stripUndefined(bm));
-          }
-          batch.commit().catch(() => {});
+          commitInBatches(
+            db,
+            legacyBookmarks.map((bm) => (b) =>
+              b.set(doc(db, 'users', user.uid, 'bookmarks', bm.id), stripUndefined(bm))
+            )
+          ).catch(logWriteError('migrate legacy bookmarks'));
         }
         loaded.sort((a, b) => b.createdAt - a.createdAt);
         setBookmarks(loaded);
@@ -669,20 +680,8 @@ export const App: React.FC = () => {
       const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'Friend';
       const effectiveHandle =
         sanitizeHandle(userHandle) || deriveDefaultHandle(user.displayName, user.email);
-      const cleanRestaurants = restaurants.slice(0, 500).map((r) => {
-        const clean: Record<string, any> = {};
-        Object.entries(r).forEach(([k, v]) => {
-          if (v !== undefined) clean[k] = v;
-        });
-        return clean;
-      });
-      const cleanBookmarks = bookmarks.slice(0, 500).map((b) => {
-        const clean: Record<string, any> = {};
-        Object.entries(b).forEach(([k, v]) => {
-          if (v !== undefined) clean[k] = v;
-        });
-        return clean;
-      });
+      const cleanRestaurants = restaurants.slice(0, 500).map(stripUndefined);
+      const cleanBookmarks = bookmarks.slice(0, 500).map(stripUndefined);
 
       const payload: Record<string, any> = {
         id: shareId,
@@ -698,28 +697,30 @@ export const App: React.FC = () => {
       };
       if (user.photoURL) payload.photoURL = user.photoURL;
 
-      setDoc(doc(db, 'sharedLists', shareId), payload, { merge: true }).catch(() => {});
+      setDoc(doc(db, 'sharedLists', shareId), payload, { merge: true }).catch(logWriteError('shared list sync'));
     }, 900);
 
     return () => clearTimeout(timer);
   }, [user, restaurants, bookmarks, userHandle, friends]);
 
   // `ordered` may contain every category; each category list is re-scored independently
+  // Only docs whose contents changed (plus `deletedId`) are written to Firestore
   const persistOrderedRestaurants = async (ordered: RestaurantEntry[], deletedId?: string) => {
     const recomputed = recomputeAllCategoryScores(ordered);
+    const changed = changedDocs(recomputed, restaurantsRef.current);
+    restaurantsRef.current = recomputed;
     setRestaurants(recomputed);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(recomputed));
 
     if (user) {
       try {
-        const batch = writeBatch(db);
-        if (deletedId) {
-          batch.delete(doc(db, 'users', user.uid, 'restaurants', deletedId));
-        }
-        for (const item of recomputed) {
-          batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item));
-        }
-        await batch.commit();
+        const colPath = ['users', user.uid, 'restaurants'] as const;
+        await commitInBatches(db, [
+          ...(deletedId ? [(b: WriteBatch) => b.delete(doc(db, ...colPath, deletedId))] : []),
+          ...changed.map((item) => (b: WriteBatch) =>
+            b.set(doc(db, ...colPath, item.id), stripUndefined(item))
+          ),
+        ]);
       } catch (err) {
         console.error('Failed to persist to Firestore:', err);
       }
@@ -763,7 +764,9 @@ export const App: React.FC = () => {
     localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(nextBookmarks));
 
     if (user) {
-      setDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId), stripUndefined(newBookmark)).catch(() => {});
+      setDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId), stripUndefined(newBookmark)).catch(
+        logWriteError('add bookmark')
+      );
     }
 
     trackEvent('add_bookmark', {
@@ -843,7 +846,7 @@ export const App: React.FC = () => {
           updatedAt: Date.now(),
         },
         { merge: true }
-      ).catch(() => {});
+      ).catch(logWriteError('follow friend'));
     }
 
     trackEvent('follow_friend', {
@@ -885,7 +888,7 @@ export const App: React.FC = () => {
           updatedAt: Date.now(),
         },
         { merge: true }
-      ).catch(() => {});
+      ).catch(logWriteError('unfollow friend'));
     }
 
     if (removed) {
@@ -906,7 +909,7 @@ export const App: React.FC = () => {
                   updatedAt: Date.now(),
                 },
                 { merge: true }
-              ).catch(() => {});
+              ).catch(logWriteError('undo unfollow'));
             }
           },
         },
@@ -936,7 +939,7 @@ export const App: React.FC = () => {
         doc(db, 'users', user.uid),
         { handle: clean, updatedAt: Date.now() },
         { merge: true }
-      ).catch(() => {});
+      ).catch(logWriteError('handle'));
       await handlePublishShareLink(clean);
     }
     showToast(`Saved handle @${clean}`);
@@ -1030,7 +1033,7 @@ export const App: React.FC = () => {
     localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(nextBookmarks));
 
     if (user) {
-      deleteDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId)).catch(() => {});
+      deleteDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId)).catch(logWriteError('delete bookmark'));
     }
     if (target) {
       trackEvent('delete_bookmark', { restaurant_name: target.name });
@@ -1042,7 +1045,9 @@ export const App: React.FC = () => {
             setBookmarks(prevBookmarks);
             localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(prevBookmarks));
             if (user) {
-              setDoc(doc(db, 'users', user.uid, 'bookmarks', target.id), stripUndefined(target)).catch(() => {});
+              setDoc(doc(db, 'users', user.uid, 'bookmarks', target.id), stripUndefined(target)).catch(
+                logWriteError('undo delete bookmark')
+              );
             }
             showToast(`Restored ${target.name}`);
           },
@@ -1175,7 +1180,7 @@ export const App: React.FC = () => {
       setBookmarks(next);
       localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(next));
       if (user) {
-        deleteDoc(doc(db, 'users', user.uid, 'bookmarks', match.id)).catch(() => {});
+        deleteDoc(doc(db, 'users', user.uid, 'bookmarks', match.id)).catch(logWriteError('remove ranked bookmark'));
       }
     }
   };
@@ -1725,7 +1730,7 @@ export const App: React.FC = () => {
           updatedAt: Date.now(),
         },
         { merge: true }
-      ).catch(() => {});
+      ).catch(logWriteError('settings'));
     }
     setIsSettingsOpen(false);
     showToast('Saved');

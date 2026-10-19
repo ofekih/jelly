@@ -51,7 +51,7 @@ ranking web app. Live at https://eatwithjelly.com.
   drag-reorder, friend/community score matching and Eat Together never cross lists. The same place
   may appear in several lists as separate entries. The main screen shows one list at a time (tabs).
 - **Adding a field to any Firestore doc requires updating `firestore.rules` validators**,
-  otherwise writes silently fail (writes use `.catch(() => {})`). Delegate rules edits to the
+  otherwise writes fail (fire-and-forget writes only log via `logWriteError` in the console). Delegate rules edits to the
   `firestore-rules-author` subagent, then deploy rules.
 - **Rating scale is non-linear by default**: 5 equal visual divisions Skip/Mid/Good/Great/Incredible
   (≈1–3.9 / 4–5.9 / 6–7.4 / 7.5–8.7 / 8.8–10), with 5.0 in the middle of Mid. A settings toggle
