@@ -8,6 +8,7 @@ export interface LocalSettings {
   linearRatingScale?: boolean;
   useCurrentLocation?: boolean;
   lastCategory?: string; // List last viewed (its group is the one jelly opens to)
+  lastSeenVersion?: string; // Newest changelog version this device has seen (local only)
 }
 
 export function readLocalSettings(): LocalSettings {

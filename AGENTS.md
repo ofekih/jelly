@@ -31,6 +31,7 @@ ranking web app. Live at https://eatwithjelly.com.
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
 | `src/lib/geo.ts` | Distances, city fallback coords |
+| `src/lib/changelog.ts` | User-facing release notes (newest first = app version, synced with `package.json`); shown in Settings → What's new (`WhatsNewModal`), dot on Settings for unseen major/minor releases |
 | `src/components/AddAndRateModal.tsx` | Search → gut-feeling spectrum bar (labels from `ratingTiers`) → SxS |
 | `src/components/SxSArenaModal.tsx` | Pairwise comparisons; prefers same-cuisine opponents |
 | `src/components/RestaurantList.tsx` | Ranked list, drag-to-rerank, swipe actions |
