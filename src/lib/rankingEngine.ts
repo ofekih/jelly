@@ -45,13 +45,34 @@ export function ratingToBaseElo(initialRating: number): number {
 }
 
 /**
- * 5 Equal Visual Divisions (20% each), one per rating tier:
- * Skip 1.0, Mid 4.0 (5.0 sits at the exact middle), Good 6.0, Great 7.5, Incredible 8.8..10.0
+ * One stop per tier boundary, each tier filling its `barShare` of the bar:
+ * Skip 1.0 (0%), Mid 4.0 (16%), Good 6.0 (37%), Great 7.5 (61%), Incredible 8.8 (88%)..10.0 (100%)
  */
 const BALANCED_SPECTRUM_STOPS: Array<{ pct: number; rating: number }> = [
-  ...RATING_TIERS.map((tier, i) => ({ pct: i / RATING_TIERS.length, rating: tier.from })),
+  ...RATING_TIERS.map((tier, i) => ({
+    pct: RATING_TIERS.slice(0, i).reduce((sum, t) => sum + t.barShare, 0) / 100,
+    rating: tier.from,
+  })),
   { pct: 1.0, rating: 10.0 },
 ];
+
+/** Spectrum colours anchored to ratings, so the gradient lines up with the tiers in either mode */
+const SPECTRUM_COLOR_STOPS: Array<{ rating: number; color: string }> = [
+  { rating: 1.0, color: '#f43f5e' },
+  { rating: 3.4, color: '#fb7185' },
+  { rating: 5.0, color: '#f59e0b' },
+  { rating: 6.5, color: '#06b6d4' },
+  { rating: 7.7, color: '#14b8a6' },
+  { rating: 8.8, color: '#10b981' },
+  { rating: 10.0, color: '#047857' },
+];
+
+export function spectrumGradient(linear = false): string {
+  const stops = SPECTRUM_COLOR_STOPS.map(
+    (s) => `${s.color} ${spectrumRatingToPct(s.rating, linear).toFixed(1)}%`
+  );
+  return `linear-gradient(90deg, ${stops.join(', ')})`;
+}
 
 export function pctToSpectrumRating(pct: number, linear = false): number {
   const p = clamp(pct, 0, 1);

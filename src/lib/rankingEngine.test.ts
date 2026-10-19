@@ -99,18 +99,18 @@ describe('rankingEngine (ELO-based)', () => {
     expect(firstPick!.opponent.cuisines).toContain('Japanese');
   });
 
-  it('maps 5 equal visual divisions with 5.0 at the center of Mid (30%), and supports linear fallback', () => {
-    // 5 equal 20% divisions: Skip (0-20%), Mid (20-40%), Good (40-60%), Great (60-80%), Incredible (80-100%)
+  it('maps tier boundaries to their bar shares with 5.0 in the middle of Mid, and supports linear fallback', () => {
+    // Skip 0–16%, Mid 16–37%, Good 37–61%, Great 61–88%, Incredible 88–100%
     expect(pctToSpectrumRating(0.0, false)).toBe(1.0);
-    expect(pctToSpectrumRating(0.2, false)).toBe(4.0);
-    expect(pctToSpectrumRating(0.3, false)).toBe(5.0); // Center of Mid!
-    expect(pctToSpectrumRating(0.4, false)).toBe(6.0);
-    expect(pctToSpectrumRating(0.6, false)).toBe(7.5);
-    expect(pctToSpectrumRating(0.8, false)).toBe(8.8);
+    expect(pctToSpectrumRating(0.16, false)).toBe(4.0);
+    expect(pctToSpectrumRating(0.265, false)).toBe(5.0);
+    expect(pctToSpectrumRating(0.37, false)).toBe(6.0);
+    expect(pctToSpectrumRating(0.61, false)).toBe(7.5);
+    expect(pctToSpectrumRating(0.88, false)).toBe(8.8);
     expect(pctToSpectrumRating(1.0, false)).toBe(10.0);
 
-    expect(spectrumRatingToPct(5.0, false)).toBeCloseTo(30, 1);
-    expect(spectrumRatingToPct(7.5, false)).toBeCloseTo(60, 1);
+    expect(spectrumRatingToPct(5.0, false)).toBeCloseTo(26.5, 1);
+    expect(spectrumRatingToPct(7.5, false)).toBeCloseTo(61, 1);
 
     // Linear mode
     expect(pctToSpectrumRating(0.5, true)).toBe(5.5);

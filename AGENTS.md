@@ -64,8 +64,10 @@ ranking web app. Live at https://eatwithjelly.com.
 - **Adding a field to any Firestore doc requires updating `firestore.rules` validators**,
   otherwise writes fail (fire-and-forget writes only log via `logWriteError` in the console). Delegate rules edits to the
   `firestore-rules-author` subagent, then deploy rules.
-- **Rating scale is non-linear by default**: 5 equal visual divisions Skip/Mid/Good/Great/Incredible
-  (≈1–3.9 / 4–5.9 / 6–7.4 / 7.5–8.7 / 8.8–10), with 5.0 in the middle of Mid. A settings toggle
+- **Rating scale is non-linear by default**: tiers Skip/Mid/Good/Great/Incredible (≈1–3.9 / 4–5.9 /
+  6–7.4 / 7.5–8.7 / 8.8–10) fill 16/21/24/27/12% of the bar (`barShare` in `ratingTiers.ts`): roughly how
+  often people feel each way (MovieLens/Letterboxd/BeerAdvocate, 75%) plus a plain-line floor (25%).
+  Piecewise linear within tiers, 5.0 in the middle of Mid. A settings toggle
   (`linearRatingScale`) reverts to linear. Keep gradient + labels consistent with both modes.
 - **Spectrum labels are deliberately calibrated low**: "Loved it" sits near the Great/Incredible
   boundary (~8.2–8.7), and "Flawless · Literally nothing could be improved" is only 9.8–10. The words

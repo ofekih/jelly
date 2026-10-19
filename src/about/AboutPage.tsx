@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowLeft, ArrowRight, Scale, Sparkles, Swords } from 'lucide-react';
 import { JellyBeanIcon } from '../components/JellyBeanIcon';
+import { RATING_TIERS } from '../lib/ratingTiers';
 import { CATEGORY_EMOJI, CATEGORY_LABEL, GROUP_CATEGORIES } from '../types';
 import { BucketsDemo } from './demos/BucketsDemo';
 import { ScoreDemo } from './demos/ScoreDemo';
@@ -23,6 +24,13 @@ const STEPS = [
   { icon: Sparkles, title: 'Gut feeling', body: 'One quick tap on a spectrum: roughly how good was it?' },
   { icon: Swords, title: 'Side-by-side', body: 'A few “this or that?” questions find its exact place in your list.' },
   { icon: Scale, title: 'Score', body: 'Your order becomes 1–10 scores, scaled by how good things felt.' },
+];
+
+/** Tier shares of the bar (see Step 1); "how often" averages MovieLens, Letterboxd and BeerAdvocate */
+const SHARE_ROWS = [
+  { label: 'How often', values: [11, 20, 26, 31, 12] },
+  { label: 'Plain line', values: [33, 22, 17, 14, 13] },
+  { label: 'jelly’s bar', values: RATING_TIERS.map((t) => t.barShare), bold: true },
 ];
 
 const GROUPS: Array<{ key: keyof typeof GROUP_CATEGORIES; name: string }> = [
@@ -169,9 +177,11 @@ export const AboutPage: React.FC = () => (
         </p>
         <SpectrumDemo />
         <p>
-          The bar isn't a straight 1–10 line. Each tier gets an equal fifth of the bar, which gives more room to the
-          6–9 range where most visits land and squeezes 1–4, where few places deserve fine distinctions. A plain 5.0
-          sits right in the middle of Mid.
+          The bar isn't a straight 1–10 line: each tier's width matches how often people actually feel that way. We
+          looked at about 12 million ratings from people logging everything they tried (MovieLens and Letterboxd for
+          films, BeerAdvocate for beer), matched their star levels to jelly's words, and sized the tiers to fit.
+          “Really liked it” and “Great” come up most, so Good and Great get the most room. Incredible is rare, so it
+          gets the least. A plain 1–10 line would hand a third of the bar to Skip.
         </p>
         <p>
           The labels are deliberately <b>calibrated low</b>. “Loved it” sits near the Great/Incredible boundary, and
@@ -180,14 +190,39 @@ export const AboutPage: React.FC = () => (
         </p>
         <Nerd>
           <p>
-            The bar position <Tex>p \in [0,1]</Tex> maps to a rating by straight lines between six stops, one at each
-            tier boundary:
+            Each tier's share of the bar is <Tex>{String.raw`\tfrac34`}</Tex> how often people feel that way plus{' '}
+            <Tex>{String.raw`\tfrac14`}</Tex> its share of a plain 1–10 line, so even rare tiers stay easy to tap:
           </p>
-          <Tex block>{String.raw`r(p) = r_i + \frac{p - p_i}{p_{i+1} - p_i}\,\bigl(r_{i+1} - r_i\bigr)`}</Tex>
-          <Tex block>{String.raw`\begin{array}{c|cccccc} p_i & 0 & 0.2 & 0.4 & 0.6 & 0.8 & 1 \\ \hline r_i & \color{#f43f5e}1 & \color{#f59e0b}4 & \color{#06b6d4}6 & \color{#14b8a6}7.5 & \color{#059669}8.8 & \color{#059669}10 \end{array}`}</Tex>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-[12.5px] tabular-nums">
+              <thead>
+                <tr className="text-[11px] text-zinc-400">
+                  <th />
+                  {RATING_TIERS.map((t) => (
+                    <th key={t.name} className={`px-0.5 pb-1 font-semibold ${t.zoneClass}`}>
+                      {t.name === 'Incredible' ? 'Incred.' : t.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {SHARE_ROWS.map((row) => (
+                  <tr key={row.label} className={row.bold ? 'font-bold text-zinc-900 dark:text-zinc-100' : ''}>
+                    <td className="py-0.5 pr-2 text-left">{row.label}</td>
+                    {row.values.map((v, i) => (
+                      <td key={i} className="px-0.5">
+                        {v}%
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p>
-            So the Great tier spans just 1.3 points of rating but 20% of the bar: about 40% more room than a linear
-            bar gives it. Prefer a straight line? Settings has a linear-scale switch.
+            Within a tier, the bar is a straight line between the tier's start and end ratings. That puts 5.0 in the
+            middle of Mid, and gives the Great tier (1.3 points of rating) more than a quarter of the bar. Prefer a
+            straight line? Settings has a linear-scale switch.
           </p>
         </Nerd>
       </Section>

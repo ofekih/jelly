@@ -1,14 +1,7 @@
 import React, { useState } from 'react';
 import { RATING_TIERS, getRatingTier, getVibeLabel } from '../../lib/ratingTiers';
-import { pctToSpectrumRating, spectrumRatingToPct } from '../../lib/rankingEngine';
+import { pctToSpectrumRating, spectrumGradient, spectrumRatingToPct } from '../../lib/rankingEngine';
 import { Demo, Pill } from '../ui';
-
-const GRADIENT = {
-  balanced:
-    'linear-gradient(90deg, #f43f5e 0%, #fb7185 16%, #f59e0b 30%, #06b6d4 47%, #14b8a6 63%, #10b981 80%, #047857 100%)',
-  linear:
-    'linear-gradient(90deg, #f43f5e 0%, #fb7185 22%, #f59e0b 44%, #06b6d4 60%, #14b8a6 73%, #10b981 86%, #047857 100%)',
-};
 
 // Chart geometry (SVG user units)
 const W = 320;
@@ -69,7 +62,7 @@ export const SpectrumDemo: React.FC = () => {
           if (e.buttons) setFromPointer(e);
         }}
         className="relative mt-4 h-12 w-full cursor-pointer touch-none select-none rounded-2xl shadow-inner ring-1 ring-inset ring-black/10 dark:ring-white/15 outline-none focus-visible:ring-2 focus-visible:ring-jade-500"
-        style={{ backgroundImage: linear ? GRADIENT.linear : GRADIENT.balanced }}
+        style={{ backgroundImage: spectrumGradient(linear) }}
       >
         {RATING_TIERS.slice(1).map((t) => (
           <div

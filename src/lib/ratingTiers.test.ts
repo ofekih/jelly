@@ -32,10 +32,13 @@ describe('ratingTiers', () => {
     expect(getVibeLabel(6.0, 'travel')).toBe('Pleasant · Glad I went');
   });
 
-  it('gives each tier an equal fifth of the non-linear spectrum', () => {
-    RATING_TIERS.forEach((tier, i) => {
-      expect(spectrumRatingToPct(tier.from)).toBeCloseTo(i * 20);
-      expect(pctToSpectrumRating(i / 5)).toBe(tier.from);
-    });
+  it('gives each tier its bar share of the non-linear spectrum', () => {
+    expect(RATING_TIERS.reduce((sum, t) => sum + t.barShare, 0)).toBe(100);
+    let start = 0;
+    for (const tier of RATING_TIERS) {
+      expect(spectrumRatingToPct(tier.from)).toBeCloseTo(start);
+      expect(pctToSpectrumRating(start / 100)).toBe(tier.from);
+      start += tier.barShare;
+    }
   });
 });

@@ -16,8 +16,14 @@ interface VibeBand {
 
 export interface RatingTier {
   name: string;
-  /** Lowest rating in the tier; tiers fill equal fifths of the non-linear spectrum */
+  /** Lowest rating in the tier */
   from: number;
+  /**
+   * Percent of the non-linear spectrum bar the tier fills (all tiers sum to 100). Roughly how often
+   * people feel that way about places they chose to try, from MovieLens, Letterboxd and BeerAdvocate
+   * ratings matched to these labels (75%), plus a plain-line floor so rare tiers stay tappable (25%).
+   */
+  barShare: number;
   /** Rating picked when the tier's name under the spectrum is tapped */
   zoneRating: number;
   thumbColor: string;
@@ -29,6 +35,7 @@ export interface RatingTier {
 export const RATING_TIERS: RatingTier[] = [
   {
     name: 'Skip',
+    barShare: 16,
     from: 1.0,
     zoneRating: 2.5,
     thumbColor: '#f43f5e',
@@ -44,6 +51,7 @@ export const RATING_TIERS: RatingTier[] = [
   },
   {
     name: 'Mid',
+    barShare: 21,
     from: 4.0,
     zoneRating: 5.0,
     thumbColor: '#f59e0b',
@@ -59,6 +67,7 @@ export const RATING_TIERS: RatingTier[] = [
   },
   {
     name: 'Good',
+    barShare: 24,
     from: 6.0,
     zoneRating: 6.8,
     thumbColor: '#06b6d4',
@@ -74,6 +83,7 @@ export const RATING_TIERS: RatingTier[] = [
   },
   {
     name: 'Great',
+    barShare: 27,
     from: 7.5,
     zoneRating: 8.2,
     thumbColor: '#14b8a6',
@@ -89,6 +99,7 @@ export const RATING_TIERS: RatingTier[] = [
   },
   {
     name: 'Incredible',
+    barShare: 12,
     from: 8.8,
     zoneRating: 9.4,
     thumbColor: '#059669',

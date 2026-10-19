@@ -22,7 +22,7 @@ import {
   resolveManualSpotCity,
   UserCoordinates,
 } from '../lib/geo';
-import { pctToSpectrumRating, spectrumRatingToPct } from '../lib/rankingEngine';
+import { pctToSpectrumRating, spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
 import { RATING_TIERS, getRatingTier, getVibeLabel } from '../lib/ratingTiers';
 import { trackEvent } from '../firebase';
 
@@ -584,14 +584,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     }}
                     className="relative h-14 w-full rounded-2xl cursor-pointer select-none touch-none shadow-inner ring-1 ring-inset ring-black/10 dark:ring-white/15 bg-no-repeat flex items-center transition-transform active:scale-[0.995]"
                     style={{
-                      backgroundImage: linearRatingScale
-                        ? 'linear-gradient(90deg, #f43f5e 0%, #fb7185 22%, #f59e0b 44%, #06b6d4 60%, #14b8a6 73%, #10b981 86%, #047857 100%)'
-                        : 'linear-gradient(90deg, #f43f5e 0%, #fb7185 16%, #f59e0b 30%, #06b6d4 47%, #14b8a6 63%, #10b981 80%, #047857 100%)',
+                      backgroundImage: spectrumGradient(linearRatingScale),
                       backgroundOrigin: 'border-box',
                       backgroundRepeat: 'no-repeat',
                     }}
                   >
-                    {/* Subtle Zone Boundary Dividers along the number line (5 equal 20% divisions by default, or linear 1-10) */}
+                    {/* Subtle Zone Boundary Dividers along the number line (tier boundaries by default, or linear 1-10) */}
                     {RATING_TIERS.slice(1).map((tier) => (
                       <div
                         key={tier.name}
