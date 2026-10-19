@@ -1,6 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 
 interface SheetProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ export const Sheet: React.FC<SheetProps> = ({
   maxHeightClassName = 'max-h-[88vh]',
   children,
 }) => {
+  useBodyScrollLock();
   const {
     sheetStyle,
     backdropStyle,

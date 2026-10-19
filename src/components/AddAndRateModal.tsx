@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
 import { GROUP_COPY, wantLabel } from '../lib/groups';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import {
   formatDistanceMiles,
@@ -68,6 +69,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   // The add flow always stays within the group (Eat / Explore / Travel) being viewed
   const group = CATEGORY_GROUP[reRankingEntry?.category ?? defaultCategory];
   const copy = GROUP_COPY[group];
+  useBodyScrollLock(isOpen);
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceCandidate[]>([]);

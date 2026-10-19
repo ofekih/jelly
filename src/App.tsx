@@ -103,6 +103,7 @@ import { WhatsNewModal } from './components/WhatsNewModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
+import { useBodyScrollLock } from './lib/useBodyScrollLock';
 
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
@@ -293,6 +294,7 @@ export const App: React.FC = () => {
   const [isEatTogetherOpen, setIsEatTogetherOpen] = useState(false);
   const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  useBodyScrollLock(isSettingsOpen);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   // Dot on Settings after a new major/minor release; brand-new visitors start caught up.
   const [hasUnseenChangelog, setHasUnseenChangelog] = useState(() => {

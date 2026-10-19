@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
 import { CATEGORY_LABEL, PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
 import { getCategoryList } from '../lib/categoryLists';
+import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import {
   getBestInsertionIndex,
   initSxSSearch,
@@ -41,6 +42,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
   pendingPlacement,
   onFinishPlacement,
 }) => {
+  useBodyScrollLock(isOpen);
   const [searchState, setSearchState] = useState<SxSSearchState | null>(null);
 
   const pool = useMemo(() => {
