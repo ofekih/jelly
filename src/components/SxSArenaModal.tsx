@@ -34,7 +34,8 @@ interface SxSArenaModalProps {
     insertIndexInCategory: number,
     comparisonsDone: number,
     finalCandidateElo: number,
-    opponentEloAdjustments: Record<string, number>
+    opponentEloAdjustments: Record<string, number>,
+    answers: Array<{ opponentId: string; result: 0 | 0.5 | 1 }>
   ) => void;
 }
 
@@ -78,7 +79,12 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
       insertIndex,
       state.completedComparisons,
       getPlacementElo(state, pool, insertIndex),
-      state.opponentEloAdjustments
+      state.opponentEloAdjustments,
+      state.history.flatMap((h) =>
+        h.outcome === 'skip'
+          ? []
+          : [{ opponentId: h.opponentId, result: h.outcome === 'new_wins' ? 1 : h.outcome === 'tie' ? 0.5 : 0 }]
+      )
     );
   };
 

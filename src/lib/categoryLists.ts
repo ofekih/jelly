@@ -143,7 +143,18 @@ function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
     initialRating,
     elo,
     rankIndex: typeof raw.rankIndex === 'number' ? raw.rankIndex : Number.MAX_SAFE_INTEGER,
+    comparisons: Array.isArray(raw.comparisons)
+      ? raw.comparisons.filter(
+          (c: any) => c && typeof c.opponentId === 'string' && [0, 0.5, 1].includes(c.result) && typeof c.at === 'number'
+        )
+      : undefined,
   };
+}
+
+/** A copy safe to publish in a shared list: answer history stays private (and keeps the doc small) */
+export function toSharedEntry(entry: RestaurantEntry): RestaurantEntry {
+  const { comparisons: _private, ...shared } = entry;
+  return shared;
 }
 
 export function sanitizeLoadedBookmark(raw: any): BookmarkEntry {

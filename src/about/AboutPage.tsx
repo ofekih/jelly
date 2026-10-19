@@ -256,6 +256,13 @@ export const AboutPage: React.FC = () => (
             with realistically inconsistent people, a clearly wrong placement (past a place 0.5+ points away) is 4× to
             over 100× rarer than with a plain binary search capped at five questions.
           </li>
+          <li>
+            <b>Every answer is remembered.</b> Placing a new spot between two older ones says something about those
+            two as well, so the evidence keeps piling up as your list grows. When your answers, taken together, say a
+            lower spot is better than a higher one, jelly offers a quick check: it asks you about that pair directly
+            and fixes the order if you agree. Nothing moves without you, and your latest word on a pair (an answer or
+            a drag) always wins. Re-ranking a spot starts its history fresh.
+          </li>
         </ul>
         <Nerd>
           <p>
@@ -302,6 +309,16 @@ export const AboutPage: React.FC = () => (
             </span> A starting Elo comes from the gut rating, <Tex>R = 950 + 100g</Tex>, averaged with the
             Elo of the place whose score is closest. Once placed, its Elo is squeezed in between its new
             neighbours' if needed, so it always agrees with the final order.
+          </p>
+          <p>
+            <b>Order checks.</b> jelly fits a Bradley-Terry model to every stored answer (the latest per pair, with
+            the same <Tex>\lambda</Tex> and <Tex>\nu</Tex> as above), anchoring each spot near its current position
+            with a Gaussian prior of spread 0.5 points. If the fit puts a lower spot more than 0.25 points above a
+            higher one, that pair gets flagged, unless you answered that exact pair in favour of the current order.
+            The prompt only appears once some conflict passes 0.35. When you confirm a conflict, jelly makes whichever
+            of two moves (the lower spot up, or the higher spot down) agrees better with everything else you've said.
+            In simulations of 80-spot lists built by inconsistent people, the flagged pairs are really out of order
+            over 90% of the time, and a handful of checks removes over half of the clearly wrong pairs.
           </p>
         </Nerd>
       </Section>

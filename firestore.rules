@@ -48,6 +48,7 @@ rules_version = '2';
 //   - elo: number (optional, 0..5000) - Elo rating score
 //   - comparisonsCount: number (optional, >= 0) - head-to-head comparisons count
 //   - rankedHistory: list (optional, <= 100 items) - comparison/ranking history
+//   - comparisons: list (optional, <= 300 items) - stored side-by-side answers ({opponentId, result, at})
 //   - notes: string (optional, <= 5000 chars) - personal review notes
 //   - favoriteDishes: string (optional, <= 2000 chars) - recommended dishes
 //   - visitedAt: string | number | timestamp (optional, <= 100 chars if string) - visit date
@@ -208,6 +209,7 @@ service cloud.firestore {
         (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
         (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
         (!('rankedHistory' in data) || isValidList(data.rankedHistory, 100)) &&
+        (!('comparisons' in data) || isValidList(data.comparisons, 300)) &&
         (!('comparisonsCount' in data) || (data.comparisonsCount is number && data.comparisonsCount >= 0 && data.comparisonsCount <= 1000000)) &&
         (!('visitedAt' in data) || data.visitedAt == null || (data.visitedAt is string && data.visitedAt.size() <= 100) || data.visitedAt is number || data.visitedAt is timestamp) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&

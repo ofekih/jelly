@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import { arrayMove } from '@dnd-kit/sortable';
 import {
+  ArrowUpDown,
   Bookmark,
   Check,
   ChevronRight,
@@ -79,7 +80,19 @@ import {
   recomputeAllCategoryScores,
   replaceCategoryList,
   sanitizeLoadedBookmark,
+  toSharedEntry,
 } from './lib/categoryLists';
+import {
+  appendComparisons,
+  applyCheckAnswer,
+  CheckOutcome,
+  countSpotsToCheck,
+  dragComparisons,
+  findOrderConflicts,
+  OrderConflict,
+  PROMPT_MARGIN,
+} from './lib/comparisonHistory';
+import { OrderCheckModal } from './components/OrderCheckModal';
 import {
   deduplicateUserLists,
   deriveDefaultHandle,
@@ -288,6 +301,8 @@ export const App: React.FC = () => {
   const [rankingBookmark, setRankingBookmark] = useState<BookmarkEntry | null>(null);
   const [pendingPlacement, setPendingPlacement] = useState<PendingPlacement | null>(null);
   const [isSxSOpen, setIsSxSOpen] = useState(false);
+  const [isOrderCheckOpen, setIsOrderCheckOpen] = useState(false);
+  const [orderCheckSnoozed, setOrderCheckSnoozed] = useState<Set<SpotCategory>>(new Set());
   const [activeDetailSpot, setActiveDetailSpot] = useState<RestaurantEntry | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
@@ -729,7 +744,7 @@ export const App: React.FC = () => {
       const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'Friend';
       const effectiveHandle =
         sanitizeHandle(userHandle) || deriveDefaultHandle(user.displayName, user.email);
-      const cleanRestaurants = restaurants.slice(0, 500).map(stripUndefined);
+      const cleanRestaurants = restaurants.slice(0, 500).map((r) => stripUndefined(toSharedEntry(r)));
       const cleanBookmarks = bookmarks.slice(0, 500).map(stripUndefined);
 
       const payload: Record<string, any> = {
@@ -1152,7 +1167,7 @@ export const App: React.FC = () => {
       deriveDefaultHandle(user.displayName, user.email);
     const cleanRestaurants = restaurants.slice(0, 500).map((r) => {
       const clean: Record<string, any> = {};
-      Object.entries(r).forEach(([k, v]) => {
+      Object.entries(toSharedEntry(r)).forEach(([k, v]) => {
         if (v !== undefined) clean[k] = v;
       });
       return clean;
@@ -1330,7 +1345,8 @@ export const App: React.FC = () => {
     insertIndexInCategory: number,
     comparisonsDone: number,
     finalCandidateElo: number,
-    opponentEloAdjustments: Record<string, number>
+    opponentEloAdjustments: Record<string, number>,
+    answers: Array<{ opponentId: string; result: 0 | 0.5 | 1 }>
   ) => {
     setIsSxSOpen(false);
     setPendingPlacement(null);
@@ -1378,6 +1394,8 @@ export const App: React.FC = () => {
       notes: existingObj?.notes,
       favoriteDishes: existingObj?.favoriteDishes,
       rankedHistory: [...prevHistory, { timestamp: now, initialRating: placement.initialRating }],
+      // A (re-)rank starts its answer history fresh: older answers about it no longer count
+      comparisons: answers.map((a) => ({ ...a, at: now })),
       createdAt: existingObj?.createdAt || now,
       updatedAt: now,
     };
@@ -1427,8 +1445,12 @@ export const App: React.FC = () => {
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
 
     const moved = arrayMove(list, oldIndex, newIndex);
-    // Interpolate ELO of the moved item to sit cleanly between its new neighbors
-    const targetItem = { ...moved[newIndex] };
+    // Interpolate ELO of the moved item to sit cleanly between its new neighbors, and remember the
+    // drag as answers so earlier ones it overrides never get flagged as conflicts
+    const targetItem = appendComparisons(
+      moved[newIndex],
+      dragComparisons(list, oldIndex, newIndex, Date.now())
+    );
     const above = newIndex > 0 ? moved[newIndex - 1] : null;
     const below = newIndex < moved.length - 1 ? moved[newIndex + 1] : null;
 
@@ -1447,6 +1469,15 @@ export const App: React.FC = () => {
       to_rank: newIndex + 1,
     });
     await persistOrderedRestaurants(replaceCategoryList(restaurants, activeItem.category, moved));
+  };
+
+  // Order check: fix pairs whose order disagrees with the stored side-by-side answers
+  const handleOrderCheckAnswer = async (conflict: OrderConflict, outcome: CheckOutcome) => {
+    const category = conflict.above.category;
+    const current = restaurantsRef.current;
+    const next = applyCheckAnswer(getCategoryList(current, category), conflict, outcome, Date.now());
+    trackEvent('order_check_answer', { outcome, category, margin: Math.round(conflict.margin * 100) / 100 });
+    await persistOrderedRestaurants(replaceCategoryList(current, category, next));
   };
 
   const handleSaveSpotEdits = async (
@@ -1686,6 +1717,23 @@ export const App: React.FC = () => {
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [currentSourceItems, selectedCategory, selectedCity]);
+
+  // Pairs in the open list whose order disagrees with your stored side-by-side answers
+  const selectedCategoryList = useMemo(
+    () => getCategoryList(restaurants, selectedCategory),
+    [restaurants, selectedCategory]
+  );
+  const orderConflicts = useMemo(
+    () => (sharedList ? [] : findOrderConflicts(selectedCategoryList)),
+    [sharedList, selectedCategoryList]
+  );
+  const orderCheckSpots = countSpotsToCheck(orderConflicts);
+  const showOrderCheckPrompt =
+    !sharedList &&
+    activeTab === 'ranked' &&
+    viewMode === 'list' &&
+    !orderCheckSnoozed.has(selectedCategory) &&
+    (orderConflicts[0]?.margin ?? 0) >= PROMPT_MARGIN;
 
   const filteredRestaurants = useMemo(() => {
     const base = getCategoryList(activeRestaurants, selectedCategory).filter((r) => {
@@ -2451,6 +2499,32 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {showOrderCheckPrompt && (
+          <div className="mb-3 flex items-center gap-3 rounded-2xl border border-emerald-200/70 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-2.5 text-xs">
+            <ArrowUpDown className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="flex-1 text-zinc-600 dark:text-zinc-300">
+              Your picks suggest {orderCheckSpots === 1 ? 'a spot' : `${orderCheckSpots} spots`} might be out of order
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                trackEvent('order_check_open', { category: selectedCategory, spots: orderCheckSpots });
+                setIsOrderCheckOpen(true);
+              }}
+              className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline"
+            >
+              Check
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderCheckSnoozed((prev) => new Set(prev).add(selectedCategory))}
+              className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+            >
+              Not now
+            </button>
+          </div>
+        )}
+
         {/* Main Content Area: List or Map */}
         {sharedListLoading ? (
           <div className="py-16 text-center text-xs text-zinc-400">Loading shared list...</div>
@@ -2595,6 +2669,13 @@ export const App: React.FC = () => {
         userLocation={useCurrentLocation ? userLocation : null}
         onCompleteQuestions={handleCompleteQuestions}
         onAddBookmark={(candidate) => handleAddBookmark(candidate)}
+      />
+
+      <OrderCheckModal
+        isOpen={isOrderCheckOpen}
+        list={selectedCategoryList}
+        onAnswer={handleOrderCheckAnswer}
+        onClose={() => setIsOrderCheckOpen(false)}
       />
 
       {/* Q3+: SxS Comparison Modal */}

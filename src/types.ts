@@ -122,6 +122,13 @@ export interface RankedHistoryEvent {
   magicScore?: number;
 }
 
+/** One side-by-side answer (or drag / order check), stored on one of the two entries */
+export interface StoredComparison {
+  opponentId: string; // Entry id of the other spot (same category list)
+  result: 0 | 0.5 | 1; // This entry's result against it: 1 = preferred, 0.5 = too close to call
+  at: number; // When it was answered; answers older than either spot's last (re-)rank are ignored
+}
+
 export interface RestaurantEntry {
   id: string; // Unique per (placeId + category)
   placeId?: string;
@@ -152,6 +159,7 @@ export interface RestaurantEntry {
   notes?: string;
   favoriteDishes?: string;
   rankedHistory?: RankedHistoryEvent[];
+  comparisons?: StoredComparison[]; // Private: never copied into shared lists
   createdAt: number;
   updatedAt: number;
 }
