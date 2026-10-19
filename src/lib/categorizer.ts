@@ -1,4 +1,5 @@
 import { SpotCategory } from '../types';
+import { continentForCountryCode } from './continents';
 
 export interface RawPlaceSignals {
   name: string;
@@ -16,6 +17,11 @@ export interface RawPlaceSignals {
   servesCocktails?: boolean;
   servesWine?: boolean;
   servesBeer?: boolean;
+  // Destination signals (Travel lists)
+  countryCode?: string; // ISO 3166-1 alpha-2
+  countryName?: string;
+  viewportDiagonalKm?: number; // Size of Google's viewport for the place
+  osmPlace?: string; // OSM place=* value (city, town, village, island, country…)
 }
 
 const GOOGLE_TYPE_TO_CUISINE: Record<string, string> = {
@@ -113,6 +119,107 @@ const DESSERT_TYPES = [
 const BAR_TYPES = ['bar', 'wine_bar', 'cocktail_bar', 'pub', 'brewery', 'brewpub', 'beer_garden', 'lounge_bar', 'sports_bar', 'night_club'];
 const BRUNCH_TYPES = ['breakfast_restaurant', 'brunch_restaurant', 'diner', 'pancake_restaurant'];
 
+// Explore lists, led by Google place types
+const EXPLORE_TYPE_RULES: Array<[SpotCategory, string[]]> = [
+  ['museums', ['museum', 'art_gallery', 'art_museum', 'history_museum', 'science_museum', 'planetarium']],
+  ['theme_parks', ['amusement_park', 'water_park', 'theme_park', 'roller_coaster', 'ferris_wheel']],
+  ['zoos', ['zoo', 'aquarium', 'wildlife_park', 'wildlife_refuge']],
+  [
+    'nature',
+    [
+      'national_park',
+      'state_park',
+      'park',
+      'botanical_garden',
+      'garden',
+      'hiking_area',
+      'nature_preserve',
+      'beach',
+      'lake',
+      'mountain_peak',
+      'campground',
+    ],
+  ],
+];
+
+const EXPLORE_SUBTYPES: Record<string, string> = {
+  art_gallery: 'Gallery',
+  art_museum: 'Art',
+  history_museum: 'History',
+  science_museum: 'Science',
+  planetarium: 'Science',
+  amusement_park: 'Theme Park',
+  theme_park: 'Theme Park',
+  water_park: 'Water Park',
+  zoo: 'Zoo',
+  aquarium: 'Aquarium',
+  wildlife_park: 'Wildlife Park',
+  wildlife_refuge: 'Wildlife Park',
+  national_park: 'National Park',
+  state_park: 'State Park',
+  botanical_garden: 'Garden',
+  garden: 'Garden',
+  hiking_area: 'Hike',
+  nature_preserve: 'Nature Preserve',
+  beach: 'Beach',
+};
+
+const MUSEUM_KEYWORD_SUBTYPES: Array<[RegExp, string]> = [
+  [/\b(art|arts|moma|sfmoma|kunst|gallery|galleria|galerie|getty|louvre|uffizi|prado|tate)\b/i, 'Art'],
+  [/\b(science|exploratorium|discovery|tech|technology|space|air and space|planetarium)\b/i, 'Science'],
+  [/\bnatural history\b/i, 'Natural History'],
+  [/\b(history|historical|heritage|holocaust|archaeolog\w*)\b/i, 'History'],
+  [/\b(children'?s|kids)\b/i, 'Kids'],
+];
+
+// Landmarks & sights that aren't food (they have no list of their own, so they get no default)
+const NON_FOOD_SIGHT_TYPES = [
+  'tourist_attraction',
+  'historical_landmark',
+  'historical_place',
+  'cultural_landmark',
+  'monument',
+  'sculpture',
+  'observation_deck',
+  'church',
+  'place_of_worship',
+  'stadium',
+  'performing_arts_theater',
+  'concert_hall',
+  'lodging',
+  'hotel',
+];
+
+// Destinations (Travel lists)
+const SETTLEMENT_TYPES = [
+  'locality',
+  'postal_town',
+  'sublocality',
+  'administrative_area_level_1',
+  'administrative_area_level_2',
+  'administrative_area_level_3',
+  'colloquial_area',
+];
+const ISLAND_TYPES = ['island', 'archipelago', 'natural_feature'];
+// Places whose Google viewport spans at least this many km (corner to corner) lean "city"
+const CITY_MIN_VIEWPORT_KM = 12;
+
+function detectTravelCategories(signals: RawPlaceSignals, allTypes: Set<string>): SpotCategory[] {
+  const osmPlace = (signals.osmPlace || '').toLowerCase();
+  if (allTypes.has('country') || osmPlace === 'country') return ['countries'];
+
+  const isIsland = ISLAND_TYPES.some((t) => allTypes.has(t)) || ['island', 'islet', 'archipelago'].includes(osmPlace);
+  const isSettlement =
+    SETTLEMENT_TYPES.some((t) => allTypes.has(t)) || ['city', 'town', 'village', 'hamlet', 'state', 'region'].includes(osmPlace);
+  if (!isIsland && !isSettlement) return [];
+
+  if (isIsland && !allTypes.has('locality')) return ['getaways', 'cities'];
+  const looksBig =
+    osmPlace === 'city' ||
+    (typeof signals.viewportDiagonalKm === 'number' && signals.viewportDiagonalKm >= CITY_MIN_VIEWPORT_KM);
+  return looksBig ? ['cities', 'getaways'] : ['getaways', 'cities'];
+}
+
 export function autoCategorizePlace(signals: RawPlaceSignals): {
   categories: SpotCategory[];
   cuisines: string[];
@@ -126,6 +233,53 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
   const cuisinesSet = new Set<string>();
   const allTypes = new Set<string>(signals.types || []);
   if (signals.primaryType) allTypes.add(signals.primaryType);
+
+  // Destinations: tagged by country & continent instead of cuisine
+  const travelCategories = detectTravelCategories(signals, allTypes);
+  if (travelCategories.length > 0) {
+    const continent = continentForCountryCode(signals.countryCode);
+    const isCountry = travelCategories[0] === 'countries';
+    const tags = (isCountry ? [continent] : [signals.countryName, continent]).filter(
+      (t): t is string => Boolean(t) && t !== signals.name
+    );
+    return {
+      categories: travelCategories,
+      cuisines: Array.from(new Set(tags)),
+      primaryTypeDisplay: isCountry ? 'Country' : signals.countryName || CATEGORY_FALLBACK_DISPLAY[travelCategories[0]],
+    };
+  }
+
+  // Sights & activities: tagged by subtype (Art vs. Science museum, Zoo vs. Aquarium…)
+  const exploreCategories = EXPLORE_TYPE_RULES.filter(([, types]) => types.some((t) => allTypes.has(t))).map(
+    ([category]) => category
+  );
+  if (exploreCategories.length > 0) {
+    // The primary type wins when it's an explore type (e.g. a museum that has a garden)
+    const primaryRule = EXPLORE_TYPE_RULES.find(([, types]) => types.includes(signals.primaryType || ''));
+    if (primaryRule) {
+      exploreCategories.splice(exploreCategories.indexOf(primaryRule[0]), 1);
+      exploreCategories.unshift(primaryRule[0]);
+    }
+    for (const t of [signals.primaryType, ...allTypes]) {
+      if (t && EXPLORE_SUBTYPES[t]) cuisinesSet.add(EXPLORE_SUBTYPES[t]);
+    }
+    if (exploreCategories[0] === 'museums') {
+      for (const [regex, subtype] of MUSEUM_KEYWORD_SUBTYPES) {
+        if (regex.test(signals.name)) cuisinesSet.add(subtype);
+      }
+    }
+    return {
+      categories: exploreCategories,
+      cuisines: Array.from(cuisinesSet),
+      primaryTypeDisplay:
+        signals.primaryTypeDisplayName || Array.from(cuisinesSet)[0] || CATEGORY_FALLBACK_DISPLAY[exploreCategories[0]],
+    };
+  }
+  const isNonFoodSight =
+    NON_FOOD_SIGHT_TYPES.some((t) => allTypes.has(t)) &&
+    !allTypes.has('restaurant') &&
+    !allTypes.has('food') &&
+    !signals.primaryType?.endsWith('_restaurant');
 
   // 1. Extract cuisines from Google types
   for (const t of allTypes) {
@@ -224,8 +378,8 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
     }
   }
 
-  // 6. Default: a regular restaurant
-  if (categories.length === 0) {
+  // 6. Default: a regular restaurant (sights without a list of their own get none)
+  if (categories.length === 0 && !isNonFoodSight) {
     add('restaurants');
   }
 
@@ -235,7 +389,7 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
     if (firstCuisine) {
       primaryTypeDisplay = firstCuisine;
     } else {
-      primaryTypeDisplay = CATEGORY_FALLBACK_DISPLAY[categories[0]];
+      primaryTypeDisplay = categories[0] ? CATEGORY_FALLBACK_DISPLAY[categories[0]] : 'Sight';
     }
   }
 
@@ -253,4 +407,11 @@ const CATEGORY_FALLBACK_DISPLAY: Record<SpotCategory, string> = {
   bakeries: 'Bakery',
   coffee_tea: 'Cafe',
   bars: 'Bar',
+  museums: 'Museum',
+  theme_parks: 'Theme Park',
+  zoos: 'Zoo',
+  nature: 'Park',
+  cities: 'City',
+  getaways: 'Getaway',
+  countries: 'Country',
 };

@@ -1,5 +1,6 @@
 import {
   BookmarkEntry,
+  CATEGORY_GROUP,
   FriendSpotMatch,
   SpotCategory,
   RestaurantEntry,
@@ -692,8 +693,12 @@ export function getSpotSocialMetrics(
   let matchedCuisineCount = 0;
 
   if (spotCuisines.length > 0) {
-    const sameCuisineSpots = myRestaurants.filter((r) =>
-      (r.cuisines || []).some((c) => spotCuisines.includes(c.toLowerCase()))
+    // Tags only mean the same thing within a group (e.g. "History" museum vs. "History" city)
+    const spotGroups = new Set([...spotCategories].map((c) => CATEGORY_GROUP[c]));
+    const sameCuisineSpots = myRestaurants.filter(
+      (r) =>
+        (spotGroups.size === 0 || spotGroups.has(CATEGORY_GROUP[r.category])) &&
+        (r.cuisines || []).some((c) => spotCuisines.includes(c.toLowerCase()))
     );
     matchedCuisineCount = sameCuisineSpots.length;
     if (matchedCuisineCount > 0) {

@@ -98,8 +98,23 @@ function resolveCategories(raw: any, category: SpotCategory): SpotCategory[] {
   return list;
 }
 
+/**
+ * True if a stored doc has a category this version doesn't know (written by a newer version of
+ * jelly). Such docs are left untouched: never migrated, re-keyed or rewritten.
+ */
+export function isFromNewerVersion(raw: any): boolean {
+  return (
+    typeof raw?.category === 'string' &&
+    raw.category.length > 0 &&
+    !isSpotCategory(raw.category) &&
+    !('meal' in raw) &&
+    !('meals' in raw)
+  );
+}
+
 /** True if a stored doc still uses the legacy meal fields. */
 export function isLegacyDoc(raw: any): boolean {
+  if (isFromNewerVersion(raw)) return false;
   return !isSpotCategory(raw?.category) || 'meal' in (raw || {}) || 'meals' in (raw || {});
 }
 
@@ -151,7 +166,9 @@ export function sanitizeLoadedBookmark(raw: any): BookmarkEntry {
  * (e.g. the same spot ranked for both Lunch and Dinner), the higher-ranked one wins.
  */
 export function loadRestaurants(raws: any[]): RestaurantEntry[] {
-  const sanitized = raws.map(sanitizeLoadedRestaurant).sort((a, b) => a.rankIndex - b.rankIndex);
+  const sanitized = raws
+    .filter((raw) => !isFromNewerVersion(raw))
+    .map(sanitizeLoadedRestaurant).sort((a, b) => a.rankIndex - b.rankIndex);
   const seen = new Set<string>();
   const deduped: RestaurantEntry[] = [];
   for (const entry of sanitized) {
@@ -160,4 +177,9 @@ export function loadRestaurants(raws: any[]): RestaurantEntry[] {
     deduped.push(entry);
   }
   return recomputeAllCategoryScores(deduped);
+}
+
+/** Sanitizes raw bookmark docs, skipping any written by a newer version of jelly. */
+export function loadBookmarks(raws: any[]): BookmarkEntry[] {
+  return raws.filter((raw) => !isFromNewerVersion(raw)).map(sanitizeLoadedBookmark);
 }

@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Bookmark, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
 import {
-  ALL_CATEGORIES,
   CATEGORY_EMOJI,
+  CATEGORY_GROUP,
   CATEGORY_LABEL,
   DEFAULT_CATEGORY,
+  GROUP_CATEGORIES,
   PlaceCandidate,
   RestaurantEntry,
   SharedListPayload,
   SpotCategory,
 } from '../types';
-import { createManualPlaceCandidate, searchRestaurants } from '../lib/placesService';
+import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
+import { GROUP_COPY, vibeLabelForGroup } from '../lib/groups';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import {
   formatDistanceMiles,
@@ -61,6 +63,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   onCompleteQuestions,
   onAddBookmark,
 }) => {
+  // The add flow always stays within the group (Eat / Explore / Travel) being viewed
+  const group = CATEGORY_GROUP[reRankingEntry?.category ?? defaultCategory];
+  const copy = GROUP_COPY[group];
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceCandidate[]>([]);
@@ -124,11 +129,12 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     setIsSearching(true);
 
     const timer = setTimeout(async () => {
-      const { results } = await searchRestaurants(
+      const { results } = await searchPlaces(
         trimmed,
         customPlacesApiKey,
         userLocation ? undefined : defaultCity,
-        userLocation
+        userLocation,
+        group
       );
       if (!cancelled) {
         setSearchResults(results);
@@ -163,11 +169,18 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
             r.formattedAddress === candidate.formattedAddress))
     );
 
-  // Lists to offer for a candidate: its auto-detected categories, plus the list being viewed
+  // Lists to offer for a candidate: its auto-detected categories in this group, plus the list being viewed
   const getCategoryOptions = (candidate: PlaceCandidate): SpotCategory[] =>
     Array.from(
-      new Set([...(candidate.categories || []), defaultCategory].filter(Boolean))
-    ) as SpotCategory[];
+      new Set([
+        ...(candidate.categories || []).filter((c) => CATEGORY_GROUP[c] === group),
+        defaultCategory,
+      ])
+    );
+
+  // Bookmarks go in the candidate's best list within this group
+  const addBookmark = (candidate: PlaceCandidate) =>
+    onAddBookmark?.({ ...candidate, categories: getCategoryOptions(candidate) });
 
   const finishWithCategory = (
     candidate: PlaceCandidate,
@@ -233,7 +246,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           ? 'Not good · Wouldn’t go back'
           : 'Missed the mark · Skip it';
       return {
-        label,
+        label: vibeLabelForGroup(label, group),
         pillClass:
           'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/70',
         thumbBorder: '#f43f5e',
@@ -251,7 +264,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           ? 'It was okay · Gets the job done'
           : 'Fine in a pinch · Nothing special';
       return {
-        label,
+        label: vibeLabelForGroup(label, group),
         pillClass:
           'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/70',
         thumbBorder: '#f59e0b',
@@ -269,7 +282,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           ? 'Good spot · Happy to go back'
           : 'Really liked it · Easy recommendation';
       return {
-        label,
+        label: vibeLabelForGroup(label, group),
         pillClass:
           'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800/70',
         thumbBorder: '#06b6d4',
@@ -287,7 +300,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           ? 'Loved it · Standout spot'
           : 'Really loved it · Crave-worthy';
       return {
-        label,
+        label: vibeLabelForGroup(label, group),
         pillClass:
           'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/60 dark:text-teal-300 dark:border-teal-800/70',
         thumbBorder: '#14b8a6',
@@ -305,9 +318,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         : 'Flawless · Literally nothing could be improved';
 
     return {
-      label,
+      label: vibeLabelForGroup(label, group),
       pillClass:
-        'bg-emerald-100/90 text-emerald-800 border-emerald-300 dark:bg-emerald-900/70 dark:text-emerald-200 dark:border-emerald-700',
+        'bg-jade-100/90 text-jade-800 border-jade-300 dark:bg-jade-900/70 dark:text-jade-200 dark:border-jade-700',
       thumbBorder: '#059669',
     };
   };
@@ -330,7 +343,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     if (!searchQuery.trim()) return;
     const manual = createManualPlaceCandidate(
       searchQuery,
-      resolveManualSpotCity(existingRestaurants, userLocation, defaultCity)
+      group === 'eat' ? resolveManualSpotCity(existingRestaurants, userLocation, defaultCity) : '',
+      group
     );
     handleSelectCandidate(manual);
   };
@@ -340,7 +354,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     : [defaultCategory];
 
   const displayedCategories = showAllCategories
-    ? Array.from(new Set([...candidateCategories, ...ALL_CATEGORIES]))
+    ? Array.from(new Set([...candidateCategories, ...GROUP_CATEGORIES[group]]))
     : candidateCategories;
 
   return (
@@ -411,7 +425,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search any restaurant, cafe, or bar..."
+                placeholder={copy.searchPlaceholder}
                 autoFocus
                 className="w-full pl-10 pr-9 py-3 bg-zinc-100/80 dark:bg-zinc-800/80 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 rounded-2xl text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none transition-all"
               />
@@ -443,7 +457,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 <div className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
                   {searchResults.map((item) => {
                     const primaryCuisine =
-                      item.cuisines[0] || item.primaryTypeDisplay || 'Restaurant';
+                      item.cuisines[0] || item.primaryTypeDisplay || '';
                     const locationShort =
                       [item.neighborhood, item.city].filter(Boolean).join(', ') ||
                       item.formattedAddress;
@@ -520,7 +534,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onAddBookmark(item);
+                                addBookmark(item);
                               }}
                               className={`p-2 rounded-full transition-colors ${
                                 isAlreadyBookmarked
@@ -565,7 +579,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
               {searchQuery.trim().length < 2 && (
                 <div className="py-10 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                  Type a restaurant name to rate &amp; rank it, or tap the bookmark icon to save for later.
+                  {copy.searchEmptyHint}
                 </div>
               )}
             </div>
@@ -704,14 +718,14 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                           { label: 'Mid', rating: 5.0, leftPct: '44.4%', color: 'text-amber-600 dark:text-amber-400' },
                           { label: 'Good', rating: 6.8, leftPct: '63.9%', color: 'text-cyan-600 dark:text-cyan-400' },
                           { label: 'Great', rating: 8.2, leftPct: '79.4%', color: 'text-teal-600 dark:text-teal-400' },
-                          { label: 'Incredible', rating: 9.4, leftPct: '93.3%', color: 'text-emerald-600 dark:text-emerald-400' },
+                          { label: 'Incredible', rating: 9.4, leftPct: '93.3%', color: 'text-jade-600 dark:text-jade-400' },
                         ]
                       : [
                           { label: 'Skip', rating: 2.5, leftPct: '10%', color: 'text-rose-500 dark:text-rose-400' },
                           { label: 'Mid', rating: 5.0, leftPct: '30%', color: 'text-amber-600 dark:text-amber-400' },
                           { label: 'Good', rating: 6.8, leftPct: '50%', color: 'text-cyan-600 dark:text-cyan-400' },
                           { label: 'Great', rating: 8.2, leftPct: '70%', color: 'text-teal-600 dark:text-teal-400' },
-                          { label: 'Incredible', rating: 9.4, leftPct: '90%', color: 'text-emerald-600 dark:text-emerald-400' },
+                          { label: 'Incredible', rating: 9.4, leftPct: '90%', color: 'text-jade-600 dark:text-jade-400' },
                         ]
                     ).map((zone) => (
                       <button
@@ -740,7 +754,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 <div className="pt-1 text-center">
                   <button
                     type="button"
-                    onClick={() => onAddBookmark(selectedCandidate)}
+                    onClick={() => addBookmark(selectedCandidate)}
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                   >
                     <Bookmark className="w-3.5 h-3.5" />
@@ -788,7 +802,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 })}
               </div>
 
-              {!showAllCategories && displayedCategories.length < ALL_CATEGORIES.length && (
+              {!showAllCategories && displayedCategories.length < GROUP_CATEGORIES[group].length && (
                 <button
                   type="button"
                   onClick={() => setShowAllCategories(true)}

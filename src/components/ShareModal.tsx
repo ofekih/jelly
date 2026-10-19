@@ -107,8 +107,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       if (canNativeShare) {
         try {
           await navigator.share({
-            title: `${ownerName ? `${ownerName}'s ` : ''}jelly restaurant list`,
-            text: `Check out ${ownerName ? `${ownerName}'s ` : 'my '}ranked restaurant list on jelly!`,
+            title: `${ownerName ? `${ownerName}'s ` : ''}jelly list`,
+            text: `Check out ${ownerName ? `${ownerName}'s ` : 'my '}${cardTitle} on jelly!`,
             url: effectiveUrl,
           });
           return;

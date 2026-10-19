@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { getCategoryList, isLegacyDoc, legacyMealToCategory, loadRestaurants } from './categoryLists';
+import {
+  getCategoryList,
+  isFromNewerVersion,
+  isLegacyDoc,
+  legacyMealToCategory,
+  loadBookmarks,
+  loadRestaurants,
+} from './categoryLists';
 import { autoCategorizePlace } from './categorizer';
+import { fitCandidatesToGroup } from './placesService';
+import { PlaceCandidate, SpotCategory } from '../types';
 
 function legacySpot(id: string, name: string, meal: string, rankIndex: number, extra: any = {}) {
   return {
@@ -78,5 +87,103 @@ describe('autoCategorizePlace', () => {
         servesLunch: true,
       }).categories[0]
     ).toBe('brunch');
+  });
+});
+
+describe('docs from a newer version of jelly', () => {
+  const futureSpot = {
+    id: 'x__space_stations',
+    placeId: 'x',
+    name: 'ISS',
+    formattedAddress: 'Low Earth orbit',
+    category: 'space_stations',
+    cuisines: [],
+    initialRating: 9,
+    elo: 1800,
+    rankIndex: 0,
+    magicScore: 9,
+    comparisonsCount: 0,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+
+  it('are never treated as legacy docs (so they are never migrated or deleted)', () => {
+    expect(isFromNewerVersion(futureSpot)).toBe(true);
+    expect(isLegacyDoc(futureSpot)).toBe(false);
+    expect(isFromNewerVersion(legacySpot('a', 'A', 'Dinner', 0))).toBe(false);
+    expect(isFromNewerVersion({ ...futureSpot, category: 'museums' })).toBe(false);
+  });
+
+  it('are left out of the loaded lists', () => {
+    const loaded = loadRestaurants([futureSpot, { ...futureSpot, id: 'y__museums', placeId: 'y', category: 'museums' }]);
+    expect(loaded.map((r) => r.id)).toEqual(['y__museums']);
+    expect(loadBookmarks([futureSpot])).toEqual([]);
+  });
+});
+
+describe('autoCategorizePlace for Explore & Travel', () => {
+  it('detects sights and tags their subtype', () => {
+    const moma = autoCategorizePlace({ name: 'SFMOMA', primaryType: 'art_museum', types: ['museum', 'tourist_attraction'] });
+    expect(moma.categories[0]).toBe('museums');
+    expect(moma.cuisines).toContain('Art');
+
+    const disney = autoCategorizePlace({ name: 'Disneyland Park', primaryType: 'amusement_park', types: ['park'] });
+    expect(disney.categories).toEqual(['theme_parks', 'nature']);
+    expect(autoCategorizePlace({ name: 'Monterey Bay Aquarium', types: ['aquarium'] }).cuisines).toEqual(['Aquarium']);
+    expect(autoCategorizePlace({ name: 'Yosemite', primaryType: 'national_park' }).categories[0]).toBe('nature');
+  });
+
+  it('gives landmarks without a list no default (instead of Restaurants)', () => {
+    expect(autoCategorizePlace({ name: 'Alcatraz', types: ['tourist_attraction', 'historical_landmark'] }).categories).toEqual([]);
+    expect(autoCategorizePlace({ name: 'Ferry Building', types: ['tourist_attraction', 'food'] }).categories[0]).toBe('restaurants');
+  });
+
+  it('splits destinations into countries, cities and getaways, tagged by country & continent', () => {
+    const italy = autoCategorizePlace({ name: 'Italy', types: ['country', 'political'], countryCode: 'IT', countryName: 'Italy' });
+    expect(italy.categories).toEqual(['countries']);
+    expect(italy.cuisines).toEqual(['Europe']);
+
+    const rome = autoCategorizePlace({
+      name: 'Rome',
+      types: ['locality', 'political'],
+      countryCode: 'IT',
+      countryName: 'Italy',
+      viewportDiagonalKm: 45,
+    });
+    expect(rome.categories).toEqual(['cities', 'getaways']);
+    expect(rome.cuisines).toEqual(['Italy', 'Europe']);
+
+    const positano = autoCategorizePlace({
+      name: 'Positano',
+      types: ['locality', 'political'],
+      countryCode: 'IT',
+      countryName: 'Italy',
+      viewportDiagonalKm: 3,
+    });
+    expect(positano.categories).toEqual(['getaways', 'cities']);
+
+    expect(autoCategorizePlace({ name: 'Santorini', types: ['natural_feature'], countryCode: 'GR' }).categories[0]).toBe(
+      'getaways'
+    );
+  });
+});
+
+describe('fitCandidatesToGroup', () => {
+  const cand = (name: string, categories: SpotCategory[]): PlaceCandidate => ({
+    placeId: name,
+    name,
+    formattedAddress: '',
+    categories,
+    cuisines: [],
+    source: 'google_places',
+  });
+
+  it('drops places that only fit other groups and orders in-group lists first', () => {
+    const fitted = fitCandidatesToGroup(
+      [cand('Nopa', ['restaurants']), cand('Disneyland', ['nature', 'theme_parks']), cand('Alcatraz', []), cand('Rome', ['cities'])],
+      'explore'
+    );
+    expect(fitted.map((c) => c.name)).toEqual(['Disneyland', 'Alcatraz']);
+    expect(fitted[0].categories).toEqual(['nature', 'theme_parks']);
   });
 });

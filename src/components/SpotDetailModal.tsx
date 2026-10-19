@@ -12,13 +12,14 @@ import {
   Users,
 } from 'lucide-react';
 import {
+  CATEGORY_GROUP,
   CATEGORY_LABEL,
-  COMMON_CUISINES,
   FriendSpotMatch,
   RankedHistoryEvent,
   RestaurantEntry,
 } from '../types';
 import { SpotSocialMetrics } from '../lib/friendsService';
+import { GROUP_COPY } from '../lib/groups';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -87,6 +88,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
 
   if (!restaurant) return null;
 
+  const copy = GROUP_COPY[CATEGORY_GROUP[restaurant.category]];
+
   const toggleCuisine = (c: string) => {
     setCuisines((prev) => (prev.includes(c) ? prev.filter((item) => item !== c) : [...prev, c]));
   };
@@ -147,7 +150,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
     }
   };
 
-  const allCuisineOptions = Array.from(new Set([...cuisines, ...COMMON_CUISINES]));
+  const allCuisineOptions = Array.from(new Set([...cuisines, ...copy.tagOptions]));
 
   // Build chronological ranking history (newest first)
   const historyEvents: RankedHistoryEvent[] =
@@ -257,7 +260,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       rows={4}
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="What did you order? What stood out? Would you come back?"
+                      placeholder={copy.notePlaceholder}
                       autoFocus
                       className="w-full px-3 py-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100 leading-relaxed resize-y min-h-[96px] focus:outline-none focus:border-emerald-500"
                     />
@@ -306,7 +309,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     className="w-full py-2.5 px-3.5 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-left flex items-center gap-2 transition-colors"
                   >
                     <Pencil className="w-3.5 h-3.5 shrink-0" />
-                    <span>Add a note (favorite dishes, thoughts...)</span>
+                    <span>{copy.noteAddPrompt}</span>
                   </button>
                 )
               ) : (
@@ -575,9 +578,9 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                    Cuisine
+                    {copy.tagLabel}
                   </label>
-                  <div className="flex items-center gap-1">
+                  <div className={`flex items-center gap-1 ${copy.showPrice ? '' : 'hidden'}`}>
                     {[1, 2, 3, 4].map((p) => (
                       <button
                         key={p}
@@ -623,7 +626,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   rows={4}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="What did you order? Favorite dishes, vibe, or notes..."
+                  placeholder={copy.notePlaceholder}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-xs text-zinc-900 dark:text-zinc-100 leading-relaxed resize-y min-h-[96px] focus:outline-none"
                 />
               </div>

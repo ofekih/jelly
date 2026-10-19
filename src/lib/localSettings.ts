@@ -7,6 +7,7 @@ export interface LocalSettings {
   handle?: string;
   linearRatingScale?: boolean;
   useCurrentLocation?: boolean;
+  lastCategory?: string; // List last viewed (its group is the one jelly opens to)
 }
 
 export function readLocalSettings(): LocalSettings {

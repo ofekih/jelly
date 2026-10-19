@@ -40,12 +40,19 @@ import {
 import { auth, db, googleProvider, setAnalyticsUser, trackEvent } from './firebase';
 import {
   ALL_CATEGORIES,
+  ALL_GROUPS,
   BookmarkEntry,
   CATEGORY_EMOJI,
+  CATEGORY_GROUP,
   CATEGORY_LABEL,
   DEFAULT_CATEGORY,
   FriendProfile,
+  GROUP_CATEGORIES,
+  GROUP_EMOJI,
+  GROUP_LABEL,
+  isSpotCategory,
   SpotCategory,
+  SpotGroup,
   PlaceCandidate,
   RestaurantEntry,
   SharedListPayload,
@@ -58,11 +65,14 @@ import {
 } from './lib/firestoreDoc';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
+import { GROUP_COPY } from './lib/groups';
 import { ratingToBaseElo } from './lib/rankingEngine';
 import {
   buildEntryId,
   getCategoryList,
+  isFromNewerVersion,
   isLegacyDoc,
+  loadBookmarks,
   loadRestaurants,
   recomputeAllCategoryScores,
   replaceCategoryList,
@@ -102,7 +112,7 @@ function parseSharedListDoc(id: string, data: any): SharedListPayload {
     Array.isArray(data.restaurants) ? data.restaurants : []
   );
   const loadedBookmarks: BookmarkEntry[] = Array.isArray(data.bookmarks)
-    ? data.bookmarks.map(sanitizeLoadedBookmark)
+    ? loadBookmarks(data.bookmarks)
     : [];
   const followingIds: string[] | undefined = Array.isArray(data.followingIds)
     ? data.followingIds.filter((uid: any) => typeof uid === 'string')
@@ -159,7 +169,7 @@ export const App: React.FC = () => {
     try {
       const raw = localStorage.getItem(LOCAL_BOOKMARKS_KEY);
       if (raw) {
-        const parsed = (JSON.parse(raw) as any[]).map(sanitizeLoadedBookmark);
+        const parsed = loadBookmarks(JSON.parse(raw) as any[]);
         parsed.sort((a, b) => b.createdAt - a.createdAt);
         return parsed;
       }
@@ -222,8 +232,30 @@ export const App: React.FC = () => {
   // View & Filter State
   const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try'>('ranked');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  // Each category is a fully separate list; exactly one is shown at a time
-  const [selectedCategory, setSelectedCategory] = useState<SpotCategory>(DEFAULT_CATEGORY);
+  // Each category is a fully separate list; exactly one is shown at a time (its group's lists are the tabs)
+  const [selectedCategory, setSelectedCategory] = useState<SpotCategory>(() => {
+    const { lastCategory } = readLocalSettings();
+    return isSpotCategory(lastCategory) ? lastCategory : DEFAULT_CATEGORY;
+  });
+  const selectedGroup = CATEGORY_GROUP[selectedCategory];
+  const groupCopy = GROUP_COPY[selectedGroup];
+  // Last list viewed in each group, so switching groups returns to it
+  const lastCategoryByGroupRef = useRef<Partial<Record<SpotGroup, SpotCategory>>>({});
+
+  useEffect(() => {
+    lastCategoryByGroupRef.current[selectedGroup] = selectedCategory;
+    updateLocalSettings({ lastCategory: selectedCategory });
+    // Drives the per-group accent color (see index.css)
+    document.documentElement.dataset.group = selectedGroup;
+  }, [selectedCategory, selectedGroup]);
+
+  const selectGroup = (group: SpotGroup) => {
+    if (group === selectedGroup) return;
+    setSelectedCategory(lastCategoryByGroupRef.current[group] ?? GROUP_CATEGORIES[group][0]);
+    setSelectedCuisine('ALL');
+    setSelectedCity('ALL');
+    trackEvent('select_group', { group });
+  };
   const [selectedCity, setSelectedCity] = useState<string | 'ALL'>('ALL');
   const [selectedCuisine, setSelectedCuisine] = useState<string | 'ALL'>('ALL');
   const [sortByNearest, setSortByNearest] = useState<boolean>(false);
@@ -624,7 +656,7 @@ export const App: React.FC = () => {
           const localRaw = localStorage.getItem(LOCAL_BOOKMARKS_KEY);
           if (localRaw) {
             try {
-              const localItems = (JSON.parse(localRaw) as any[]).map(sanitizeLoadedBookmark);
+              const localItems = loadBookmarks(JSON.parse(localRaw) as any[]);
               if (localItems.length > 0) {
                 await commitInBatches(
                   db,
@@ -646,6 +678,7 @@ export const App: React.FC = () => {
         const legacyBookmarks: BookmarkEntry[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          if (isFromNewerVersion(data)) return;
           const bm = sanitizeLoadedBookmark(data);
           loaded.push(bm);
           if (isLegacyDoc(data)) legacyBookmarks.push(bm);
@@ -1597,16 +1630,26 @@ export const App: React.FC = () => {
 
   const currentSourceItems = activeTab === 'ranked' ? activeRestaurants : activeBookmarks;
 
-  // City counts across active source items
+  // City counts across active source items in this group
   const cityCounts = useMemo(() => {
     const map = new Map<string, number>();
     for (const item of currentSourceItems) {
+      if (CATEGORY_GROUP[item.category] !== selectedGroup) continue;
       if (item.city) {
         map.set(item.city, (map.get(item.city) || 0) + 1);
       }
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
-  }, [currentSourceItems]);
+  }, [currentSourceItems, selectedGroup]);
+
+  const groupRankedCount = useMemo(
+    () => activeRestaurants.filter((r) => CATEGORY_GROUP[r.category] === selectedGroup).length,
+    [activeRestaurants, selectedGroup]
+  );
+  const groupBookmarkCount = useMemo(
+    () => activeBookmarks.filter((b) => CATEGORY_GROUP[b.category] === selectedGroup).length,
+    [activeBookmarks, selectedGroup]
+  );
 
   const selectedCategoryTotal = useMemo(
     () => currentSourceItems.filter((item) => item.category === selectedCategory).length,
@@ -1877,14 +1920,14 @@ export const App: React.FC = () => {
 
       {/* Ultra-Minimal Top Navigation Bar */}
       <header className="sticky top-0 z-30 bg-zinc-50/85 dark:bg-zinc-950/85 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800/80">
-        <div className="max-w-xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
+        <div className="max-w-xl mx-auto px-4 py-2 sm:py-0 sm:h-14 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-2">
           {/* Clean Wordmark with Jelly Bean Emblem */}
           <button
             type="button"
             onClick={() => {
               if (sharedList) exitSharedListView();
             }}
-            className="flex items-center gap-2 text-left"
+            className="h-10 flex items-center gap-2 text-left shrink-0"
           >
             <JellyBeanIcon size={22} />
             <span className="font-display font-extrabold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">
@@ -1892,8 +1935,41 @@ export const App: React.FC = () => {
             </span>
           </button>
 
+          {/* Group Switcher: Eat · Explore · Travel. Its own full-width row on phones; inline (only the
+              active group named) from sm up */}
+          <div
+            role="tablist"
+            aria-label="Group"
+            className="order-last w-full grid grid-cols-3 sm:order-none sm:w-auto sm:mr-auto sm:inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80"
+          >
+            {ALL_GROUPS.map((group) => {
+              const active = group === selectedGroup;
+              return (
+                <button
+                  key={group}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-label={GROUP_LABEL[group]}
+                  title={GROUP_LABEL[group]}
+                  onClick={() => selectGroup(group)}
+                  className={`h-7 rounded-full text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                    active
+                      ? 'px-2.5 bg-emerald-500 text-white dark:text-zinc-950 shadow-2xs'
+                      : 'px-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <span aria-hidden="true" className="text-sm leading-none">
+                    {GROUP_EMOJI[group]}
+                  </span>
+                  <span className={active ? '' : 'sm:hidden'}>{GROUP_LABEL[group]}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Minimal Controls */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             {(activeRestaurants.length > 0 || activeBookmarks.length > 0) && (
               <button
                 type="button"
@@ -1903,7 +1979,7 @@ export const App: React.FC = () => {
                     return !prev;
                   });
                 }}
-                className={`p-2 rounded-full transition-colors ${
+                className={`p-1.5 sm:p-2 rounded-full transition-colors ${
                   isSearchExpanded || listSearchQuery
                     ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
                     : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900'
@@ -1922,9 +1998,9 @@ export const App: React.FC = () => {
                 trackEvent('open_friends_modal');
                 setIsFriendsOpen(true);
               }}
-              className="relative p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+              className="relative p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
               aria-label="Friends"
-              title="Friends & Eat Together"
+              title="Friends"
             >
               <Users className="w-4 h-4" />
               {newFollowerIds.size > 0 ? (
@@ -1948,7 +2024,7 @@ export const App: React.FC = () => {
                   trackEvent('open_share_modal');
                   setIsShareOpen(true);
                 }}
-                className="p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+                className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
                 aria-label="Share list"
                 title="Share list"
               >
@@ -1959,7 +2035,7 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={toggleDarkMode}
-              className="p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+              className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
               aria-label="Toggle dark mode"
               title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
@@ -1970,7 +2046,7 @@ export const App: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(true)}
-                className="p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
+                className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
                 aria-label="Settings"
                 title="Settings"
               >
@@ -2101,10 +2177,10 @@ export const App: React.FC = () => {
                 setIsEatTogetherOpen(true);
               }}
               className="px-3 py-1.5 rounded-full text-xs font-bold shrink-0 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/25 flex items-center gap-1 transition-colors"
-              title="Blend your list with friends to decide where to eat together"
+              title={groupCopy.togetherHint}
             >
               <Sparkles className="w-3 h-3 text-amber-500" />
-              <span>Eat Together</span>
+              <span>{groupCopy.together}</span>
             </button>
 
             <button
@@ -2136,7 +2212,7 @@ export const App: React.FC = () => {
             >
               <span>Ranked</span>
               <span className="text-[11px] text-zinc-400 dark:text-zinc-500 tabular-nums">
-                {activeRestaurants.length}
+                {groupRankedCount}
               </span>
             </button>
 
@@ -2154,9 +2230,9 @@ export const App: React.FC = () => {
             >
               <Bookmark className="w-3 h-3 text-rose-500" />
               <span>Want to Try</span>
-              {activeBookmarks.length > 0 && (
+              {groupBookmarkCount > 0 && (
                 <span className="text-[11px] text-zinc-400 dark:text-zinc-500 tabular-nums">
-                  {activeBookmarks.length}
+                  {groupBookmarkCount}
                 </span>
               )}
             </button>
@@ -2233,7 +2309,7 @@ export const App: React.FC = () => {
           aria-label="List"
           className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1"
         >
-          {ALL_CATEGORIES.map((category) => {
+          {GROUP_CATEGORIES[selectedGroup].map((category) => {
             const count = categoryCounts.get(category) || 0;
             const active = selectedCategory === category;
             return (
@@ -2374,6 +2450,7 @@ export const App: React.FC = () => {
             darkMode={darkMode}
             userLocation={userLocation}
             selectedCity={selectedCity}
+            worldScale={selectedGroup === 'travel'}
             onRequestLocation={() => requestUserLocation({ silent: false })}
             onSelectSpot={(spot) => {
               trackEvent('view_spot_detail', {
@@ -2593,6 +2670,7 @@ export const App: React.FC = () => {
         friends={friends}
         friendListsMap={friendListsMap}
         initialSelectedFriendUid={eatTogetherFriendUid}
+        initialCategory={selectedCategory}
         userLocation={userLocation}
         bookmarkedPlaceIds={myBookmarkedPlaceIds}
         onSaveFriendSpotToBookmarks={(candidate, recByLabel, recByUid) =>

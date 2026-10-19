@@ -4,23 +4,53 @@
  * The string values are persisted in Firestore and used in entry IDs.
  */
 export type SpotCategory =
+  // Eat
   | 'restaurants'
   | 'brunch'
   | 'dessert'
   | 'bakeries'
   | 'coffee_tea'
-  | 'bars';
+  | 'bars'
+  // Explore
+  | 'museums'
+  | 'theme_parks'
+  | 'zoos'
+  | 'nature'
+  // Travel
+  | 'cities'
+  | 'getaways'
+  | 'countries';
 
-export const ALL_CATEGORIES: SpotCategory[] = [
-  'restaurants',
-  'brunch',
-  'dessert',
-  'bakeries',
-  'coffee_tea',
-  'bars',
-];
+/** Top-level groups of lists (Eat · Explore · Travel); only one group's lists are shown at a time. */
+export type SpotGroup = 'eat' | 'explore' | 'travel';
+
+export const ALL_GROUPS: SpotGroup[] = ['eat', 'explore', 'travel'];
+
+export const GROUP_CATEGORIES: Record<SpotGroup, SpotCategory[]> = {
+  eat: ['restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars'],
+  explore: ['museums', 'theme_parks', 'zoos', 'nature'],
+  travel: ['cities', 'getaways', 'countries'],
+};
+
+export const ALL_CATEGORIES: SpotCategory[] = ALL_GROUPS.flatMap((g) => GROUP_CATEGORIES[g]);
+
+export const CATEGORY_GROUP = Object.fromEntries(
+  ALL_GROUPS.flatMap((g) => GROUP_CATEGORIES[g].map((c) => [c, g]))
+) as Record<SpotCategory, SpotGroup>;
 
 export const DEFAULT_CATEGORY: SpotCategory = 'restaurants';
+
+export const GROUP_LABEL: Record<SpotGroup, string> = {
+  eat: 'Eat',
+  explore: 'Explore',
+  travel: 'Travel',
+};
+
+export const GROUP_EMOJI: Record<SpotGroup, string> = {
+  eat: '🍽️',
+  explore: '🧭',
+  travel: '✈️',
+};
 
 export const CATEGORY_LABEL: Record<SpotCategory, string> = {
   restaurants: 'Restaurants',
@@ -29,6 +59,13 @@ export const CATEGORY_LABEL: Record<SpotCategory, string> = {
   bakeries: 'Bakeries',
   coffee_tea: 'Coffee & Tea',
   bars: 'Bars',
+  museums: 'Museums & Galleries',
+  theme_parks: 'Theme Parks',
+  zoos: 'Zoos & Aquariums',
+  nature: 'Parks & Nature',
+  cities: 'Cities',
+  getaways: 'Getaways',
+  countries: 'Countries',
 };
 
 export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
@@ -38,10 +75,21 @@ export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
   bakeries: '🥐',
   coffee_tea: '☕',
   bars: '🍸',
+  museums: '🏛️',
+  theme_parks: '🎢',
+  zoos: '🦁',
+  nature: '🌲',
+  cities: '🏙️',
+  getaways: '🏝️',
+  countries: '🌍',
 };
 
 export function isSpotCategory(raw: unknown): raw is SpotCategory {
   return typeof raw === 'string' && (ALL_CATEGORIES as string[]).includes(raw);
+}
+
+export function isSpotGroup(raw: unknown): raw is SpotGroup {
+  return typeof raw === 'string' && (ALL_GROUPS as string[]).includes(raw);
 }
 
 export const COMMON_CUISINES: string[] = [

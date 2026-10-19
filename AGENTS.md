@@ -27,7 +27,7 @@ ranking web app. Live at https://eatwithjelly.com.
 | `src/lib/rankingEngine.ts` | Rating ⇄ Elo, non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` |
 | `src/lib/friendsService.ts` | Friend matching (`isSameSpot`), group blend ("Eat Together"), taste similarity / predicted rating, social metrics (friends + all-jelly averages) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
-| `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + cuisines |
+| `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
 | `src/lib/geo.ts` | Distances, city fallback coords |
 | `src/components/AddAndRateModal.tsx` | Search → gut-feeling spectrum bar (`getGutVibeMeta` labels) → SxS |
@@ -46,10 +46,19 @@ ranking web app. Live at https://eatwithjelly.com.
 - Signed-out users persist to `localStorage` (keys defined at top of `App.tsx`); signed-in users sync to Firestore.
 
 ## Conventions & gotchas
-- **Six completely separate lists**: Restaurants, Brunch, Dessert, Bakeries, Coffee & Tea, Bars
-  (`SpotCategory`). Every entry belongs to exactly one; ranks, magic scores, SxS opponents,
-  drag-reorder, friend/community score matching and Eat Together never cross lists. The same place
-  may appear in several lists as separate entries. The main screen shows one list at a time (tabs).
+- **Completely separate lists in three groups** (`SpotCategory`, grouped by `SpotGroup` via
+  `GROUP_CATEGORIES`/`CATEGORY_GROUP` in `types.ts`): Eat (Restaurants, Brunch, Dessert, Bakeries,
+  Coffee & Tea, Bars), Explore (Museums & Galleries, Theme Parks, Zoos & Aquariums, Parks & Nature),
+  Travel (Cities, Getaways, Countries). Every entry belongs to exactly one list; ranks, magic scores,
+  SxS opponents, drag-reorder, friend/community score matching and Eat/Visit/Travel Together never
+  cross lists. The same place may appear in several lists as separate entries. The header switcher
+  picks the group; the main screen shows one list of it at a time (tabs). Per-group wording, tag
+  options and rating-label tweaks live in `src/lib/groups.ts`; the emerald accent is remapped per
+  group in `index.css` (scores use the fixed `jade` copy). `cuisines` holds each group's tags
+  (cuisine / museum type / country + continent + vibe).
+- **New categories need a guard period**: docs with an unknown category are skipped untouched
+  (`isFromNewerVersion`), but older cached app versions without that guard would migrate them. Make
+  sure family devices have updated before adding entries in a brand-new category.
 - **Adding a field to any Firestore doc requires updating `firestore.rules` validators**,
   otherwise writes fail (fire-and-forget writes only log via `logWriteError` in the console). Delegate rules edits to the
   `firestore-rules-author` subagent, then deploy rules.

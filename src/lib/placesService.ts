@@ -1,7 +1,7 @@
 import { DEFAULT_PLACES_API_KEY } from '../firebase';
-import { PlaceCandidate } from '../types';
+import { CATEGORY_GROUP, PlaceCandidate, SpotCategory, SpotGroup } from '../types';
 import { autoCategorizePlace } from './categorizer';
-import { UserCoordinates } from './geo';
+import { haversineDistanceMiles, UserCoordinates } from './geo';
 
 const GOOGLE_PRICE_MAP: Record<string, number> = {
   PRICE_LEVEL_INEXPENSIVE: 1,
@@ -113,7 +113,23 @@ const PLACES_FIELD_MASK = [
   'servesCocktails',
   'servesWine',
   'servesBeer',
+  'viewport',
 ];
+
+function extractCountry(addressComponents?: GoogleAddressComponent[]): {
+  countryCode?: string;
+  countryName?: string;
+} {
+  const comp = addressComponents?.find((c) => c.types?.includes('country'));
+  return comp ? { countryCode: comp.shortText, countryName: comp.longText || comp.shortText } : {};
+}
+
+function viewportDiagonalKm(viewport: any): number | undefined {
+  const low = viewport?.low;
+  const high = viewport?.high;
+  if (typeof low?.latitude !== 'number' || typeof high?.latitude !== 'number') return undefined;
+  return haversineDistanceMiles(low.latitude, low.longitude, high.latitude, high.longitude) * 1.609344;
+}
 
 function normalizeForMatch(str: string): string {
   return str
@@ -185,6 +201,8 @@ function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate
   const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
     name,
     types: p.types,
+    ...extractCountry(p.addressComponents),
+    viewportDiagonalKm: viewportDiagonalKm(p.viewport),
     primaryType: p.primaryType,
     primaryTypeDisplayName: p.primaryTypeDisplayName?.text,
     servesBreakfast: p.servesBreakfast,
@@ -198,12 +216,13 @@ function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate
     servesBeer: p.servesBeer,
   });
 
+  const isDestination = categories.some((c) => CATEGORY_GROUP[c] === 'travel');
   return {
     placeId: p.id || `g_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name,
     formattedAddress,
-    neighborhood,
-    city,
+    neighborhood: isDestination ? undefined : neighborhood,
+    city: isDestination ? undefined : city,
     lat: p.location?.latitude,
     lng: p.location?.longitude,
     googleMapsUri:
@@ -240,16 +259,42 @@ async function fetchPlaceDetailsById(
   }
 }
 
-export async function searchRestaurants(
+/**
+ * Keeps only candidates that can go in one of the group's lists (or that have no detected list at
+ * all, e.g. a landmark: the user picks the list), with the group's categories ordered first.
+ */
+export function fitCandidatesToGroup(candidates: PlaceCandidate[], group: SpotGroup): PlaceCandidate[] {
+  const inGroup = (c: SpotCategory) => CATEGORY_GROUP[c] === group;
+  return candidates
+    .filter((cand) => cand.categories.length === 0 || cand.categories.some(inGroup))
+    .map((cand) => ({
+      ...cand,
+      categories: [...cand.categories.filter(inGroup), ...cand.categories.filter((c) => !inGroup(c))],
+    }));
+}
+
+// Autocomplete type filters per group (Explore spans too many types to filter server-side)
+const AUTOCOMPLETE_TYPES: Record<SpotGroup, string[] | undefined> = {
+  eat: ['restaurant', 'cafe', 'bakery', 'bar', 'food'],
+  explore: undefined,
+  travel: ['(regions)'],
+};
+
+export async function searchPlaces(
   query: string,
   customApiKey?: string,
   defaultCity?: string,
-  userLocation?: UserCoordinates | null
+  userLocation?: UserCoordinates | null,
+  group: SpotGroup = 'eat'
 ): Promise<{ results: PlaceCandidate[]; providerUsed: 'google_places' | 'osm_photon' }> {
   const trimmed = query.trim();
   if (!trimmed) {
     return { results: [], providerUsed: 'google_places' };
   }
+  // Destinations are searched worldwide; sights are biased to nearby but not to the default city
+  // (appending it would break searches like "Louvre")
+  if (group !== 'eat') defaultCity = undefined;
+  if (group === 'travel') userLocation = null;
 
   const effectiveQuery =
     defaultCity && !trimmed.toLowerCase().includes(defaultCity.toLowerCase())
@@ -273,10 +318,8 @@ export async function searchRestaurants(
         }
       : undefined;
 
-    const autocompleteBody: Record<string, any> = {
-      input: effectiveQuery,
-      includedPrimaryTypes: ['restaurant', 'cafe', 'bakery', 'bar', 'food'],
-    };
+    const autocompleteBody: Record<string, any> = { input: effectiveQuery };
+    if (AUTOCOMPLETE_TYPES[group]) autocompleteBody.includedPrimaryTypes = AUTOCOMPLETE_TYPES[group];
     if (locationBias) {
       autocompleteBody.locationBias = locationBias;
       autocompleteBody.origin = {
@@ -379,7 +422,7 @@ export async function searchRestaurants(
       }
     }
 
-    const allCandidates = Array.from(byId.values());
+    const allCandidates = fitCandidatesToGroup(Array.from(byId.values()), group);
     if (allCandidates.length > 0) {
       // Score each candidate by how well its NAME matches the user's raw query
       const scored = allCandidates.map((cand, originalIdx) => {
@@ -454,6 +497,9 @@ export async function searchRestaurants(
 
         const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
           name,
+          osmPlace: osmKey === 'place' ? osmValue : undefined,
+          countryCode: props.countrycode,
+          countryName: props.country,
           osmAmenity: osmValue,
           osmCuisine: props.cuisine,
           types: osmKey === 'amenity' || osmKey === 'shop' ? [osmValue] : [],
@@ -482,11 +528,12 @@ export async function searchRestaurants(
         if (candidates.length >= 8) break;
       }
 
-      candidates.sort(
+      const fitted = fitCandidatesToGroup(candidates, group);
+      fitted.sort(
         (a, b) => computeNameMatchScore(b.name, trimmed) - computeNameMatchScore(a.name, trimmed)
       );
 
-      return { results: candidates, providerUsed: 'osm_photon' };
+      return { results: fitted, providerUsed: 'osm_photon' };
     }
   } catch {
     // Ignore network error
@@ -495,12 +542,19 @@ export async function searchRestaurants(
   return { results: [], providerUsed: 'osm_photon' };
 }
 
-export function createManualPlaceCandidate(name: string, city = ''): PlaceCandidate {
+export function createManualPlaceCandidate(
+  name: string,
+  city = '',
+  group: SpotGroup = 'eat'
+): PlaceCandidate {
   const cleanName = name.trim();
   const cleanLoc = city.trim();
-  const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
-    name: cleanName,
-  });
+  // Keyword detection only knows food; custom sights & destinations go in the list being viewed
+  const detected =
+    group === 'eat'
+      ? autoCategorizePlace({ name: cleanName })
+      : { categories: [] as SpotCategory[], cuisines: [] as string[], primaryTypeDisplay: undefined };
+  const { categories, cuisines, primaryTypeDisplay } = detected;
 
   return {
     placeId: `manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

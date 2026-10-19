@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bookmark, Check, ExternalLink, Navigation, Sparkles, Users } from 'lucide-react';
 import {
-  ALL_CATEGORIES,
   BookmarkEntry,
   CATEGORY_EMOJI,
+  CATEGORY_GROUP,
   CATEGORY_LABEL,
   DEFAULT_CATEGORY,
+  GROUP_CATEGORIES,
   FriendProfile,
   SpotCategory,
   PlaceCandidate,
@@ -13,6 +14,7 @@ import {
   SharedListPayload,
 } from '../types';
 import { BlendSpotItem, computeGroupBlend } from '../lib/friendsService';
+import { GROUP_COPY } from '../lib/groups';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { Sheet, SheetHeader } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
@@ -23,6 +25,7 @@ interface EatTogetherModalProps {
   friends: FriendProfile[];
   friendListsMap: Record<string, SharedListPayload>;
   initialSelectedFriendUid?: string | null;
+  initialCategory?: SpotCategory; // The list being viewed; the blend stays within its group
   myRestaurants: RestaurantEntry[];
   myBookmarks: BookmarkEntry[];
   bookmarkedPlaceIds: Set<string>;
@@ -41,6 +44,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
   friends,
   friendListsMap,
   initialSelectedFriendUid,
+  initialCategory = DEFAULT_CATEGORY,
   myRestaurants,
   myBookmarks,
   bookmarkedPlaceIds,
@@ -53,7 +57,13 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
     'both_want' | 'shared_favorites' | 'from_friends'
   >('shared_favorites');
   // Lists are never mixed: the blend always shows a single category
-  const [categoryFilter, setCategoryFilter] = useState<SpotCategory>(DEFAULT_CATEGORY);
+  const [categoryFilter, setCategoryFilter] = useState<SpotCategory>(initialCategory);
+  const group = CATEGORY_GROUP[categoryFilter];
+  const inGroup = (item: BlendSpotItem) => CATEGORY_GROUP[item.category] === group;
+
+  useEffect(() => {
+    if (isOpen) setCategoryFilter(initialCategory);
+  }, [isOpen, initialCategory]);
   const [sortByNearest, setSortByNearest] = useState(false);
 
   const hasInitializedRef = useRef(false);
@@ -133,7 +143,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
         <>
           <SheetHeader
             icon={<Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
-            title="Eat Together · Blend"
+            title={`${GROUP_COPY[group].together} · Blend`}
             onClose={onClose}
           >
             {blend.tasteMatchPct !== null && (
@@ -204,7 +214,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                       : 'text-zinc-500 dark:text-zinc-400'
                   }`}
                 >
-                  Both Want ({blend.bothWantToTry.length})
+                  Both Want ({blend.bothWantToTry.filter(inGroup).length})
                 </button>
                 <button
                   type="button"
@@ -215,7 +225,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                       : 'text-zinc-500 dark:text-zinc-400'
                   }`}
                 >
-                  Shared ({blend.sharedFavorites.length})
+                  Shared ({blend.sharedFavorites.filter(inGroup).length})
                 </button>
                 <button
                   type="button"
@@ -226,7 +236,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                       : 'text-zinc-500 dark:text-zinc-400'
                   }`}
                 >
-                  Try Next ({blend.forYouFromFriends.length})
+                  Try Next ({blend.forYouFromFriends.filter(inGroup).length})
                 </button>
               </div>
 
@@ -246,7 +256,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                     <span>Near Me</span>
                   </button>
                 )}
-                {ALL_CATEGORIES.map((c) => (
+                {GROUP_CATEGORIES[group].map((c) => (
                   <button
                     key={c}
                     type="button"

@@ -25,6 +25,7 @@ interface RestaurantMapViewProps {
   darkMode: boolean;
   userLocation?: UserCoordinates | null;
   selectedCity?: string | 'ALL';
+  worldScale?: boolean; // Destinations: frame all pins at country/continent zoom, never "near me"
   onRequestLocation?: () => void;
   onSelectSpot: (spot: RestaurantEntry) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
@@ -284,6 +285,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
   darkMode,
   userLocation,
   selectedCity = 'ALL',
+  worldScale = false,
   onRequestLocation,
   onSelectSpot,
   onRankBookmark,
@@ -551,10 +553,11 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       });
     }
 
+    const maxZoom = worldScale ? 6 : 15;
     const fitPoints = (pts: [number, number][]) => {
       if (pts.length === 1) {
         map.setCenter({ lat: pts[0][0], lng: pts[0][1] });
-        map.setZoom(14);
+        map.setZoom(worldScale ? 5 : 14);
         return;
       }
       if (pts.length > 1) {
@@ -562,11 +565,21 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
         pts.forEach((p) => bounds.extend({ lat: p[0], lng: p[1] }));
         map.fitBounds(bounds, 48);
         const listener = gmaps.event.addListenerOnce(map, 'idle', () => {
-          if (map.getZoom() > 15) map.setZoom(15);
+          if (map.getZoom() > maxZoom) map.setZoom(maxZoom);
           gmaps.event.removeListener(listener);
         });
       }
     };
+
+    if (worldScale) {
+      if (boundsPoints.length > 0) {
+        fitPoints(boundsPoints);
+      } else {
+        map.setCenter({ lat: 20, lng: 0 });
+        map.setZoom(2);
+      }
+      return;
+    }
 
     if (userLocation && selectedCity === 'ALL') {
       const nearbyPoints = boundsPoints.filter(
@@ -603,7 +616,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
     }
 
     fitPoints(boundsPoints);
-  }, [mode, plottedRanked, plottedBookmarks, darkMode, userLocation, selectedCity, sdkReady]);
+  }, [mode, plottedRanked, plottedBookmarks, darkMode, userLocation, selectedCity, worldScale, sdkReady]);
 
   const handleLocateMeClick = () => {
     const map = mapRef.current;

@@ -2,6 +2,50 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Score colors: a fixed copy of emerald, so scores look the same in every group */
+@theme {
+  --color-jade-50: oklch(97.9% 0.021 166.113);
+  --color-jade-100: oklch(95% 0.052 163.051);
+  --color-jade-200: oklch(90.5% 0.093 164.15);
+  --color-jade-300: oklch(84.5% 0.143 164.978);
+  --color-jade-400: oklch(76.5% 0.177 163.223);
+  --color-jade-500: oklch(69.6% 0.17 162.48);
+  --color-jade-600: oklch(59.6% 0.145 163.225);
+  --color-jade-700: oklch(50.8% 0.118 165.612);
+  --color-jade-800: oklch(43.2% 0.095 166.913);
+  --color-jade-900: oklch(37.8% 0.077 168.94);
+  --color-jade-950: oklch(26.2% 0.051 172.552);
+}
+
+/* Per-group accent: the app's emerald accent becomes violet in Explore and sky blue in Travel */
+html[data-group='explore'] {
+  --color-emerald-50: oklch(96.9% 0.016 293.756);
+  --color-emerald-100: oklch(94.3% 0.029 294.588);
+  --color-emerald-200: oklch(89.4% 0.057 293.283);
+  --color-emerald-300: oklch(81.1% 0.111 293.571);
+  --color-emerald-400: oklch(70.2% 0.183 293.541);
+  --color-emerald-500: oklch(60.6% 0.25 292.717);
+  --color-emerald-600: oklch(54.1% 0.281 293.009);
+  --color-emerald-700: oklch(49.1% 0.27 292.581);
+  --color-emerald-800: oklch(43.2% 0.232 292.759);
+  --color-emerald-900: oklch(38% 0.189 293.745);
+  --color-emerald-950: oklch(28.3% 0.141 291.089);
+}
+
+html[data-group='travel'] {
+  --color-emerald-50: oklch(97.7% 0.013 236.62);
+  --color-emerald-100: oklch(95.1% 0.026 236.824);
+  --color-emerald-200: oklch(90.1% 0.058 230.902);
+  --color-emerald-300: oklch(82.8% 0.111 230.318);
+  --color-emerald-400: oklch(74.6% 0.16 232.661);
+  --color-emerald-500: oklch(68.5% 0.169 237.323);
+  --color-emerald-600: oklch(58.8% 0.158 241.966);
+  --color-emerald-700: oklch(50% 0.134 242.749);
+  --color-emerald-800: oklch(44.3% 0.11 240.79);
+  --color-emerald-900: oklch(39.1% 0.09 240.876);
+  --color-emerald-950: oklch(29.3% 0.066 243.157);
+}
+
 @layer base {
   body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;

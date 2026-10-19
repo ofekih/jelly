@@ -131,7 +131,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
       try {
         await navigator.share({
           title: `Follow ${userHandle ? `@${userHandle}` : 'me'} on jelly`,
-          text: `Check out my ranked restaurant list on jelly!`,
+          text: `Check out my ranked lists on jelly!`,
           url,
         });
         return;
@@ -605,7 +605,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               onClose();
                             }}
                             className="px-2.5 py-1.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-[11px] font-semibold flex items-center gap-1 transition-colors"
-                            title={`Eat Together blend with ${friend.name}`}
+                            title={`Blend lists with ${friend.name}`}
                           >
                             <Sparkles className="w-3 h-3" />
                             <span>Blend</span>

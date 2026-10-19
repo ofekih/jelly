@@ -12,7 +12,7 @@ export function getScoreColorClasses(score: number): {
   if (score >= 8.5) {
     return {
       circle:
-        'border-emerald-600/80 text-emerald-700 bg-emerald-50/70 dark:border-emerald-400/70 dark:text-emerald-300 dark:bg-emerald-950/60',
+        'border-jade-600/80 text-jade-700 bg-jade-50/70 dark:border-jade-400/70 dark:text-jade-300 dark:bg-jade-950/60',
       label: 'Loved it',
     };
   }

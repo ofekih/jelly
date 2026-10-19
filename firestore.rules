@@ -38,7 +38,7 @@ rules_version = '2';
 //   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
 //   - priceLevel: number (optional, 0..5) - price tier (1..4)
 //   - status: string (optional, 'ranked' | 'want_to_try') - listing status
-//   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars') - spot category
+//   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars' | 'museums' | 'theme_parks' | 'zoos' | 'nature' | 'cities' | 'getaways' | 'countries') - spot category
 //   - categories: list<string> (optional, <= 10 items) - suggested categories
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
@@ -67,7 +67,7 @@ rules_version = '2';
 //   - lng: number (optional, -180..180) - longitude coordinate
 //   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
 //   - priceLevel: number (optional, 0..5) - price tier (1..4)
-//   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars') - spot category
+//   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars' | 'museums' | 'theme_parks' | 'zoos' | 'nature' | 'cities' | 'getaways' | 'countries') - spot category
 //   - categories: list<string> (optional, <= 10 items) - suggested categories
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
@@ -149,7 +149,14 @@ service cloud.firestore {
     function isValidOptionalCategory(data) {
       return !('category' in data) ||
         data.category == null ||
-        data.category in ['restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars'];
+        data.category in [
+          // Eat
+          'restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars',
+          // Explore
+          'museums', 'theme_parks', 'zoos', 'nature',
+          // Travel
+          'cities', 'getaways', 'countries'
+        ];
     }
 
     // ===============================================================
