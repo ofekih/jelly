@@ -22,7 +22,7 @@ const TOC = [
 
 const STEPS = [
   { icon: Sparkles, title: 'Gut feeling', body: 'One quick tap on a spectrum: roughly how good was it?' },
-  { icon: Swords, title: 'Side-by-side', body: 'A few “this or that?” questions find its exact place in your list.' },
+  { icon: Swords, title: 'Side-by-side', body: 'A handful of “this or that?” questions pin down its place in your list.' },
   { icon: Scale, title: 'Score', body: 'Your order becomes 1–10 scores, scaled by how good things felt.' },
 ];
 
@@ -99,7 +99,7 @@ export const AboutPage: React.FC = () => (
         </p>
         <p>
           The bottom of “good” is probably better than the top of “okay”. That's the whole premise. In jelly, the
-          comparisons are the source of truth for the order, and nothing ever overrules them.
+          comparisons are the source of truth for the order. A gut feeling only decides where the questions start.
         </p>
 
         <h3 className="pt-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">Trap 2: not enough granularity</h3>
@@ -231,8 +231,10 @@ export const AboutPage: React.FC = () => (
         <p>
           A list of <Tex>n</Tex> places has <Tex>n+1</Tex> gaps, and the new place belongs in one of them. jelly keeps a
           probability for every gap. Your gut feeling sets the starting guess (gaps next to places with similar scores
-          get more weight), and each question is asked at the <b>median</b> of the current belief, the comparison that
-          splits the remaining probability in half. Every answer rules out one side, so the search homes in fast.
+          get more weight), and each question goes to roughly the <b>median</b> of the current belief, the comparison that
+          splits the remaining probability about in half. Every answer shifts the belief toward one side: strongly when the two
+          places are far apart, gently when they're close, because that's where people waver. One slip can't lock the
+          true spot out; later answers pull it back.
         </p>
         <SxSDemo />
         <p>A few details make the questions easier to answer and the result more trustworthy:</p>
@@ -240,16 +242,19 @@ export const AboutPage: React.FC = () => (
           <li>
             <b>Like vs. like.</b> “Is this ramen better than that ramen?” is easier than ramen vs. barbecue. When it
             can, jelly picks an opponent with the same cuisine (or museum type, or country), and before finishing it
-            checks the nearest same-cuisine place above and below, using up to two extra questions.
+            checks the nearest same-cuisine place above and below unless it's already 97% sure of that order.
           </li>
           <li>
-            <b>Ties and skips.</b> “About the same” settles it in the gap next to that place; “can't compare” just
-            tries someone else.
+            <b>Ties and skips.</b> “About the same” pulls it toward the gaps right next to that place; “can't compare”
+            just tries someone else.
           </li>
           <li>
-            <b>Few questions.</b> jelly asks <Tex>{String.raw`\min\bigl(5,\ \lceil \log_2(n+1) \rceil\bigr)`}</Tex>{' '}
-            questions and stops early once one gap holds two-thirds of the probability. Up to 31 places that's a full
-            binary search. Beyond that it lands within a few spots, and you can always drag to fine-tune.
+            <b>Accuracy first.</b> There's no fixed number of questions. jelly keeps asking while another answer is
+            expected to make the placement noticeably more accurate, and stops once the expected error is tiny. Being
+            off by less than 0.1 points doesn't count, since nobody can reliably tell places that close apart. That's
+            about 3 questions for 5 places, 5–6 for 15 and 8–10 for a few hundred, never more than 12. In simulations
+            with realistically inconsistent people, a clearly wrong placement (past a place 0.5+ points away) is 4× to
+            over 100× rarer than with a plain binary search capped at five questions.
           </li>
         </ul>
         <Nerd>
@@ -259,8 +264,28 @@ export const AboutPage: React.FC = () => (
           </p>
           <Tex block>{String.raw`w_k \;\propto\; \exp\!\left(-\frac{(g - m_k)^2}{2\sigma^2}\right) + 0.03`}</Tex>
           <p>
-            with <Tex>\sigma = 1.5</Tex>. The small floor of 0.03 means no gap is ever ruled out by your gut alone. <b>After each answer</b>, gaps that
-            agree with it are multiplied by 0.92 and the rest by 0.05, and a hard window of still-possible gaps shrinks.
+            with <Tex>\sigma = 1.5</Tex>. The small floor of 0.03 means no gap is ever ruled out by your gut alone.
+          </p>
+          <p>
+            <b>After each answer.</b> Picture the list on a line, each place at its score (plus 0.01 per rank, so
+            equal scores keep their order), and gap <Tex>k</Tex> at <Tex>x_k</Tex>. If the new place truly belongs in
+            gap <Tex>k</Tex>, an answer about place <Tex>i</Tex> at <Tex>x_i</Tex> agrees with that with probability
+          </p>
+          <Tex block>{String.raw`P(\text{agrees}) = \lambda + (1 - 2\lambda)\,\Phi\!\left(\frac{|x_k - x_i|}{\nu}\right)`}</Tex>
+          <p>
+            where <Tex>\Phi</Tex> is the normal CDF, <Tex>\nu = 0.3</Tex> points is how blurry a preference is (0.225
+            for like vs. like) and <Tex>\lambda = 0.03</Tex> covers slips. Every gap's weight is multiplied by the chance
+            of the answer you actually gave.
+          </p>
+          <p>
+            <b>Which question, and when to stop.</b> The best guess <Tex>{String.raw`\hat k`}</Tex> is the weighted
+            median gap, and the expected error (in points) is
+          </p>
+          <Tex block>{String.raw`\mathrm{err} = \sum_k w_k \max\bigl(0,\ |x_k - x_{\hat k}| - 0.1\bigr)`}</Tex>
+          <p>
+            jelly asks about the place that lowers it the most on average over both answers (a same-cuisine
+            place gets a 25% edge), and stops once it's below 0.02, once no question would lower it by
+            0.005, or after 12 questions.
           </p>
           <p>
             <b>Elo.</b> Alongside the belief, jelly tracks an Elo rating, the system chess uses. The expected chance that
@@ -275,8 +300,8 @@ export const AboutPage: React.FC = () => (
             <span className="whitespace-nowrap">
               (<Tex>K = 14</Tex>).
             </span> A starting Elo comes from the gut rating, <Tex>R = 950 + 100g</Tex>, averaged with the
-            Elo of the place whose score is closest. Elo is also clamped so it can't contradict a won or lost
-            comparison.
+            Elo of the place whose score is closest. Once placed, its Elo is squeezed in between its new
+            neighbours' if needed, so it always agrees with the final order.
           </p>
         </Nerd>
       </Section>

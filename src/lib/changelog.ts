@@ -28,6 +28,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Installed app shows a one-tap reload when an update is ready',
       'New About page (linked at the bottom) explaining how jelly ranks, with live demos',
       'Rating bar re-tuned so each tier’s size matches how often people feel that way',
+      'Side-by-side picks now keep going until a new place’s spot is accurate instead of stopping at five, and one mis-tap can no longer throw it off',
     ],
   },
   {

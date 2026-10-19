@@ -50,7 +50,7 @@ export const SxSDemo: React.FC = () => {
 
   const slotRow = (k: number) => {
     const w = state.slotWeights[k];
-    const live = k >= state.minValidSlot && k <= state.maxValidSlot;
+    const live = w >= 0.005;
     const chosen = done && k === insertIndex;
     return (
       <div key={`slot${k}`} className="flex h-4 items-center gap-2 pl-7">

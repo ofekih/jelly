@@ -5,9 +5,12 @@ import { getCategoryList } from '../lib/categoryLists';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import {
   getBestInsertionIndex,
+  getPlacementElo,
+  getSearchProgress,
   initSxSSearch,
   pickNextOpponent,
   recordSxSComparison,
+  SxSOutcome,
   SxSSearchState,
   undoLastSxSStep,
 } from '../lib/rankingEngine';
@@ -74,7 +77,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
       pendingPlacement,
       insertIndex,
       state.completedComparisons,
-      state.candidateElo,
+      getPlacementElo(state, pool, insertIndex),
       state.opponentEloAdjustments
     );
   };
@@ -87,7 +90,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
     }
   }, [isOpen, pendingPlacement, searchState, pool.length]);
 
-  const handleChoice = (outcome: 'new_wins' | 'opponent_wins' | 'tie' | 'skip') => {
+  const handleChoice = (outcome: SxSOutcome) => {
     if (!searchState || !currentMatch || !pendingPlacement) return;
     trackEvent('sxs_choice', {
       outcome,
@@ -133,10 +136,8 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
 
   if (!isOpen || !pendingPlacement || !searchState || !currentMatch) return null;
 
-  const progressPct =
-    searchState.maxComparisons > 0
-      ? Math.min(100, Math.round(((searchState.completedComparisons + 0.5) / searchState.maxComparisons) * 100))
-      : 100;
+  // How sure jelly already is of the spot (log scale), with a sliver shown from the start
+  const progressPct = Math.round(8 + 92 * getSearchProgress(searchState));
 
   const candidateSub = [
     pendingPlacement.cuisines[0] || pendingPlacement.candidate.primaryTypeDisplay,

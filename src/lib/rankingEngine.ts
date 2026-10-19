@@ -1,14 +1,14 @@
 import { RestaurantEntry } from '../types';
 import { RATING_TIERS } from './ratingTiers';
 
+export type SxSOutcome = 'new_wins' | 'opponent_wins' | 'tie' | 'skip';
+
 interface SxSHistoryStep {
   opponentId: string;
   opponentName: string;
   opponentIndex: number;
-  outcome: 'new_wins' | 'opponent_wins' | 'tie' | 'skip';
+  outcome: SxSOutcome;
   weightsBefore: number[];
-  minValidSlotBefore: number;
-  maxValidSlotBefore: number;
   candidateEloBefore: number;
   eloFloorBefore: number;
   eloCeilingBefore: number;
@@ -16,13 +16,15 @@ interface SxSHistoryStep {
 }
 
 export interface SxSSearchState {
-  slotWeights: number[]; // Length N + 1 (slots 0..N)
-  minValidSlot: number; // Inclusive lower slot bound (0..N)
-  maxValidSlot: number; // Inclusive upper slot bound (0..N)
+  slotWeights: number[]; // Belief over gaps 0..N (gap k = just above spot k; gap N = bottom)
+  gapPositions: number[]; // Length N + 1: where each gap sits on the list's line (see listPositions)
+  spotPositions: number[]; // Length N: where each existing spot sits on the same line
+  sameTagSpots: boolean[]; // Length N: spot shares a cuisine/type tag with the candidate
+  initialExpectedError: number; // Expected placement error before any answer (for progress)
   comparedIndices: number[];
   skippedIndices: number[];
   completedComparisons: number;
-  maxComparisons: number;
+  maxComparisons: number; // Safety cap; the search normally stops well before it
   initialRating: number;
   candidateElo: number;
   eloFloor: number;
@@ -274,8 +276,116 @@ function seedEloFromRating(
   return Math.round(0.5 * baseElo + 0.5 * empiricalElo);
 }
 
+/*
+ * Side-by-side placement as a noisy binary search (probabilistic bisection).
+ *
+ * The existing list is laid out on a line: each spot sits at -score plus a tiny step per rank, so
+ * distances mean "how differently you feel about these" and a run of equal scores still keeps its
+ * order. The new spot belongs in one of the N + 1 gaps; we keep a belief over those gaps, ask the
+ * question expected to shrink the placement error the most, and stop once the expected error is
+ * small enough or no remaining question would really help. Tuned by simulating noisy users on
+ * lists of 5–300 spots (see src/lib/sxsSimulation.test.ts). Answers are never treated as certain:
+ * preferring A over B is more likely to be a slip the closer A and B sit on the line.
+ */
+const PRIOR_SIGMA = 1.5; // Spread of the gut-feeling prior, in score points
+const PRIOR_FLOOR = 0.03; // No gap is ever ruled out by the gut feeling alone
+const END_MARGIN = 0.35; // The gaps above #1 and below the last spot sit this far past them
+const RANK_STEP = 0.01; // Each position adds this much distance, so equal scores stay ordered
+const PREFERENCE_NOISE = 0.3; // How blurry a preference is, in score points
+const SAME_TAG_NOISE = 0.75; // Like vs. like (ramen vs. ramen) is easier to judge
+const LAPSE_RATE = 0.03; // Chance of a slip (misclick, misread) however far apart the two are
+const TIE_WIDTH = 0.3; // "Too tough to call" points at gaps within about this distance
+const TIE_FLOOR = 0.1;
+const INDIFFERENCE = 0.1; // Being off by less than this many points doesn't count as an error
+const TARGET_EXPECTED_ERROR = 0.02; // Stop once the expected error is below this many points…
+const MIN_EXPECTED_GAIN = 0.005; // …or once no question would cut it by at least this much
+const MAX_QUESTIONS = 12; // Safety cap against fatigue
+const SAME_TAG_BONUS = 1.25; // Prefer a like-vs-like question when it's nearly as useful
+const SAME_TAG_CHECK = 0.03; // Before finishing, ask about the nearest same-tag spots unless ≥97% sure
+
+/** Positions of the existing spots and of the gaps between them on the search line */
+function listPositions(existingRanked: RestaurantEntry[]): {
+  spotPositions: number[];
+  gapPositions: number[];
+} {
+  const n = existingRanked.length;
+  const spotPositions: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const score = existingRanked[i].magicScore ?? existingRanked[i].initialRating;
+    const pos = -score + RANK_STEP * i;
+    spotPositions.push(i === 0 ? pos : Math.max(pos, spotPositions[i - 1] + RANK_STEP));
+  }
+  if (n === 0) return { spotPositions, gapPositions: [0] };
+  const gapPositions = [spotPositions[0] - END_MARGIN];
+  for (let k = 1; k < n; k++) gapPositions.push(0.5 * (spotPositions[k - 1] + spotPositions[k]));
+  gapPositions.push(spotPositions[n - 1] + END_MARGIN);
+  return { spotPositions, gapPositions };
+}
+
 /**
- * Initializes the ELO + Noisy Binary Search state for a newly rated restaurant.
+ * Best gap (weighted median) and the expected placement error: how far the true gap is from it on
+ * the line, ignoring the first INDIFFERENCE points (places that close are a coin flip anyway)
+ */
+function expectedError(weights: number[], positions: number[]): { median: number; error: number } {
+  const total = weights.reduce((a, w) => a + w, 0);
+  if (total <= 0) return { median: 0, error: 0 };
+  let cumulative = 0;
+  let median = weights.length - 1;
+  for (let k = 0; k < weights.length; k++) {
+    cumulative += weights[k];
+    if (cumulative >= total / 2) {
+      median = k;
+      break;
+    }
+  }
+  let error = 0;
+  for (let k = 0; k < weights.length; k++) {
+    error += weights[k] * Math.max(0, Math.abs(positions[k] - positions[median]) - INDIFFERENCE);
+  }
+  return { median, error: error / total };
+}
+
+/** P(you prefer the new spot over spot i | the new spot truly belongs in gap k) */
+function newWinsLikelihood(state: SxSSearchState, k: number, i: number): number {
+  const d = state.gapPositions[k] - state.spotPositions[i]; // < 0: gap k is above spot i
+  const noise = PREFERENCE_NOISE * (state.sameTagSpots[i] ? SAME_TAG_NOISE : 1);
+  const sure = 1 / (1 + Math.exp((-1.702 * Math.abs(d)) / noise));
+  const consistent = LAPSE_RATE + (1 - 2 * LAPSE_RATE) * sure;
+  return d < 0 ? consistent : 1 - consistent;
+}
+
+function outcomeLikelihood(
+  state: SxSSearchState,
+  k: number,
+  i: number,
+  outcome: 'new_wins' | 'opponent_wins' | 'tie'
+): number {
+  if (outcome === 'new_wins') return newWinsLikelihood(state, k, i);
+  if (outcome === 'opponent_wins') return 1 - newWinsLikelihood(state, k, i);
+  const d = (state.gapPositions[k] - state.spotPositions[i]) / TIE_WIDTH;
+  return TIE_FLOOR + Math.exp(-0.5 * d * d);
+}
+
+/** How much asking about spot i is expected to cut the placement error */
+function questionGain(state: SxSSearchState, i: number, currentError: number): number {
+  const w = state.slotWeights;
+  const ifWins = new Array<number>(w.length);
+  const ifLoses = new Array<number>(w.length);
+  let pWins = 0;
+  for (let k = 0; k < w.length; k++) {
+    const p = newWinsLikelihood(state, k, i);
+    ifWins[k] = w[k] * p;
+    ifLoses[k] = w[k] * (1 - p);
+    pWins += ifWins[k];
+  }
+  const after =
+    pWins * expectedError(ifWins, state.gapPositions).error +
+    (1 - pWins) * expectedError(ifLoses, state.gapPositions).error;
+  return currentError - after;
+}
+
+/**
+ * Initializes the noisy binary search for a newly rated spot.
  * `existingRanked` must be the rank-ordered list of the candidate's own category only;
  * spots are never compared across category lists.
  */
@@ -285,63 +395,42 @@ export function initSxSSearch(
   candidateCuisines: string[] = []
 ): SxSSearchState {
   const n = existingRanked.length;
-  const numSlots = n + 1;
   const candidateElo = seedEloFromRating(existingRanked, initialRating);
+  const { spotPositions, gapPositions } = listPositions(existingRanked);
 
-  if (n === 0) {
-    return {
-      slotWeights: [1],
-      minValidSlot: 0,
-      maxValidSlot: 0,
-      comparedIndices: [],
-      skippedIndices: [],
-      completedComparisons: 0,
-      maxComparisons: 0,
-      initialRating,
-      candidateElo,
-      eloFloor: 800,
-      eloCeiling: 2400,
-      opponentEloAdjustments: {},
-      candidateCuisines,
-      history: [],
-    };
-  }
-
-  const sigma = 1.5;
-  const rawWeights = new Array<number>(numSlots);
-
-  for (let k = 0; k < numSlots; k++) {
+  const rawWeights = new Array<number>(n + 1);
+  for (let k = 0; k <= n && n > 0; k++) {
     let slotRefScore: number;
     if (k === 0) {
-      slotRefScore = Math.min(10.0, existingRanked[0].magicScore + 0.35);
+      slotRefScore = Math.min(10.0, existingRanked[0].magicScore + END_MARGIN);
     } else if (k === n) {
-      slotRefScore = Math.max(1.0, existingRanked[n - 1].magicScore - 0.35);
+      slotRefScore = Math.max(1.0, existingRanked[n - 1].magicScore - END_MARGIN);
     } else {
       slotRefScore = 0.5 * (existingRanked[k - 1].magicScore + existingRanked[k].magicScore);
     }
     const diff = initialRating - slotRefScore;
-    rawWeights[k] = Math.exp(-(diff * diff) / (2 * sigma * sigma)) + 0.03;
+    rawWeights[k] = Math.exp(-(diff * diff) / (2 * PRIOR_SIGMA * PRIOR_SIGMA)) + PRIOR_FLOOR;
   }
+  const slotWeights = n === 0 ? [1] : normalizeWeights(rawWeights);
 
-  const slotWeights = normalizeWeights(rawWeights);
-  const maxComparisons = Math.min(5, Math.max(1, Math.ceil(Math.log2(n + 1))));
-
-  const topElo = existingRanked[0].elo || ratingToBaseElo(existingRanked[0].initialRating);
+  const topElo = n > 0 ? existingRanked[0].elo || ratingToBaseElo(existingRanked[0].initialRating) : 950;
   const bottomElo =
-    existingRanked[n - 1].elo || ratingToBaseElo(existingRanked[n - 1].initialRating);
+    n > 0 ? existingRanked[n - 1].elo || ratingToBaseElo(existingRanked[n - 1].initialRating) : 950;
 
   return {
     slotWeights,
-    minValidSlot: 0,
-    maxValidSlot: n,
+    gapPositions,
+    spotPositions,
+    sameTagSpots: existingRanked.map((r) => sharesTagWithCandidate(r, candidateCuisines)),
+    initialExpectedError: expectedError(slotWeights, gapPositions).error,
     comparedIndices: [],
     skippedIndices: [],
     completedComparisons: 0,
-    maxComparisons,
+    maxComparisons: Math.min(n, MAX_QUESTIONS),
     initialRating,
     candidateElo,
-    eloFloor: bottomElo - 150,
-    eloCeiling: topElo + 150,
+    eloFloor: n > 0 ? bottomElo - 150 : 800,
+    eloCeiling: n > 0 ? topElo + 150 : 2400,
     opponentEloAdjustments: {},
     candidateCuisines,
     history: [],
@@ -349,40 +438,51 @@ export function initSxSSearch(
 }
 
 /**
- * Computes the current best insertion slot (0..N), final calibrated ELO, and 0-100 confidence,
- * respecting the active [minValidSlot, maxValidSlot] bounds from direct comparisons.
+ * Current best insertion slot (0..N): the weighted median of the belief, which minimizes the
+ * expected distance to the true gap. `confidence` is the probability (0–100) of that exact gap.
  */
 export function getBestInsertionIndex(state: SxSSearchState): {
   insertIndex: number;
   confidence: number;
 } {
-  const weights = state.slotWeights;
-  const numSlots = weights.length;
-  if (numSlots <= 1) {
+  if (state.slotWeights.length <= 1) {
     return { insertIndex: 0, confidence: 100 };
   }
+  const { median } = expectedError(state.slotWeights, state.gapPositions);
+  return {
+    insertIndex: median,
+    confidence: Math.round(clamp(state.slotWeights[median] * 100, 1, 99)),
+  };
+}
 
-  const lo = clamp(state.minValidSlot ?? 0, 0, numSlots - 1);
-  const hi = clamp(state.maxValidSlot ?? numSlots - 1, lo, numSlots - 1);
+/** 0–1: how far the expected error has fallen from its starting value towards the target (log scale) */
+export function getSearchProgress(state: SxSSearchState): number {
+  const { error } = expectedError(state.slotWeights, state.gapPositions);
+  const start = state.initialExpectedError;
+  if (start <= TARGET_EXPECTED_ERROR || error <= 0) return 1;
+  return clamp(Math.log(start / error) / Math.log(start / TARGET_EXPECTED_ERROR), 0, 1);
+}
 
-  let bestSlot = lo;
-  let bestWeight = -1;
-  for (let i = lo; i <= hi; i++) {
-    if (weights[i] > bestWeight) {
-      bestWeight = weights[i];
-      bestSlot = i;
-    }
-  }
-
-  let localMass = weights[bestSlot];
-  if (bestSlot > 0) localMass += weights[bestSlot - 1] * 0.65;
-  if (bestSlot < numSlots - 1) localMass += weights[bestSlot + 1] * 0.65;
-
-  const progressRatio =
-    state.maxComparisons > 0 ? state.completedComparisons / state.maxComparisons : 1;
-  const confidence = Math.round(clamp((localMass * 0.65 + progressRatio * 0.35) * 100, 20, 99));
-
-  return { insertIndex: bestSlot, confidence };
+/**
+ * The candidate's Elo for its final slot: its tracked Elo if that already sits between its new
+ * neighbours (with this search's adjustments), otherwise squeezed in between them, so a slip the
+ * search overruled can't drag the neighbours' scores along.
+ */
+export function getPlacementElo(
+  state: SxSSearchState,
+  existingRanked: RestaurantEntry[],
+  insertIndex: number
+): number {
+  const eloOf = (r: RestaurantEntry) =>
+    (r.elo || ratingToBaseElo(r.initialRating)) + (state.opponentEloAdjustments[r.id] || 0);
+  const above = insertIndex > 0 ? existingRanked[insertIndex - 1] : undefined;
+  const below = insertIndex < existingRanked.length ? existingRanked[insertIndex] : undefined;
+  const hi = above ? eloOf(above) : Infinity;
+  const lo = below ? eloOf(below) : -Infinity;
+  const elo = state.candidateElo;
+  if (elo < hi && elo > lo) return elo;
+  if (above && below) return Math.round(0.5 * (hi + lo));
+  return above ? hi - 16 : below ? lo + 16 : elo;
 }
 
 function sharesTagWithCandidate(
@@ -404,235 +504,102 @@ function sharesTagWithCandidate(
 }
 
 /**
- * Checks whether there is an uncompared spot sharing a cuisine/category tag (e.g. Japanese)
- * immediately above (`index < insertIndex`) or immediately below (`index >= insertIndex`)
- * the candidate's current projected insertion slot.
+ * The nearest same-tag spot (e.g. the closest Japanese place) directly above or below the best gap
+ * that hasn't been compared yet, if there's still at least a 3% chance the new spot is on its other
+ * side; -1 if none. Keeps each cuisine's own sub-ranking right.
  */
-function getMissingSameCuisineNeighbors(
-  state: SxSSearchState,
-  existingRanked: RestaurantEntry[],
-  insertIndex: number
-): { missingCuisineAbove: number; missingCuisineBelow: number } {
-  if (!state.candidateCuisines || state.candidateCuisines.length === 0) {
-    return { missingCuisineAbove: -1, missingCuisineBelow: -1 };
-  }
-  const n = existingRanked.length;
-  const comparedSet = new Set(state.comparedIndices);
-  const skippedSet = new Set(state.skippedIndices);
+function pendingSameTagCheck(state: SxSSearchState, median: number): number {
+  const w = state.slotWeights;
+  const n = state.spotPositions.length;
+  const skipped = new Set(state.skippedIndices);
+  const compared = new Set(state.comparedIndices);
+  let best = -1;
+  let bestRisk = SAME_TAG_CHECK;
 
-  let nearestSameCuisineAbove = -1;
-  for (let i = Math.min(n - 1, insertIndex - 1); i >= 0; i--) {
-    if (skippedSet.has(i)) continue;
-    if (sharesTagWithCandidate(existingRanked[i], state.candidateCuisines)) {
-      nearestSameCuisineAbove = i;
-      break;
+  for (let i = median - 1; i >= 0; i--) {
+    if (!state.sameTagSpots[i] || skipped.has(i)) continue;
+    if (!compared.has(i)) {
+      const risk = w.slice(0, i + 1).reduce((a, x) => a + x, 0); // P(new spot is above it)
+      if (risk >= bestRisk) {
+        best = i;
+        bestRisk = risk;
+      }
     }
+    break;
   }
-
-  let nearestSameCuisineBelow = -1;
-  for (let i = Math.max(0, insertIndex); i < n; i++) {
-    if (skippedSet.has(i)) continue;
-    if (sharesTagWithCandidate(existingRanked[i], state.candidateCuisines)) {
-      nearestSameCuisineBelow = i;
-      break;
+  for (let i = median; i < n; i++) {
+    if (!state.sameTagSpots[i] || skipped.has(i)) continue;
+    if (!compared.has(i)) {
+      const risk = w.slice(i + 1).reduce((a, x) => a + x, 0); // P(new spot is below it)
+      if (risk >= bestRisk) best = i;
     }
+    break;
   }
-
-  const missingCuisineAbove =
-    nearestSameCuisineAbove !== -1 && !comparedSet.has(nearestSameCuisineAbove)
-      ? nearestSameCuisineAbove
-      : -1;
-  const missingCuisineBelow =
-    nearestSameCuisineBelow !== -1 && !comparedSet.has(nearestSameCuisineBelow)
-      ? nearestSameCuisineBelow
-      : -1;
-
-  return { missingCuisineAbove, missingCuisineBelow };
+  return best;
 }
 
 /**
- * Picks the next restaurant opponent for a side-by-side comparison,
- * prioritizing spots with the same cuisine tags (e.g. Japanese), and guaranteeing that
- * adjacent same-cuisine neighbors above/below the candidate's position are compared
- * before concluding.
+ * Picks the next spot to compare against: the question expected to cut the placement error the
+ * most (a like-vs-like question wins when it's nearly as useful). Returns null once the expected
+ * error is below target, no question would help enough, or the safety cap is reached, after first
+ * checking the nearest uncompared same-tag spots above and below.
  */
 export function pickNextOpponent(
   state: SxSSearchState,
   existingRanked: RestaurantEntry[]
 ): { opponentIndex: number; opponent: RestaurantEntry } | null {
   const n = existingRanked.length;
-  if (n === 0) return null;
+  if (n === 0 || state.completedComparisons >= state.maxComparisons) return null;
 
-  const usedSet = new Set([...state.comparedIndices, ...state.skippedIndices]);
-  if (usedSet.size >= n) return null;
+  const used = new Set([...state.comparedIndices, ...state.skippedIndices]);
+  const { median, error } = expectedError(state.slotWeights, state.gapPositions);
 
-  const { insertIndex } = getBestInsertionIndex(state);
-  const { missingCuisineAbove, missingCuisineBelow } = getMissingSameCuisineNeighbors(
-    state,
-    existingRanked,
-    insertIndex
-  );
-  const hasMissingSameCuisineNeighbor =
-    missingCuisineAbove !== -1 || missingCuisineBelow !== -1;
-
-  // Allow up to 2 extra comparisons beyond base maxComparisons if needed to verify same-tag neighbors
-  const hardMaxComparisons = Math.min(n, state.maxComparisons + 2);
-  if (state.completedComparisons >= hardMaxComparisons) return null;
-
-  const maxWeight = Math.max(...state.slotWeights);
-  const baseConverged =
-    state.completedComparisons >= state.maxComparisons ||
-    state.minValidSlot >= state.maxValidSlot ||
-    (maxWeight >= 0.66 && (state.completedComparisons >= 2 || n <= 2));
-
-  if (baseConverged && !hasMissingSameCuisineNeighbor) {
-    return null;
-  }
-
-  // Find median of current slot distribution within [minValidSlot, maxValidSlot]
-  const loSlot = clamp(state.minValidSlot ?? 0, 0, n);
-  const hiSlot = clamp(state.maxValidSlot ?? n, loSlot, n);
-  let windowMass = 0;
-  for (let k = loSlot; k <= hiSlot; k++) {
-    windowMass += state.slotWeights[k];
-  }
-
-  let cumulative = 0;
-  let medianSlot = insertIndex;
-  const halfMass = windowMass > 0 ? windowMass * 0.5 : 0.5;
-  for (let k = loSlot; k <= hiSlot; k++) {
-    cumulative += state.slotWeights[k];
-    if (cumulative >= halfMass) {
-      medianSlot = k;
-      break;
-    }
-  }
-
-  const targetOpponentIdx = clamp(
-    medianSlot === 0 ? 0 : medianSlot >= n ? n - 1 : medianSlot - 0.5,
-    0,
-    n - 1
-  );
-
-  // 1. Inside the active window [loSlot, hiSlot - 1], prefer an uncompared spot sharing
-  //    the cuisine tag (e.g. Japanese)
-  if (loSlot < hiSlot) {
-    let bestSameCuisine = -1;
-    let bestSameCuisineDist = Infinity;
-
-    for (let i = loSlot; i <= hiSlot - 1; i++) {
-      if (usedSet.has(i)) continue;
-      const entry = existingRanked[i];
-      const dist = Math.abs(i - targetOpponentIdx);
-      if (sharesTagWithCandidate(entry, state.candidateCuisines) && dist < bestSameCuisineDist) {
-        bestSameCuisineDist = dist;
-        bestSameCuisine = i;
+  let bestIdx = -1;
+  let bestScore = -Infinity;
+  let maxGain = 0;
+  if (error > TARGET_EXPECTED_ERROR) {
+    for (let i = 0; i < n; i++) {
+      if (used.has(i)) continue;
+      const gain = questionGain(state, i, error);
+      const score = gain * (state.sameTagSpots[i] ? SAME_TAG_BONUS : 1);
+      maxGain = Math.max(maxGain, gain);
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
       }
     }
-
-    if (bestSameCuisine !== -1) {
-      return {
-        opponentIndex: bestSameCuisine,
-        opponent: existingRanked[bestSameCuisine],
-      };
-    }
   }
 
-  // 2. If an adjacent same-cuisine spot (e.g. Japanese) above or below `insertIndex` hasn't been compared yet,
-  //     compare against it first!
-  if (missingCuisineAbove !== -1 && missingCuisineBelow !== -1) {
-    const distAbove = Math.abs(missingCuisineAbove - targetOpponentIdx);
-    const distBelow = Math.abs(missingCuisineBelow - targetOpponentIdx);
-    const chosenIdx = distAbove <= distBelow ? missingCuisineAbove : missingCuisineBelow;
-    return {
-      opponentIndex: chosenIdx,
-      opponent: existingRanked[chosenIdx],
-    };
-  }
-  if (missingCuisineAbove !== -1) {
-    return {
-      opponentIndex: missingCuisineAbove,
-      opponent: existingRanked[missingCuisineAbove],
-    };
-  }
-  if (missingCuisineBelow !== -1) {
-    return {
-      opponentIndex: missingCuisineBelow,
-      opponent: existingRanked[missingCuisineBelow],
-    };
-  }
-
-  // 3. Otherwise (same-cuisine neighbors above & below are already verified),
-  //    refine exact placement within the active window [loSlot, hiSlot - 1]
-  let bestCandidateIdx = -1;
-  let bestCandidateScore = -Infinity;
-
-  const searchStart = loSlot < hiSlot ? loSlot : 0;
-  const searchEnd = loSlot < hiSlot ? hiSlot - 1 : n - 1;
-
-  for (let i = searchStart; i <= searchEnd; i++) {
-    if (usedSet.has(i)) continue;
-
-    const item = existingRanked[i];
-    const dist = Math.abs(i - targetOpponentIdx);
-
-    let score = -dist * 1.45;
-
-    if (sharesTagWithCandidate(item, state.candidateCuisines) && dist <= 4) {
-      score += 1.25;
-    }
-
-    const jitter = (((i * 31 + state.completedComparisons * 17) % 10) - 5) * 0.03;
-    score += jitter;
-
-    if (score > bestCandidateScore) {
-      bestCandidateScore = score;
-      bestCandidateIdx = i;
-    }
-  }
-
-  if (bestCandidateIdx === -1) return null;
-
-  return {
-    opponentIndex: bestCandidateIdx,
-    opponent: existingRanked[bestCandidateIdx],
-  };
+  const idx = bestIdx !== -1 && maxGain >= MIN_EXPECTED_GAIN ? bestIdx : pendingSameTagCheck(state, median);
+  return idx === -1 ? null : { opponentIndex: idx, opponent: existingRanked[idx] };
 }
 
 /**
- * Updates both the ELO rating and the noisy search belief distribution after a user comparison choice.
+ * Updates both the ELO rating and the search belief after a comparison answer.
  */
 export function recordSxSComparison(
   state: SxSSearchState,
   opponentIndex: number,
   opponent: RestaurantEntry,
-  outcome: 'new_wins' | 'opponent_wins' | 'tie' | 'skip'
+  outcome: SxSOutcome
 ): SxSSearchState {
-  const prevWeights = [...state.slotWeights];
-  const prevMinSlot = state.minValidSlot;
-  const prevMaxSlot = state.maxValidSlot;
-  const prevAdjustments = { ...state.opponentEloAdjustments };
+  const historyStep: SxSHistoryStep = {
+    opponentId: opponent.id,
+    opponentName: opponent.name,
+    opponentIndex,
+    outcome,
+    weightsBefore: state.slotWeights,
+    candidateEloBefore: state.candidateElo,
+    eloFloorBefore: state.eloFloor,
+    eloCeilingBefore: state.eloCeiling,
+    opponentEloAdjustmentsBefore: state.opponentEloAdjustments,
+  };
 
   if (outcome === 'skip') {
     return {
       ...state,
       skippedIndices: [...state.skippedIndices, opponentIndex],
-      history: [
-        ...state.history,
-        {
-          opponentId: opponent.id,
-          opponentName: opponent.name,
-          opponentIndex,
-          outcome,
-          weightsBefore: prevWeights,
-          minValidSlotBefore: prevMinSlot,
-          maxValidSlotBefore: prevMaxSlot,
-          candidateEloBefore: state.candidateElo,
-          eloFloorBefore: state.eloFloor,
-          eloCeilingBefore: state.eloCeiling,
-          opponentEloAdjustmentsBefore: prevAdjustments,
-        },
-      ],
+      history: [...state.history, historyStep],
     };
   }
 
@@ -651,82 +618,36 @@ export function recordSxSComparison(
 
   let nextFloor = state.eloFloor;
   let nextCeiling = state.eloCeiling;
-  let nextMinSlot = state.minValidSlot;
-  let nextMaxSlot = state.maxValidSlot;
 
   if (outcome === 'new_wins') {
     nextFloor = Math.max(nextFloor, oppElo + oppDelta + 10);
     if (nextCeiling < nextFloor) nextCeiling = nextFloor + 24;
     nextCandidateElo = clamp(Math.max(nextCandidateElo, oppElo + 16), nextFloor, nextCeiling);
-
-    // Candidate beat opponent at `opponentIndex`, so candidate belongs at or above `opponentIndex`
-    nextMaxSlot = Math.min(nextMaxSlot, opponentIndex);
-    if (nextMinSlot > nextMaxSlot) {
-      nextMinSlot = nextMaxSlot;
-    }
   } else if (outcome === 'opponent_wins') {
     nextCeiling = Math.min(nextCeiling, oppElo + oppDelta - 10);
     if (nextFloor > nextCeiling) nextFloor = nextCeiling - 24;
     nextCandidateElo = clamp(Math.min(nextCandidateElo, oppElo - 16), nextFloor, nextCeiling);
-
-    // Opponent at `opponentIndex` beat candidate, so candidate belongs below `opponentIndex`
-    nextMinSlot = Math.max(nextMinSlot, opponentIndex + 1);
-    if (nextMaxSlot < nextMinSlot) {
-      nextMaxSlot = nextMinSlot;
-    }
   } else {
     nextCandidateElo = Math.round(0.5 * (state.candidateElo + oppElo));
-    nextMinSlot = clamp(opponentIndex, 0, state.slotWeights.length - 1);
-    nextMaxSlot = clamp(opponentIndex + 1, nextMinSlot, state.slotWeights.length - 1);
   }
 
-  const winMultiplier = 0.92;
-  const loseMultiplier = 0.05;
-
-  const nextWeights = state.slotWeights.map((w, slotIdx) => {
-    if (outcome === 'new_wins') {
-      return slotIdx <= opponentIndex ? w * winMultiplier : w * loseMultiplier;
-    } else if (outcome === 'opponent_wins') {
-      return slotIdx >= opponentIndex + 1 ? w * winMultiplier : w * loseMultiplier;
-    } else {
-      const distFromOpponent = Math.abs(slotIdx - (opponentIndex + 0.5));
-      const tieBoost = Math.exp(-(distFromOpponent * distFromOpponent) / (2 * 0.85 * 0.85)) + 0.08;
-      return w * tieBoost;
-    }
-  });
-
-  const nextAdjustments = {
-    ...state.opponentEloAdjustments,
-    [opponent.id]: (state.opponentEloAdjustments[opponent.id] || 0) + oppDelta,
-  };
+  const nextWeights = state.slotWeights.map(
+    (w, k) => w * outcomeLikelihood(state, k, opponentIndex, outcome)
+  );
 
   return {
     ...state,
     slotWeights: normalizeWeights(nextWeights),
-    minValidSlot: nextMinSlot,
-    maxValidSlot: nextMaxSlot,
     comparedIndices: [...state.comparedIndices, opponentIndex],
     completedComparisons: state.completedComparisons + 1,
     candidateElo: nextCandidateElo,
     eloFloor: nextFloor,
     eloCeiling: nextCeiling,
-    opponentEloAdjustments: nextAdjustments,
-    history: [
-      ...state.history,
-      {
-        opponentId: opponent.id,
-        opponentName: opponent.name,
-        opponentIndex,
-        outcome,
-        weightsBefore: prevWeights,
-        minValidSlotBefore: prevMinSlot,
-        maxValidSlotBefore: prevMaxSlot,
-        candidateEloBefore: state.candidateElo,
-        eloFloorBefore: state.eloFloor,
-        eloCeilingBefore: state.eloCeiling,
-        opponentEloAdjustmentsBefore: prevAdjustments,
-      },
-    ],
+    opponentEloAdjustments: {
+      ...state.opponentEloAdjustments,
+      [opponent.id]: (state.opponentEloAdjustments[opponent.id] || 0) + oppDelta,
+    },
+    history: [...state.history, historyStep],
   };
 }
 
@@ -749,8 +670,6 @@ export function undoLastSxSStep(state: SxSSearchState): SxSSearchState {
   return {
     ...state,
     slotWeights: lastStep.weightsBefore,
-    minValidSlot: lastStep.minValidSlotBefore,
-    maxValidSlot: lastStep.maxValidSlotBefore,
     comparedIndices: state.comparedIndices.filter((i) => i !== lastStep.opponentIndex),
     completedComparisons: Math.max(0, state.completedComparisons - 1),
     candidateElo: lastStep.candidateEloBefore,

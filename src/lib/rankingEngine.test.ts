@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getBestInsertionIndex,
+  getPlacementElo,
   initSxSSearch,
   pctToSpectrumRating,
   pickNextOpponent,
@@ -97,6 +98,56 @@ describe('rankingEngine (ELO-based)', () => {
     expect(firstPick).not.toBeNull();
     // Even though index 2 (Steakhouse) is the exact midpoint, index 3 (Ramen Bar) or index 0 (Top Sushi) is Japanese and should be picked first!
     expect(firstPick!.opponent.cuisines).toContain('Japanese');
+  });
+
+  it('recovers from a slip instead of locking the wrong half of the list out', () => {
+    const existing = recomputeMagicScores(
+      Array.from({ length: 20 }, (_, i) => makeDummySpot(`${i}`, `Spot ${i}`, 9.5 - i * 0.25, i, 'restaurants', []))
+    );
+    // The new spot truly belongs right below #3 (index 2); the first answer is a slip
+    const trueGap = 3;
+    let state = initSxSSearch(existing, 7.5);
+    let slipped = false;
+    for (let next = pickNextOpponent(state, existing); next; next = pickNextOpponent(state, existing)) {
+      let outcome: 'new_wins' | 'opponent_wins' = trueGap <= next.opponentIndex ? 'new_wins' : 'opponent_wins';
+      if (!slipped) {
+        outcome = outcome === 'new_wins' ? 'opponent_wins' : 'new_wins';
+        slipped = true;
+      }
+      state = recordSxSComparison(state, next.opponentIndex, next.opponent, outcome);
+    }
+    expect(Math.abs(getBestInsertionIndex(state).insertIndex - trueGap)).toBeLessThanOrEqual(1);
+  });
+
+  it('keeps asking past five questions on a long list when answers are still informative', () => {
+    const existing = recomputeMagicScores(
+      Array.from({ length: 200 }, (_, i) => makeDummySpot(`${i}`, `Spot ${i}`, 9.9 - i * 0.04, i, 'restaurants', []))
+    );
+    let state = initSxSSearch(existing, 6);
+    const trueGap = 57;
+    for (let next = pickNextOpponent(state, existing); next; next = pickNextOpponent(state, existing)) {
+      state = recordSxSComparison(
+        state,
+        next.opponentIndex,
+        next.opponent,
+        trueGap <= next.opponentIndex ? 'new_wins' : 'opponent_wins'
+      );
+    }
+    expect(state.completedComparisons).toBeGreaterThan(5);
+    expect(state.completedComparisons).toBeLessThanOrEqual(12);
+    expect(Math.abs(getBestInsertionIndex(state).insertIndex - trueGap)).toBeLessThanOrEqual(3);
+  });
+
+  it('squeezes the Elo of an overruled answer between its new neighbours', () => {
+    const existing = recomputeMagicScores([
+      makeDummySpot('1', 'Best', 9, 0),
+      makeDummySpot('2', 'Good', 7, 1),
+      makeDummySpot('3', 'Meh', 5, 2),
+    ]);
+    const state = { ...initSxSSearch(existing, 7), candidateElo: 5000 };
+    const elo = getPlacementElo(state, existing, 2);
+    expect(elo).toBeLessThan(existing[1].elo);
+    expect(elo).toBeGreaterThan(existing[2].elo);
   });
 
   it('maps tier boundaries to their bar shares with 5.0 in the middle of Mid, and supports linear fallback', () => {
