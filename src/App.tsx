@@ -50,7 +50,9 @@ import {
   RestaurantEntry,
   SharedListPayload,
 } from './types';
+import { stripUndefined } from './lib/firestoreDoc';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
+import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
 import { ratingToBaseElo } from './lib/rankingEngine';
 import {
   buildEntryId,
@@ -85,7 +87,6 @@ import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './li
 
 const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
-const LOCAL_SETTINGS_KEY = 'palatelo_settings_v2';
 const LOCAL_FRIENDS_KEY = 'jelly_friends_v1';
 const LOCAL_SEEN_FOLLOWERS_KEY = 'jelly_seen_followers_v1';
 const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
@@ -122,15 +123,8 @@ export const App: React.FC = () => {
   const cloudLoadedRef = useRef(false);
 
   const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.darkMode === 'boolean') return parsed.darkMode;
-      }
-    } catch {
-      // Ignore
-    }
+    const { darkMode: saved } = readLocalSettings();
+    if (typeof saved === 'boolean') return saved;
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
   });
 
@@ -194,15 +188,7 @@ export const App: React.FC = () => {
   });
   const notifiedFollowersRef = useRef<Set<string>>(new Set());
 
-  const [userHandle, setUserHandle] = useState<string>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (raw) return JSON.parse(raw).handle || '';
-    } catch {
-      // Ignore
-    }
-    return '';
-  });
+  const [userHandle, setUserHandle] = useState<string>(() => readLocalSettings().handle || '');
 
   const [friendListsMap, setFriendListsMap] = useState<Record<string, SharedListPayload>>({});
 
@@ -213,39 +199,15 @@ export const App: React.FC = () => {
     return Boolean(params.get('list'));
   });
 
-  const [defaultCity, setDefaultCity] = useState<string>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (raw) return JSON.parse(raw).defaultCity || '';
-    } catch {
-      // Ignore
-    }
-    return '';
-  });
+  const [defaultCity, setDefaultCity] = useState<string>(() => readLocalSettings().defaultCity || '');
 
-  const [linearRatingScale, setLinearRatingScale] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (raw) return Boolean(JSON.parse(raw).linearRatingScale);
-    } catch {
-      // Ignore
-    }
-    return false;
-  });
+  const [linearRatingScale, setLinearRatingScale] = useState<boolean>(() =>
+    Boolean(readLocalSettings().linearRatingScale)
+  );
 
   const [useCurrentLocation, setUseCurrentLocation] = useState<boolean>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed.useCurrentLocation === 'boolean') {
-          return parsed.useCurrentLocation;
-        }
-      }
-    } catch {
-      // Ignore
-    }
-    return true;
+    const { useCurrentLocation: saved } = readLocalSettings();
+    return typeof saved === 'boolean' ? saved : true;
   });
 
   // View & Filter State
@@ -413,10 +375,7 @@ export const App: React.FC = () => {
     setDarkMode((prev) => {
       const next = !prev;
       trackEvent('toggle_dark_mode', { dark_mode: next });
-      localStorage.setItem(
-        LOCAL_SETTINGS_KEY,
-        JSON.stringify({ defaultCity, darkMode: next, handle: userHandle })
-      );
+      updateLocalSettings({ darkMode: next });
       if (user) {
         setDoc(
           doc(db, 'users', user.uid),
@@ -589,11 +548,7 @@ export const App: React.FC = () => {
               if (localItems.length > 0) {
                 const batch = writeBatch(db);
                 for (const item of localItems) {
-                  const cleanDoc: Record<string, any> = {};
-                  Object.entries(item).forEach(([k, v]) => {
-                    if (v !== undefined) cleanDoc[k] = v;
-                  });
-                  batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), cleanDoc);
+                  batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item));
                 }
                 await batch.commit();
                 return;
@@ -626,11 +581,7 @@ export const App: React.FC = () => {
               if (!keepIds.has(id)) batch.delete(doc(db, 'users', user.uid, 'restaurants', id));
             }
             for (const item of normalized) {
-              const cleanDoc: Record<string, any> = {};
-              Object.entries(item).forEach(([k, v]) => {
-                if (v !== undefined) cleanDoc[k] = v;
-              });
-              batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), cleanDoc);
+              batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item));
             }
             await batch.commit();
             return; // The snapshot listener fires again with the migrated docs
@@ -667,11 +618,7 @@ export const App: React.FC = () => {
               if (localItems.length > 0) {
                 const batch = writeBatch(db);
                 for (const item of localItems) {
-                  const cleanDoc: Record<string, any> = {};
-                  Object.entries(item).forEach(([k, v]) => {
-                    if (v !== undefined) cleanDoc[k] = v;
-                  });
-                  batch.set(doc(db, 'users', user.uid, 'bookmarks', item.id), cleanDoc);
+                  batch.set(doc(db, 'users', user.uid, 'bookmarks', item.id), stripUndefined(item));
                 }
                 await batch.commit();
                 return;
@@ -696,11 +643,7 @@ export const App: React.FC = () => {
         if (legacyBookmarks.length > 0) {
           const batch = writeBatch(db);
           for (const bm of legacyBookmarks) {
-            const cleanDoc: Record<string, any> = {};
-            Object.entries(bm).forEach(([k, v]) => {
-              if (v !== undefined) cleanDoc[k] = v;
-            });
-            batch.set(doc(db, 'users', user.uid, 'bookmarks', bm.id), cleanDoc);
+            batch.set(doc(db, 'users', user.uid, 'bookmarks', bm.id), stripUndefined(bm));
           }
           batch.commit().catch(() => {});
         }
@@ -774,11 +717,7 @@ export const App: React.FC = () => {
           batch.delete(doc(db, 'users', user.uid, 'restaurants', deletedId));
         }
         for (const item of recomputed) {
-          const cleanDoc: Record<string, any> = {};
-          Object.entries(item).forEach(([k, v]) => {
-            if (v !== undefined) cleanDoc[k] = v;
-          });
-          batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), cleanDoc);
+          batch.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item));
         }
         await batch.commit();
       } catch (err) {
@@ -824,11 +763,7 @@ export const App: React.FC = () => {
     localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(nextBookmarks));
 
     if (user) {
-      const cleanDoc: Record<string, any> = {};
-      Object.entries(newBookmark).forEach(([k, v]) => {
-        if (v !== undefined) cleanDoc[k] = v;
-      });
-      setDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId), cleanDoc).catch(() => {});
+      setDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId), stripUndefined(newBookmark)).catch(() => {});
     }
 
     trackEvent('add_bookmark', {
@@ -995,10 +930,7 @@ export const App: React.FC = () => {
     const clean = sanitizeHandle(nextHandle);
     if (!clean) return;
     setUserHandle(clean);
-    localStorage.setItem(
-      LOCAL_SETTINGS_KEY,
-      JSON.stringify({ defaultCity, darkMode, handle: clean })
-    );
+    updateLocalSettings({ handle: clean });
     if (user) {
       setDoc(
         doc(db, 'users', user.uid),
@@ -1110,11 +1042,7 @@ export const App: React.FC = () => {
             setBookmarks(prevBookmarks);
             localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(prevBookmarks));
             if (user) {
-              const cleanDoc: Record<string, any> = {};
-              Object.entries(target).forEach(([k, v]) => {
-                if (v !== undefined) cleanDoc[k] = v;
-              });
-              setDoc(doc(db, 'users', user.uid, 'bookmarks', target.id), cleanDoc).catch(() => {});
+              setDoc(doc(db, 'users', user.uid, 'bookmarks', target.id), stripUndefined(target)).catch(() => {});
             }
             showToast(`Restored ${target.name}`);
           },
@@ -1778,16 +1706,13 @@ export const App: React.FC = () => {
 
   const saveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem(
-      LOCAL_SETTINGS_KEY,
-      JSON.stringify({
-        defaultCity: defaultCity.trim(),
-        darkMode,
-        handle: userHandle,
-        linearRatingScale,
-        useCurrentLocation,
-      })
-    );
+    updateLocalSettings({
+      defaultCity: defaultCity.trim(),
+      darkMode,
+      handle: userHandle,
+      linearRatingScale,
+      useCurrentLocation,
+    });
     if (user) {
       setDoc(
         doc(db, 'users', user.uid),

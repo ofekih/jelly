@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Check, Copy, Download, Link2, Loader2, Share2, X } from 'lucide-react';
+import { Check, Copy, Download, Link2, Loader2, Share2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SpotCategory } from '../types';
-import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
+import { Sheet, SheetHeader } from './Sheet';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -52,15 +52,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
-
-  const {
-    sheetStyle,
-    backdropStyle,
-    sheetRef,
-    scrollContainerRef,
-    bindSheetTouch,
-    bindHandleTouch,
-  } = useSwipeDownDismiss({ onClose });
 
   if (!isOpen) return null;
 
@@ -348,193 +339,167 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop overscroll-contain"
-      style={backdropStyle}
-      onClick={onClose}
-    >
-      <div
-        ref={sheetRef}
-        {...bindSheetTouch}
-        style={sheetStyle}
-        className="w-full max-w-md bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[90vh] animate-jelly-sheet overscroll-contain touch-manipulation"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Mobile Swipe-Down Handle Pill */}
-        <div
-          {...bindHandleTouch}
-          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0 touch-none select-none"
-        >
-          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
-        </div>
+    <Sheet onClose={onClose} maxWidthClassName="max-w-md" maxHeightClassName="max-h-[90vh]">
+      {(scrollContainerRef) => (
+        <>
+          <SheetHeader
+            icon={<Share2 className="w-4 h-4 text-emerald-500" />}
+            title="Share your jelly list"
+            onClose={onClose}
+          />
 
-        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 touch-none select-none">
-          <div className="flex items-center gap-2">
-            <Share2 className="w-4 h-4 text-emerald-500" />
-            <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
-              Share your jelly list
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div ref={scrollContainerRef} className="p-5 space-y-4 overflow-y-auto">
-          {/* Live Read-Only Share Link Section */}
-          <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                  Read-Only Public Link
+          <div ref={scrollContainerRef} className="p-5 space-y-4 overflow-y-auto">
+            {/* Live Read-Only Share Link Section */}
+            <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/70 dark:border-zinc-800 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                    Read-Only Public Link
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Anyone with the link can browse your ranked list &amp; map
+                  </div>
                 </div>
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Anyone with the link can browse your ranked list &amp; map
-                </div>
-              </div>
 
-              {isSignedIn ? (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {canNativeShare && (
+                {isSignedIn ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {canNativeShare && (
+                      <button
+                        type="button"
+                        onClick={handleNativeShareLink}
+                        disabled={isPublishing}
+                        className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                      >
+                        {isPublishing ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Share2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Share</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
-                      onClick={handleNativeShareLink}
+                      onClick={handleCopyShareLink}
                       disabled={isPublishing}
-                      className="px-3.5 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                      className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                        canNativeShare
+                          ? 'bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
+                          : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950'
+                      }`}
                     >
-                      {isPublishing ? (
+                      {isPublishing && !canNativeShare ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : copiedLink ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
                       ) : (
-                        <Share2 className="w-3.5 h-3.5" />
+                        <Link2 className="w-3.5 h-3.5" />
                       )}
-                      <span>Share</span>
+                      <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
                     </button>
-                  )}
+                  </div>
+                ) : (
+                  <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    Sign in to create live link
+                  </span>
+                )}
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={handleCopyShareLink}
-                    disabled={isPublishing}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors ${
-                      canNativeShare
-                        ? 'bg-zinc-200/80 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
-                        : 'bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950'
-                    }`}
-                  >
-                    {isPublishing && !canNativeShare ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : copiedLink ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-500" />
-                    ) : (
-                      <Link2 className="w-3.5 h-3.5" />
-                    )}
-                    <span>{copiedLink ? 'Copied!' : 'Copy Link'}</span>
-                  </button>
+              {shareUrl && (
+                <div className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-[11px] font-mono text-zinc-600 dark:text-zinc-300 truncate">
+                  {shareUrl}
                 </div>
-              ) : (
-                <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                  Sign in to create live link
-                </span>
               )}
             </div>
 
-            {shareUrl && (
-              <div className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-[11px] font-mono text-zinc-600 dark:text-zinc-300 truncate">
-                {shareUrl}
-              </div>
-            )}
-          </div>
-
-          {/* Preview of Top 10 Snapshot Card (matches light / dark theme) */}
-          <div className="rounded-2xl bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4 border border-zinc-200/90 dark:border-zinc-800 space-y-3 shadow-inner">
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5">
-              <div className="flex items-center gap-2">
-                <JellyBeanIcon size={20} />
-                <div>
-                  <div className="font-display font-extrabold text-sm leading-none text-zinc-900 dark:text-white">
-                    jelly
-                  </div>
-                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    {ownerName ? `${ownerName} · ` : ''}
-                    {cardTitle}
-                  </div>
-                </div>
-              </div>
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                eatwithjelly.com
-              </span>
-            </div>
-
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
-              {topSpots.map((spot, idx) => (
-                <div key={spot.id} className="py-2 flex items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-4 text-xs font-bold text-zinc-400 dark:text-zinc-500 tabular-nums shrink-0">
-                      {idx + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                        {spot.name}
-                      </div>
-                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
-                        {[
-                                            spot.cuisines[0] || spot.primaryTypeDisplay,
-                          spot.neighborhood || spot.city,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </div>
+            {/* Preview of Top 10 Snapshot Card (matches light / dark theme) */}
+            <div className="rounded-2xl bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4 border border-zinc-200/90 dark:border-zinc-800 space-y-3 shadow-inner">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <JellyBeanIcon size={20} />
+                  <div>
+                    <div className="font-display font-extrabold text-sm leading-none text-zinc-900 dark:text-white">
+                      jelly
+                    </div>
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      {ownerName ? `${ownerName} · ` : ''}
+                      {cardTitle}
                     </div>
                   </div>
-                  <ScoreBadge score={spot.magicScore} size="sm" />
                 </div>
-              ))}
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  eatwithjelly.com
+                </span>
+              </div>
+
+              <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
+                {topSpots.map((spot, idx) => (
+                  <div key={spot.id} className="py-2 flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-4 text-xs font-bold text-zinc-400 dark:text-zinc-500 tabular-nums shrink-0">
+                        {idx + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                          {spot.name}
+                        </div>
+                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
+                          {[
+                                              spot.cuisines[0] || spot.primaryTypeDisplay,
+                            spot.neighborhood || spot.city,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </div>
+                      </div>
+                    </div>
+                    <ScoreBadge score={spot.magicScore} size="sm" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="space-y-2 pt-1">
+              {canNativeShare && (
+                <button
+                  type="button"
+                  onClick={handleNativeShareListOrCard}
+                  className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-2xs"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>Share Top 10 Card &amp; List</span>
+                </button>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleDownloadCardPng}
+                  className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Save Card PNG</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyTextSummary}
+                  className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  {copiedText ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                  <span>{copiedText ? 'Copied Text!' : 'Copy as Text'}</span>
+                </button>
+              </div>
             </div>
           </div>
-
-          {/* Action Buttons */}
-          <div className="space-y-2 pt-1">
-            {canNativeShare && (
-              <button
-                type="button"
-                onClick={handleNativeShareListOrCard}
-                className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-2xs"
-              >
-                <Share2 className="w-4 h-4" />
-                <span>Share Top 10 Card &amp; List</span>
-              </button>
-            )}
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={handleDownloadCardPng}
-                className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Save Card PNG</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleCopyTextSummary}
-                className="py-2.5 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
-              >
-                {copiedText ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-500" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-                <span>{copiedText ? 'Copied Text!' : 'Copy as Text'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+    </Sheet>
   );
 };
