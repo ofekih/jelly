@@ -19,7 +19,7 @@ import {
   RestaurantEntry,
 } from '../types';
 import { SpotSocialMetrics } from '../lib/friendsService';
-import { GROUP_COPY } from '../lib/groups';
+import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -414,7 +414,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                             <span className="text-[11px] text-zinc-400">
                               {fm.status === 'ranked' && fm.rankIndex !== undefined
                                 ? `#${fm.rankIndex + 1} in ${CATEGORY_LABEL[fm.category]}`
-                                : `Want to Try · ${CATEGORY_LABEL[fm.category]}`}
+                                : `${wantLabel(fm.category)} · ${CATEGORY_LABEL[fm.category]}`}
                             </span>
                           </div>
 
@@ -527,8 +527,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       />
                       <span>
                         {isBookmarkedInMyList
-                          ? 'Remove from Want to Try'
-                          : `Save to Want to Try${
+                          ? `Remove from ${copy.want}`
+                          : `Save to ${copy.want}${
                               friendOwnerName ? ` (Rec by ${friendOwnerName})` : ''
                             }`}
                       </span>

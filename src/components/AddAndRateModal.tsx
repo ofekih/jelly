@@ -12,7 +12,7 @@ import {
   SpotCategory,
 } from '../types';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
-import { GROUP_COPY, vibeLabelForGroup } from '../lib/groups';
+import { GROUP_COPY, vibeLabelForGroup, wantLabel } from '../lib/groups';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import {
   formatDistanceMiles,
@@ -521,7 +521,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                                   {fm.friendName}{' '}
                                   {fm.status === 'ranked' && fm.magicScore !== undefined
                                     ? fm.magicScore.toFixed(1)
-                                    : '· Want to Try'}
+                                    : `· ${wantLabel(fm.category)}`}
                                 </span>
                               ))}
                             </div>
@@ -541,8 +541,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                                   ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
                                   : 'text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                               }`}
-                              title="Save to Want to Try"
-                              aria-label="Save to Want to Try"
+                              title={`Save to ${copy.want}`}
+                              aria-label={`Save to ${copy.want}`}
                             >
                               <Bookmark
                                 className={`w-4 h-4 ${isAlreadyBookmarked ? 'fill-rose-500' : ''}`}
@@ -758,7 +758,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                   >
                     <Bookmark className="w-3.5 h-3.5" />
-                    <span>Haven&rsquo;t been yet? Save to Want to Try</span>
+                    <span>Haven&rsquo;t been yet? Save to {copy.want}</span>
                   </button>
                 </div>
               )}

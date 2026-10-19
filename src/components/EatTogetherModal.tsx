@@ -161,7 +161,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                   Add a friend to blend your lists
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-xs mx-auto">
-                  Follow a friend to see overlapping Want to Try spots, shared favorites, and their top recommendations.
+                  Follow a friend to see places you both want to go, shared favorites, and their top recommendations.
                 </p>
               </div>
               <button
@@ -278,7 +278,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                 <div className="py-10 px-4 text-center rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     {activeSection === 'both_want'
-                      ? 'No overlapping Want to Try spots yet—try the "Try Next" tab to bookmark your friend’s top picks!'
+                      ? `No overlapping ${GROUP_COPY[group].want} places yet—try the "Try Next" tab to bookmark your friend’s top picks!`
                       : activeSection === 'shared_favorites'
                       ? 'No overlapping ranked spots for this filter yet.'
                       : 'No unvisited top picks for this filter.'}
@@ -327,7 +327,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                             )}
                             {item.myWantToTry && item.myScore === undefined && (
                               <span className="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[11px] font-semibold">
-                                You: Want to Try
+                                You: {GROUP_COPY[group].want}
                               </span>
                             )}
                             {item.friendBreakdown.map((fb) => (
@@ -338,7 +338,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                                 {fb.friendName}{' '}
                                 {fb.status === 'ranked' && fb.score !== undefined
                                   ? fb.score.toFixed(1)
-                                  : '· Want to Try'}
+                                  : `· ${GROUP_COPY[group].want}`}
                               </span>
                             ))}
                           </div>
@@ -376,13 +376,13 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                               }`}
                               title={
                                 isBookmarked
-                                  ? 'Remove from Want to Try'
-                                  : `Save to Want to Try (Rec by ${recLabel})`
+                                  ? `Remove from ${GROUP_COPY[group].want}`
+                                  : `Save to ${GROUP_COPY[group].want} (Rec by ${recLabel})`
                               }
                               aria-label={
                                 isBookmarked
-                                  ? 'Remove from Want to Try'
-                                  : `Save to Want to Try (Rec by ${recLabel})`
+                                  ? `Remove from ${GROUP_COPY[group].want}`
+                                  : `Save to ${GROUP_COPY[group].want} (Rec by ${recLabel})`
                               }
                             >
                               <Bookmark

@@ -18,6 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
+import { wantLabel } from '../lib/groups';
 import { getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
@@ -122,6 +123,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
       : restaurant.rankIndex + 1;
 
   const primaryCuisine = restaurant.cuisines[0] || restaurant.primaryTypeDisplay;
+  const want = wantLabel(restaurant.category);
   const locationLabel =
     restaurant.neighborhood ||
     restaurant.city ||
@@ -433,8 +435,8 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
                   ? 'text-rose-500 bg-rose-50 dark:bg-rose-950/40'
                   : 'text-zinc-400 hover:text-rose-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'
               }`}
-              title={isBookmarkedInMyList ? 'Remove from Want to Try' : 'Save to Want to Try'}
-              aria-label={isBookmarkedInMyList ? 'Remove from Want to Try' : 'Save to Want to Try'}
+              title={isBookmarkedInMyList ? `Remove from ${want}` : `Save to ${want}`}
+              aria-label={isBookmarkedInMyList ? `Remove from ${want}` : `Save to ${want}`}
             >
               <Bookmark className={`w-4 h-4 ${isBookmarkedInMyList ? 'fill-rose-500' : ''}`} />
             </button>
@@ -555,8 +557,8 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
                 label:
                   contextMenu.restaurant.placeId &&
                   bookmarkedPlaceIds?.has(contextMenu.restaurant.placeId)
-                    ? 'Remove from Want to Try'
-                    : 'Save to Want to Try',
+                    ? `Remove from ${wantLabel(contextMenu.restaurant.category)}`
+                    : `Save to ${wantLabel(contextMenu.restaurant.category)}`,
                 icon: <Bookmark className="w-4 h-4 text-rose-500" />,
                 onClick: () => onBookmarkFromFriend(contextMenu.restaurant!),
               },

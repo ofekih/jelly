@@ -1,7 +1,8 @@
-import { COMMON_CUISINES, SpotGroup } from '../types';
+import { CATEGORY_GROUP, COMMON_CUISINES, SpotCategory, SpotGroup } from '../types';
 
 interface GroupCopy {
   together: string; // "Eat Together"
+  want: string; // Bookmarked list: "Want to Try" / "Want to Go"
   togetherHint: string;
   searchPlaceholder: string;
   searchEmptyHint: string;
@@ -15,6 +16,7 @@ interface GroupCopy {
 export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
   eat: {
     together: 'Eat Together',
+    want: 'Want to Try',
     togetherHint: 'Blend your list with friends to decide where to eat together',
     searchPlaceholder: 'Search any restaurant, cafe, or bar...',
     searchEmptyHint: 'Type a restaurant name to rate & rank it, or tap the bookmark icon to save for later.',
@@ -26,6 +28,7 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
   },
   explore: {
     together: 'Visit Together',
+    want: 'Want to Go',
     togetherHint: 'Blend your list with friends to decide where to go together',
     searchPlaceholder: 'Search any museum, park, zoo, or sight...',
     searchEmptyHint: 'Type a place name to rate & rank it, or tap the bookmark icon to save for later.',
@@ -54,6 +57,7 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
   },
   travel: {
     together: 'Travel Together',
+    want: 'Want to Go',
     togetherHint: 'Blend your list with friends to decide where to travel together',
     searchPlaceholder: 'Search any city, town, island, or country...',
     searchEmptyHint: 'Type a city, town, or country to rate & rank it, or tap the bookmark icon to save for later.',
@@ -98,6 +102,11 @@ const VIBE_LABEL_OVERRIDES: Record<SpotGroup, Record<string, string>> = {
     'Obsessed · Top-tier meal': 'Obsessed · Top-tier trip',
   },
 };
+
+/** Name of the bookmarked ("want to") list a category's spots are saved to */
+export function wantLabel(category: SpotCategory): string {
+  return GROUP_COPY[CATEGORY_GROUP[category]].want;
+}
 
 export function vibeLabelForGroup(label: string, group: SpotGroup): string {
   return VIBE_LABEL_OVERRIDES[group][label] ?? label;

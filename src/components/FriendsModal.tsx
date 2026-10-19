@@ -370,7 +370,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                                 </button>
                               </>
                             ) : (
-                              <span>{res.bookmarks?.length || 0} want to try</span>
+                              <span>{res.bookmarks?.length || 0} saved</span>
                             )}
                           </div>
                         </div>
@@ -457,7 +457,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             </div>
                             <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
                               {follower.restaurants?.length || 0} ranked ·{' '}
-                              {follower.bookmarks?.length || 0} want to try
+                              {follower.bookmarks?.length || 0} saved
                             </div>
                           </div>
                         </button>
@@ -578,7 +578,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                                   </button>
                                 </>
                               ) : (
-                                <span>{bookmarkCount} want to try</span>
+                                <span>{bookmarkCount} saved</span>
                               )}
                             </div>
                           </div>

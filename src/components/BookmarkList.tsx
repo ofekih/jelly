@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
+import { wantLabel } from '../lib/groups';
 import { getSpotSocialMetrics } from '../lib/friendsService';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
@@ -57,6 +58,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   }, [openSwipeId, item.id, swipeX, isTouchTracking]);
 
   const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
+  const want = wantLabel(item.category);
   const locationLabel = item.neighborhood || item.city;
   const rawMiles = getItemDistanceMiles(item, userLocation);
   const distLabel = formatDistanceMiles(rawMiles);
@@ -303,8 +305,8 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
               }`}
               title={
                 isAlreadySavedByMe
-                  ? 'Saved in your Want to Try'
-                  : `Save to your Want to Try${friendName ? ` (Rec by ${friendName})` : ''}`
+                  ? `Saved in your ${want}`
+                  : `Save to your ${want}${friendName ? ` (Rec by ${friendName})` : ''}`
               }
             >
               <Bookmark className={`w-4 h-4 ${isAlreadySavedByMe ? 'fill-rose-500' : ''}`} />
@@ -327,7 +329,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
                 type="button"
                 onClick={() => onDeleteBookmark(item.id)}
                 className="p-1.5 rounded-full text-zinc-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                title="Remove from Want to Try"
+                title={`Remove from ${want}`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -441,8 +443,8 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
                   (contextMenu.bookmark.placeId &&
                     myBookmarkedPlaceIds?.has(contextMenu.bookmark.placeId)) ||
                   myBookmarkedNames?.has(contextMenu.bookmark.name.trim().toLowerCase())
-                    ? 'Remove from Want to Try'
-                    : 'Save to Want to Try',
+                    ? `Remove from ${wantLabel(contextMenu.bookmark.category)}`
+                    : `Save to ${wantLabel(contextMenu.bookmark.category)}`,
                 icon: <Bookmark className="w-4 h-4 text-rose-500" />,
                 onClick: () => onSaveFromFriendBookmark(contextMenu.bookmark!),
               },
@@ -451,7 +453,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
         ...(!readOnly
           ? [
               {
-                label: 'Remove from Want to Try',
+                label: `Remove from ${wantLabel(contextMenu.bookmark.category)}`,
                 icon: <Trash2 className="w-4 h-4 text-rose-500" />,
                 danger: true,
                 onClick: () => onDeleteBookmark(contextMenu.bookmark!.id),
