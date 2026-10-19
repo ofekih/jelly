@@ -78,3 +78,31 @@ export function formatDistanceMiles(miles: number | null | undefined): string | 
   if (miles < 100) return `${Math.round(miles)} mi`;
   return null; // Don't clutter with "2,500 mi" for another coast unless sorted by nearest
 }
+
+const MANUAL_SPOT_NEARBY_MILES = 10;
+
+/**
+ * Picks a city for a custom (manual) spot, which has no address of its own: the city of the
+ * closest known spot within ~10 mi of the user's location, else the default search city, else
+ * none. Only spots with real coordinates count, so a far-away list can't leak its city in.
+ */
+export function resolveManualSpotCity(
+  knownSpots: { lat?: number; lng?: number; city?: string }[],
+  userLoc?: UserCoordinates | null,
+  defaultCity = ''
+): string {
+  if (userLoc) {
+    let best: { city: string; miles: number } | null = null;
+    for (const spot of knownSpots) {
+      const city = spot.city?.trim();
+      if (!city || typeof spot.lat !== 'number' || typeof spot.lng !== 'number') continue;
+      if (Number.isNaN(spot.lat) || Number.isNaN(spot.lng)) continue;
+      const miles = haversineDistanceMiles(userLoc.lat, userLoc.lng, spot.lat, spot.lng);
+      if (miles <= MANUAL_SPOT_NEARBY_MILES && (!best || miles < best.miles)) {
+        best = { city, miles };
+      }
+    }
+    if (best) return best.city;
+  }
+  return defaultCity.trim();
+}

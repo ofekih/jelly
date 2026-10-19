@@ -12,7 +12,12 @@ import {
 } from '../types';
 import { createManualPlaceCandidate, searchRestaurants } from '../lib/placesService';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
-import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
+import {
+  formatDistanceMiles,
+  getItemDistanceMiles,
+  resolveManualSpotCity,
+  UserCoordinates,
+} from '../lib/geo';
 import { pctToSpectrumRating, spectrumRatingToPct } from '../lib/rankingEngine';
 import { trackEvent } from '../firebase';
 
@@ -323,7 +328,10 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
   const handleCreateManual = () => {
     if (!searchQuery.trim()) return;
-    const manual = createManualPlaceCandidate(searchQuery, defaultCity);
+    const manual = createManualPlaceCandidate(
+      searchQuery,
+      resolveManualSpotCity(existingRestaurants, userLocation, defaultCity)
+    );
     handleSelectCandidate(manual);
   };
 

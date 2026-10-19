@@ -495,9 +495,9 @@ export async function searchRestaurants(
   return { results: [], providerUsed: 'osm_photon' };
 }
 
-export function createManualPlaceCandidate(name: string, cityOrNeighborhood = ''): PlaceCandidate {
+export function createManualPlaceCandidate(name: string, city = ''): PlaceCandidate {
   const cleanName = name.trim();
-  const cleanLoc = cityOrNeighborhood.trim();
+  const cleanLoc = city.trim();
   const { categories, cuisines, primaryTypeDisplay } = autoCategorizePlace({
     name: cleanName,
   });
@@ -506,7 +506,6 @@ export function createManualPlaceCandidate(name: string, cityOrNeighborhood = ''
     placeId: `manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: cleanName,
     formattedAddress: cleanLoc || 'Custom spot',
-    neighborhood: cleanLoc || undefined,
     city: cleanLoc || undefined,
     googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
       `${cleanName} ${cleanLoc}`
