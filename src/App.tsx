@@ -12,6 +12,7 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  QuerySnapshot,
   setDoc,
   WriteBatch,
 } from 'firebase/firestore';
@@ -79,6 +80,7 @@ import {
   loadBookmarks,
   loadRestaurants,
   recomputeAllCategoryScores,
+  staleDerivedScores,
   replaceCategoryList,
   sanitizeLoadedBookmark,
   toSharedEntry,
@@ -645,11 +647,30 @@ export const App: React.FC = () => {
     const colRef = collection(db, 'users', user.uid, 'restaurants');
     // Metadata changes are needed to learn when the server confirms what the cache showed
     let applied = false;
+    // Scores are recomputed on load (the scoring model can change between versions); once per
+    // load, save any that moved so the stored docs, and the community averages built from them,
+    // stay current
+    let storedScoresChecked = false;
+    const refreshStoredScores = (snapshot: QuerySnapshot) => {
+      const { fromCache, hasPendingWrites } = snapshot.metadata;
+      if (storedScoresChecked || fromCache || hasPendingWrites || snapshot.empty) return;
+      storedScoresChecked = true;
+      const storedById = new Map(snapshot.docs.map((d) => [d.id, d.data()]));
+      const stale = staleDerivedScores(storedById, loadRestaurants([...storedById.values()]));
+      if (stale.length === 0) return;
+      commitInBatches(
+        db,
+        stale.map(({ id, fields }) => (b: WriteBatch) =>
+          b.update(doc(db, 'users', user.uid, 'restaurants', id), { ...fields })
+        )
+      ).catch(logWriteError('refresh stored scores'));
+    };
     const unsub = onSnapshot(
       colRef,
       { includeMetadataChanges: true },
       async (snapshot) => {
         const { fromCache } = snapshot.metadata;
+        refreshStoredScores(snapshot);
         if (applied && snapshot.docChanges().length === 0) {
           if (!fromCache) markServerSynced(user.uid, 'restaurants');
           return;

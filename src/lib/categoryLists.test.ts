@@ -6,6 +6,7 @@ import {
   legacyMealToCategory,
   loadBookmarks,
   loadRestaurants,
+  staleDerivedScores,
 } from './categoryLists';
 import { autoCategorizePlace } from './categorizer';
 import { fitCandidatesToGroup } from './placesService';
@@ -185,5 +186,39 @@ describe('fitCandidatesToGroup', () => {
     );
     expect(fitted.map((c) => c.name)).toEqual(['Disneyland', 'Alcatraz']);
     expect(fitted[0].categories).toEqual(['nature', 'theme_parks']);
+  });
+});
+
+describe('staleDerivedScores', () => {
+  const stored = (id: string, rankIndex: number, initialRating: number, magicScore: number) => ({
+    id,
+    placeId: id,
+    name: id,
+    formattedAddress: '',
+    category: 'restaurants',
+    categories: ['restaurants'],
+    cuisines: [],
+    initialRating,
+    rankIndex,
+    magicScore,
+    createdAt: 0,
+    updatedAt: 0,
+  });
+
+  it('flags only docs whose stored scores no longer match the recomputed ones', () => {
+    const raws = [stored('a__restaurants', 0, 9, 0), stored('b__restaurants', 1, 6, 0)];
+    const loaded = loadRestaurants(raws);
+    const byId = new Map<string, any>(raws.map((r) => [r.id, r]));
+    const stale = staleDerivedScores(byId, loaded);
+    expect(stale.map((s) => s.id)).toEqual(['a__restaurants', 'b__restaurants']);
+    expect(stale[0].fields).toEqual({
+      magicScore: loaded[0].magicScore,
+      elo: loaded[0].elo,
+      rankIndex: 0,
+    });
+
+    // Once written back, nothing is stale
+    const healed = new Map<string, any>(loaded.map((r) => [r.id, { ...r }]));
+    expect(staleDerivedScores(healed, loadRestaurants([...healed.values()]))).toEqual([]);
   });
 });

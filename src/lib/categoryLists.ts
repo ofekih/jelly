@@ -194,3 +194,32 @@ export function loadRestaurants(raws: any[]): RestaurantEntry[] {
 export function loadBookmarks(raws: any[]): BookmarkEntry[] {
   return raws.filter((raw) => !isFromNewerVersion(raw)).map(sanitizeLoadedBookmark);
 }
+
+/** Fields `recomputeAllCategoryScores` derives from the order and gut ratings. */
+export type DerivedScoreFields = Pick<RestaurantEntry, 'magicScore' | 'elo' | 'rankIndex'>;
+
+/**
+ * Loaded entries whose recomputed scores differ from the stored doc (e.g. after the scoring
+ * model changed), with just the fields to write back. Keyed by doc ID.
+ */
+export function staleDerivedScores(
+  storedById: Map<string, any>,
+  loaded: RestaurantEntry[]
+): Array<{ id: string; fields: DerivedScoreFields }> {
+  const stale: Array<{ id: string; fields: DerivedScoreFields }> = [];
+  for (const entry of loaded) {
+    const stored = storedById.get(entry.id);
+    if (!stored) continue;
+    if (
+      stored.magicScore !== entry.magicScore ||
+      stored.elo !== entry.elo ||
+      stored.rankIndex !== entry.rankIndex
+    ) {
+      stale.push({
+        id: entry.id,
+        fields: { magicScore: entry.magicScore, elo: entry.elo, rankIndex: entry.rankIndex },
+      });
+    }
+  }
+  return stale;
+}
