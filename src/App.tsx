@@ -118,11 +118,19 @@ import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
 import { useBodyScrollLock } from './lib/useBodyScrollLock';
+import {
+  clearAccountCache,
+  isForeignCache,
+  LEGACY_LOCAL_STORAGE_KEY,
+  LOCAL_BOOKMARKS_KEY,
+  LOCAL_FRIENDS_KEY,
+  LOCAL_SEEN_FOLLOWERS_KEY,
+  LOCAL_STORAGE_KEY,
+  readCacheOwner,
+  shouldSeedCloudFromLocal,
+  writeCacheOwner,
+} from './lib/localCache';
 
-const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
-const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
-const LOCAL_FRIENDS_KEY = 'jelly_friends_v1';
-const LOCAL_SEEN_FOLLOWERS_KEY = 'jelly_seen_followers_v1';
 const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
 
 function parseSharedListDoc(id: string, data: any): SharedListPayload {
@@ -170,7 +178,7 @@ export const App: React.FC = () => {
     try {
       const raw =
         localStorage.getItem(LOCAL_STORAGE_KEY) ||
-        localStorage.getItem('palate_personal_restaurants_v1');
+        localStorage.getItem(LEGACY_LOCAL_STORAGE_KEY);
       if (raw) {
         return loadRestaurants(JSON.parse(raw) as any[]);
       }
@@ -459,9 +467,33 @@ export const App: React.FC = () => {
     });
   };
 
+  // Which of the account's collections the server has confirmed this session; once both have,
+  // the local copies are a mirror of that account (see `CACHE_OWNER_KEY`)
+  const serverSyncedRef = useRef<Set<'restaurants' | 'bookmarks'>>(new Set());
+  const markServerSynced = (uid: string, part: 'restaurants' | 'bookmarks') => {
+    serverSyncedRef.current.add(part);
+    if (serverSyncedRef.current.size === 2 && readCacheOwner() !== uid) writeCacheOwner(uid);
+  };
+
+  const resetAccountState = () => {
+    clearAccountCache();
+    restaurantsRef.current = [];
+    setRestaurants([]);
+    setBookmarks([]);
+    setFriends([]);
+    setSeenFollowerIds(new Set());
+    notifiedFollowersRef.current = new Set();
+    setFriendListsMap({});
+    setUserHandle('');
+  };
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       cloudLoadedRef.current = false;
+      serverSyncedRef.current = new Set();
+      // Signed out (here or in another tab) or a different account: drop the previous account's
+      // local copies so they are neither shown nor uploaded into this account
+      if (isForeignCache(readCacheOwner(), u?.uid ?? null)) resetAccountState();
       setUser(u);
       setAnalyticsUser(u?.uid ?? null);
       setAuthLoading(false);
@@ -506,10 +538,12 @@ export const App: React.FC = () => {
           });
         }
         if (Array.isArray(data.friends)) {
+          // Once this device mirrors the account the cloud list wins, so unfollows made on other
+          // devices stick; signed-out follows are merged in until then
+          const keepLocal = readCacheOwner() !== user.uid;
           setFriends((prev) => {
-            // Merge local and cloud friends by uid
             const mergedMap = new Map<string, FriendProfile>();
-            for (const f of prev) mergedMap.set(f.uid, f);
+            if (keepLocal) for (const f of prev) mergedMap.set(f.uid, f);
             for (const f of data.friends) {
               if (f && typeof f.uid === 'string') {
                 mergedMap.set(f.uid, f as FriendProfile);
@@ -609,11 +643,25 @@ export const App: React.FC = () => {
     if (!user) return;
 
     const colRef = collection(db, 'users', user.uid, 'restaurants');
+    // Metadata changes are needed to learn when the server confirms what the cache showed
+    let applied = false;
     const unsub = onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       async (snapshot) => {
+        const { fromCache } = snapshot.metadata;
+        if (applied && snapshot.docChanges().length === 0) {
+          if (!fromCache) markServerSynced(user.uid, 'restaurants');
+          return;
+        }
         if (snapshot.empty) {
-          const localRaw = localStorage.getItem(LOCAL_STORAGE_KEY);
+          // An empty offline cache says nothing about the account; wait for the server
+          if (fromCache && !applied) return;
+          // Only on first load: later empties are deletions, never a reason to re-upload
+          const localRaw =
+            !applied && shouldSeedCloudFromLocal(readCacheOwner(), fromCache)
+              ? localStorage.getItem(LOCAL_STORAGE_KEY)
+              : null;
           if (localRaw) {
             try {
               const localItems = loadRestaurants(JSON.parse(localRaw) as any[]);
@@ -630,8 +678,12 @@ export const App: React.FC = () => {
               // Ignore
             }
           }
+          applied = true;
           cloudLoadedRef.current = true;
+          restaurantsRef.current = [];
           setRestaurants([]);
+          localStorage.setItem(LOCAL_STORAGE_KEY, '[]');
+          if (!fromCache) markServerSynced(user.uid, 'restaurants');
           return;
         }
 
@@ -663,9 +715,11 @@ export const App: React.FC = () => {
           }
         }
 
+        applied = true;
         cloudLoadedRef.current = true;
         setRestaurants(normalized);
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
+        if (!fromCache) markServerSynced(user.uid, 'restaurants');
       },
       (err) => {
         console.error('Firestore subscription error:', err);
@@ -680,11 +734,25 @@ export const App: React.FC = () => {
     if (!user) return;
 
     const colRef = collection(db, 'users', user.uid, 'bookmarks');
+    // Metadata changes are needed to learn when the server confirms what the cache showed
+    let applied = false;
     const unsub = onSnapshot(
       colRef,
+      { includeMetadataChanges: true },
       async (snapshot) => {
+        const { fromCache } = snapshot.metadata;
+        if (applied && snapshot.docChanges().length === 0) {
+          if (!fromCache) markServerSynced(user.uid, 'bookmarks');
+          return;
+        }
         if (snapshot.empty) {
-          const localRaw = localStorage.getItem(LOCAL_BOOKMARKS_KEY);
+          // An empty offline cache says nothing about the account; wait for the server
+          if (fromCache && !applied) return;
+          // Only on first load: later empties are deletions, never a reason to re-upload
+          const localRaw =
+            !applied && shouldSeedCloudFromLocal(readCacheOwner(), fromCache)
+              ? localStorage.getItem(LOCAL_BOOKMARKS_KEY)
+              : null;
           if (localRaw) {
             try {
               const localItems = loadBookmarks(JSON.parse(localRaw) as any[]);
@@ -701,7 +769,10 @@ export const App: React.FC = () => {
               // Ignore
             }
           }
+          applied = true;
           setBookmarks([]);
+          localStorage.setItem(LOCAL_BOOKMARKS_KEY, '[]');
+          if (!fromCache) markServerSynced(user.uid, 'bookmarks');
           return;
         }
 
@@ -723,9 +794,11 @@ export const App: React.FC = () => {
             )
           ).catch(logWriteError('migrate legacy bookmarks'));
         }
+        applied = true;
         loaded.sort((a, b) => b.createdAt - a.createdAt);
         setBookmarks(loaded);
         localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(loaded));
+        if (!fromCache) markServerSynced(user.uid, 'bookmarks');
       },
       (err) => {
         console.error('Firestore bookmarks subscription error:', err);
@@ -1225,6 +1298,8 @@ export const App: React.FC = () => {
       onConfirm: async () => {
         setIsSettingsOpen(false);
         await signOut(auth);
+        // Also covers an account whose lists never finished their first server sync
+        resetAccountState();
         trackEvent('logout');
         showToast('Signed out');
       },
