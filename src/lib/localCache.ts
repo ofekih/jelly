@@ -5,6 +5,8 @@ export const LEGACY_LOCAL_STORAGE_KEY = 'palate_personal_restaurants_v1';
 export const LOCAL_BOOKMARKS_KEY = 'palatelo_bookmarks_v2';
 export const LOCAL_FRIENDS_KEY = 'jelly_friends_v1';
 export const LOCAL_SEEN_FOLLOWERS_KEY = 'jelly_seen_followers_v1';
+/** Followed UIDs whose `profiles/{uid}/followers/{me}` edge is known to exist */
+export const LOCAL_FOLLOW_EDGES_KEY = 'jelly_follow_edges_v1';
 
 /**
  * UID of the account whose cloud data the local copies above mirror. Absent = signed-out data
@@ -19,6 +21,7 @@ const ACCOUNT_KEYS = [
   LOCAL_BOOKMARKS_KEY,
   LOCAL_FRIENDS_KEY,
   LOCAL_SEEN_FOLLOWERS_KEY,
+  LOCAL_FOLLOW_EDGES_KEY,
   CACHE_OWNER_KEY,
 ];
 
@@ -33,6 +36,23 @@ export function readCacheOwner(): string | null {
 export function writeCacheOwner(uid: string): void {
   try {
     localStorage.setItem(CACHE_OWNER_KEY, uid);
+  } catch {
+    // Ignore (storage full or unavailable)
+  }
+}
+
+export function readSyncedFollowEdges(): Set<string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_FOLLOW_EDGES_KEY) || '[]');
+    return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeSyncedFollowEdges(uids: Iterable<string>): void {
+  try {
+    localStorage.setItem(LOCAL_FOLLOW_EDGES_KEY, JSON.stringify([...new Set(uids)]));
   } catch {
     // Ignore (storage full or unavailable)
   }

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { FriendProfile, RestaurantEntry, SharedListPayload } from '../types';
 import { computeUserTasteSimilarity, sanitizeHandle } from '../lib/friendsService';
-import { FollowGraph, getFollowersForUser, getFollowingForUser } from '../lib/followGraph';
+import { FollowCounts } from './FollowCounts';
 import { Sheet, SheetHeader } from './Sheet';
 
 interface FriendsModalProps {
@@ -30,7 +30,6 @@ interface FriendsModalProps {
   friendListsMap: Record<string, SharedListPayload>;
   followers?: SharedListPayload[];
   newFollowerIds?: Set<string>;
-  followGraph?: FollowGraph;
   onOpenFollowList?: (title: string, users: SharedListPayload[]) => void;
   onSearchDirectory: (query: string) => Promise<SharedListPayload[]>;
   onFollowFriend: (listPayload: SharedListPayload) => Promise<void>;
@@ -53,7 +52,6 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   friendListsMap,
   followers = [],
   newFollowerIds = new Set(),
-  followGraph,
   onOpenFollowList,
   onSearchDirectory,
   onFollowFriend,
@@ -197,35 +195,17 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                     <div className="text-xs text-zinc-500 dark:text-zinc-400">
                       Friends can search you by @{userHandle || 'handle'} or use your link
                     </div>
-                    {followGraph && userUid && (
+                    {userUid && (
                       <div className="flex items-center gap-2.5 text-xs text-zinc-500 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const list = getFollowersForUser(followGraph, userUid);
-                            onOpenFollowList?.('Your Followers', list);
-                          }}
-                          className="hover:underline hover:text-emerald-600 dark:hover:text-emerald-400 font-medium"
-                        >
-                          <span className="font-bold text-zinc-900 dark:text-zinc-100">
-                            {getFollowersForUser(followGraph, userUid).length}
-                          </span>{' '}
-                          followers
-                        </button>
-                        <span>·</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const list = getFollowingForUser(followGraph, userUid);
-                            onOpenFollowList?.('You Are Following', list);
-                          }}
-                          className="hover:underline hover:text-emerald-600 dark:hover:text-emerald-400 font-medium"
-                        >
-                          <span className="font-bold text-zinc-900 dark:text-zinc-100">
-                            {getFollowingForUser(followGraph, userUid).length}
-                          </span>{' '}
-                          following
-                        </button>
+                        <FollowCounts
+                          uid={userUid}
+                          followersTitle="Your Followers"
+                          followingTitle="You Are Following"
+                          onOpenFollowList={onOpenFollowList}
+                          refreshKey={friends.length}
+                          buttonClassName="hover:underline hover:text-emerald-600 dark:hover:text-emerald-400 font-medium"
+                          numberClassName="font-bold text-zinc-900 dark:text-zinc-100"
+                        />
                       </div>
                     )}
                   </div>
@@ -343,35 +323,15 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             )}
                           </div>
                           <div className="text-[11px] text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
-                            <span>{res.restaurants?.length || 0} ranked</span>
+                            <span>{res.rankedCount ?? res.restaurants?.length ?? 0} ranked</span>
                             <span>·</span>
-                            {followGraph ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const list = getFollowersForUser(followGraph, res.ownerUid || res.id);
-                                    onOpenFollowList?.(`${res.ownerName || 'Friend'}'s Followers`, list);
-                                  }}
-                                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
-                                >
-                                  {getFollowersForUser(followGraph, res.ownerUid || res.id).length} followers
-                                </button>
-                                <span>·</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const list = getFollowingForUser(followGraph, res.ownerUid || res.id);
-                                    onOpenFollowList?.(`${res.ownerName || 'Friend'} is Following`, list);
-                                  }}
-                                  className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
-                                >
-                                  {getFollowingForUser(followGraph, res.ownerUid || res.id).length} following
-                                </button>
-                              </>
-                            ) : (
-                              <span>{res.bookmarks?.length || 0} saved</span>
-                            )}
+                            <FollowCounts
+                              uid={res.ownerUid || res.id}
+                              followersTitle={`${res.ownerName || 'Friend'}'s Followers`}
+                              followingTitle={`${res.ownerName || 'Friend'} is Following`}
+                              onOpenFollowList={onOpenFollowList}
+                              buttonClassName="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                            />
                           </div>
                         </div>
 
@@ -456,8 +416,9 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               )}
                             </div>
                             <div className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                              {follower.restaurants?.length || 0} ranked ·{' '}
-                              {follower.bookmarks?.length || 0} saved
+                              {follower.rankedCount ?? follower.restaurants?.length ?? 0} ranked
+                              {friendListsMap[follower.id]?.bookmarks &&
+                                ` · ${friendListsMap[follower.id].bookmarks!.length} saved`}
                             </div>
                           </div>
                         </button>
@@ -507,7 +468,6 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                   {friends.map((friend) => {
                     const listData = friendListsMap[friend.uid];
                     const rankedCount = listData?.restaurants?.length ?? 0;
-                    const bookmarkCount = listData?.bookmarks?.length ?? 0;
                     const sim =
                       myRestaurants.length > 0 && listData?.restaurants?.length
                         ? computeUserTasteSimilarity(myRestaurants, listData.restaurants)
@@ -551,35 +511,13 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                             <div className="text-[11px] text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
                               <span>{rankedCount} ranked</span>
                               <span>·</span>
-                              {followGraph ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const list = getFollowersForUser(followGraph, friend.uid);
-                                      onOpenFollowList?.(`${friend.name}'s Followers`, list);
-                                    }}
-                                    className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
-                                  >
-                                    {getFollowersForUser(followGraph, friend.uid).length} followers
-                                  </button>
-                                  <span>·</span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const list = getFollowingForUser(followGraph, friend.uid);
-                                      onOpenFollowList?.(`${friend.name} is Following`, list);
-                                    }}
-                                    className="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
-                                  >
-                                    {getFollowingForUser(followGraph, friend.uid).length} following
-                                  </button>
-                                </>
-                              ) : (
-                                <span>{bookmarkCount} saved</span>
-                              )}
+                              <FollowCounts
+                                uid={friend.uid}
+                                followersTitle={`${friend.name}'s Followers`}
+                                followingTitle={`${friend.name} is Following`}
+                                onOpenFollowList={onOpenFollowList}
+                                buttonClassName="hover:underline hover:text-zinc-700 dark:hover:text-zinc-300"
+                              />
                             </div>
                           </div>
                         </button>

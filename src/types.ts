@@ -213,6 +213,10 @@ export interface SharedListPayload {
   followingIds?: string[];
   restaurants: RestaurantEntry[];
   bookmarks?: BookmarkEntry[];
+  /** Number of ranked spots, when known without the spots themselves (profiles) */
+  rankedCount?: number;
+  /** Built from `profiles/{uid}`: carries no spots; load `sharedLists/{uid}` to show the list */
+  profileOnly?: boolean;
   createdAt: number;
   updatedAt: number;
 }

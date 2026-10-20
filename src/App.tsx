@@ -10,7 +10,6 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  getDocs,
   onSnapshot,
   QuerySnapshot,
   setDoc,
@@ -83,7 +82,6 @@ import {
   staleDerivedScores,
   replaceCategoryList,
   sanitizeLoadedBookmark,
-  toSharedEntry,
 } from './lib/categoryLists';
 import {
   appendComparisons,
@@ -97,7 +95,6 @@ import {
 } from './lib/comparisonHistory';
 import { OrderCheckModal } from './components/OrderCheckModal';
 import {
-  deduplicateUserLists,
   deriveDefaultHandle,
   getFriendMatchesForSpot,
   getSpotSocialMetrics,
@@ -118,7 +115,6 @@ import { SpotDetailModal } from './components/SpotDetailModal';
 import { WhatsNewModal } from './components/WhatsNewModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
-import { buildFollowGraph, getFollowersForUser, getFollowingForUser } from './lib/followGraph';
 import { useBodyScrollLock } from './lib/useBodyScrollLock';
 import {
   clearAccountCache,
@@ -129,9 +125,28 @@ import {
   LOCAL_SEEN_FOLLOWERS_KEY,
   LOCAL_STORAGE_KEY,
   readCacheOwner,
+  readSyncedFollowEdges,
   shouldSeedCloudFromLocal,
   writeCacheOwner,
+  writeSyncedFollowEdges,
 } from './lib/localCache';
+import {
+  buildProfileDoc,
+  fetchProfiles,
+  placeStatKey,
+  searchProfiles,
+  setFollowEdge,
+} from './lib/socialService';
+import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
+import { FollowCounts } from './components/FollowCounts';
+import { buildPublicLists, PublicListTrim } from './lib/publicList';
+
+const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
+  bookmarkNotes: 'Your list is too big to share in full – friends won’t see your bookmark notes',
+  notes: 'Your list is too big to share in full – friends won’t see your notes',
+  bookmarks: 'Your list is too big to share in full – friends won’t see your notes or bookmarks',
+  spots: 'Your list is too big to share in full – friends only see your top spots',
+};
 
 const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
 
@@ -493,6 +508,7 @@ export const App: React.FC = () => {
     const unsub = onAuthStateChanged(auth, (u) => {
       cloudLoadedRef.current = false;
       serverSyncedRef.current = new Set();
+      lastProfileJsonRef.current = '';
       // Signed out (here or in another tab) or a different account: drop the previous account's
       // local copies so they are neither shown nor uploaded into this account
       if (isForeignCache(readCacheOwner(), u?.uid ?? null)) resetAccountState();
@@ -587,58 +603,69 @@ export const App: React.FC = () => {
     });
   };
 
-  // Live-fetch SharedListPayload for each followed friend
+  // Live subscription to each followed friend's list (one doc each, only re-sent when it changes)
+  const friendDocKey = friends
+    .map((f) => `${f.uid}=${f.shareId || f.uid}`)
+    .sort()
+    .join('|');
   useEffect(() => {
-    if (friends.length === 0) return;
-    let cancelled = false;
-    friends.forEach((friend) => {
-      const shareDocId = friend.shareId || friend.uid;
-      if (!shareDocId) return;
-      getDoc(doc(db, 'sharedLists', shareDocId))
-        .then((snap) => {
-          if (cancelled || !snap.exists()) return;
+    if (!friendDocKey) return;
+    const unsubs = friendDocKey.split('|').map((pair) => {
+      const [friendUid, shareDocId] = pair.split('=');
+      return onSnapshot(
+        doc(db, 'sharedLists', shareDocId),
+        (snap) => {
+          if (!snap.exists()) return;
           const parsed = parseSharedListDoc(snap.id, snap.data());
-          setFriendListsMap((prev) => ({
-            ...prev,
-            [friend.uid]: parsed,
-          }));
-        })
-        .catch(() => {});
+          setFriendListsMap((prev) => ({ ...prev, [friendUid]: parsed }));
+        },
+        () => {}
+      );
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [friends]);
+    return () => unsubs.forEach((unsub) => unsub());
+  }, [friendDocKey]);
 
-  // Live subscription to public jelly lists for community average, collaborative taste predictions & follower notifications
-  const [communityLists, setCommunityLists] = useState<SharedListPayload[]>([]);
+  // People following me: edges in profiles/{me}/followers, shown with their public profiles
+  const [followers, setFollowers] = useState<SharedListPayload[]>([]);
   useEffect(() => {
-    const colRef = collection(db, 'sharedLists');
+    if (!user) {
+      setFollowers([]);
+      return;
+    }
+    let cancelled = false;
     const unsub = onSnapshot(
-      colRef,
+      collection(db, 'profiles', user.uid, 'followers'),
       (snapshot) => {
-        const docs: SharedListPayload[] = [];
-        snapshot.forEach((docSnap) => {
-          docs.push(parseSharedListDoc(docSnap.id, docSnap.data()));
-        });
-        const deduped = deduplicateUserLists(docs);
-        setCommunityLists(deduped);
-        // Also keep friendListsMap fresh for any followed friends present in sharedLists
-        setFriendListsMap((prev) => {
-          const next = { ...prev };
-          for (const d of deduped) {
-            const uid = d.ownerUid || d.id;
-            if (uid && next[uid]) {
-              next[uid] = d;
-            }
-          }
-          return next;
-        });
+        const uids = snapshot.docs.map((d) => d.id);
+        fetchProfiles(db, uids)
+          .then((profiles) => {
+            if (!cancelled) setFollowers(profiles);
+          })
+          .catch(() => {});
       },
       () => {}
     );
-    return () => unsub();
-  }, []);
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [user]);
+
+  // Follows made before follower edges existed (or on an older app version) get their edge once
+  useEffect(() => {
+    if (!user || friends.length === 0) return;
+    const done = readSyncedFollowEdges();
+    const missing = friends.map((f) => f.uid).filter((uid) => uid && !done.has(uid));
+    if (missing.length === 0) return;
+    Promise.all(
+      missing.map((uid) =>
+        setFollowEdge(db, user.uid, uid, true).then(
+          () => uid,
+          () => null
+        )
+      )
+    ).then((synced) => writeSyncedFollowEdges([...done, ...synced.filter((u): u is string => !!u)]));
+  }, [user, friends]);
 
   // Firestore subscription for Ranked Restaurants
   useEffect(() => {
@@ -829,34 +856,64 @@ export const App: React.FC = () => {
     return () => unsub();
   }, [user]);
 
-  // Auto-sync signed-in user's public sharedLists/{uid} document so friends, @handle search, & follower notifications stay live
+  // Public docs friends read: sharedLists/{uid} (the list behind your link) and profiles/{uid}
+  // (search, follower lists). The profile is only rewritten when it changes.
+  const lastProfileJsonRef = useRef('');
+  const trimWarnedRef = useRef(false);
+  const publishPublicDocs = async (overrideHandle?: string) => {
+    if (!user) return null;
+    const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'Friend';
+    const effectiveHandle =
+      sanitizeHandle(overrideHandle || userHandle) || deriveDefaultHandle(user.displayName, user.email);
+    const lists = buildPublicLists(restaurants, bookmarks);
+    if (lists.trimmed !== 'none' && !trimWarnedRef.current) {
+      trimWarnedRef.current = true;
+      showToast(PUBLIC_TRIM_MESSAGE[lists.trimmed], undefined, 6000);
+    }
+
+    const payload: Record<string, any> = {
+      id: user.uid,
+      ownerUid: user.uid,
+      ownerName,
+      displayName: user.displayName || ownerName,
+      handle: effectiveHandle,
+      restaurants: lists.restaurants,
+      bookmarks: lists.bookmarks,
+      // Still read by app versions from before profiles/follower edges
+      followingIds: friends.slice(0, 500).map((f) => f.uid),
+      updatedAt: Date.now(),
+      createdAt: Date.now(),
+    };
+    if (user.photoURL) payload.photoURL = user.photoURL;
+
+    const profile = buildProfileDoc({
+      handle: effectiveHandle,
+      displayName: user.displayName || ownerName,
+      photoURL: user.photoURL,
+      followingIds: friends.map((f) => f.uid),
+      rankedCount: restaurants.length,
+    });
+    const profileJson = JSON.stringify(profile);
+    const writes: Promise<unknown>[] = [
+      setDoc(doc(db, 'sharedLists', user.uid), payload, { merge: true }),
+    ];
+    if (profileJson !== lastProfileJsonRef.current) {
+      writes.push(
+        setDoc(doc(db, 'profiles', user.uid), { ...profile, updatedAt: Date.now() }).then(() => {
+          lastProfileJsonRef.current = profileJson;
+        })
+      );
+    }
+    await Promise.all(writes);
+    return lists;
+  };
+
   useEffect(() => {
     if (!user || !cloudLoadedRef.current) return;
     if (restaurants.length === 0 && bookmarks.length === 0 && friends.length === 0) return;
 
     const timer = setTimeout(() => {
-      const shareId = user.uid;
-      const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'Friend';
-      const effectiveHandle =
-        sanitizeHandle(userHandle) || deriveDefaultHandle(user.displayName, user.email);
-      const cleanRestaurants = restaurants.slice(0, 500).map((r) => stripUndefined(toSharedEntry(r)));
-      const cleanBookmarks = bookmarks.slice(0, 500).map(stripUndefined);
-
-      const payload: Record<string, any> = {
-        id: shareId,
-        ownerUid: user.uid,
-        ownerName,
-        displayName: user.displayName || ownerName,
-        handle: effectiveHandle,
-        restaurants: cleanRestaurants,
-        bookmarks: cleanBookmarks,
-        followingIds: friends.slice(0, 500).map((f) => f.uid),
-        updatedAt: Date.now(),
-        createdAt: Date.now(),
-      };
-      if (user.photoURL) payload.photoURL = user.photoURL;
-
-      setDoc(doc(db, 'sharedLists', shareId), payload, { merge: true }).catch(logWriteError('shared list sync'));
+      publishPublicDocs().catch(logWriteError('shared list sync'));
     }, 900);
 
     return () => clearTimeout(timer);
@@ -867,6 +924,7 @@ export const App: React.FC = () => {
   const persistOrderedRestaurants = async (ordered: RestaurantEntry[], deletedId?: string) => {
     const recomputed = recomputeAllCategoryScores(ordered);
     const changed = changedDocs(recomputed, restaurantsRef.current);
+    const deleted = deletedId ? restaurantsRef.current.find((r) => r.id === deletedId) : undefined;
     restaurantsRef.current = recomputed;
     setRestaurants(recomputed);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(recomputed));
@@ -880,6 +938,12 @@ export const App: React.FC = () => {
             b.set(doc(db, ...colPath, item.id), stripUndefined(item))
           ),
         ]);
+        // Community averages for these spots now include the new scores
+        refreshPlaceStatsSoon(
+          [...changed, ...(deleted ? [deleted] : [])]
+            .map((r) => placeStatKey(r.placeId, r.category))
+            .filter((k): k is string => Boolean(k))
+        );
       } catch (err) {
         console.error('Failed to persist to Firestore:', err);
       }
@@ -977,6 +1041,19 @@ export const App: React.FC = () => {
     handleAddBookmark(candidate, { name: friendName, uid: friendUid });
   };
 
+  // Keeps profiles/{friend}/followers/{me} in step with following, and remembers which edges exist
+  const syncFollowEdge = (friendUid: string, following: boolean) => {
+    if (!user) return;
+    setFollowEdge(db, user.uid, friendUid, following)
+      .then(() => {
+        const synced = readSyncedFollowEdges();
+        if (following) synced.add(friendUid);
+        else synced.delete(friendUid);
+        writeSyncedFollowEdges(synced);
+      })
+      .catch(logWriteError(following ? 'follower edge' : 'remove follower edge'));
+  };
+
   const handleFollowFriend = async (listPayload: SharedListPayload) => {
     const friendUid = listPayload.ownerUid || listPayload.id;
     if (!friendUid) return;
@@ -991,10 +1068,13 @@ export const App: React.FC = () => {
     const nextFriends = [newFriend, ...friends.filter((f) => f.uid !== friendUid)];
     setFriends(nextFriends);
     localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(nextFriends));
-    setFriendListsMap((prev) => ({
-      ...prev,
-      [friendUid]: listPayload,
-    }));
+    // A profile-only result has no spots yet; the friend's list subscription fills it in
+    if (!listPayload.profileOnly) {
+      setFriendListsMap((prev) => ({
+        ...prev,
+        [friendUid]: listPayload,
+      }));
+    }
 
     if (user) {
       setDoc(
@@ -1006,6 +1086,7 @@ export const App: React.FC = () => {
         },
         { merge: true }
       ).catch(logWriteError('follow friend'));
+      syncFollowEdge(friendUid, true);
     }
 
     trackEvent('follow_friend', {
@@ -1048,6 +1129,7 @@ export const App: React.FC = () => {
         },
         { merge: true }
       ).catch(logWriteError('unfollow friend'));
+      syncFollowEdge(friendUid, false);
     }
 
     if (removed) {
@@ -1069,6 +1151,7 @@ export const App: React.FC = () => {
                 },
                 { merge: true }
               ).catch(logWriteError('undo unfollow'));
+              syncFollowEdge(friendUid, true);
             }
           },
         },
@@ -1119,7 +1202,6 @@ export const App: React.FC = () => {
       // Ignore URL parse error
     }
 
-    const qLower = trimmed.replace(/^@/, '').toLowerCase();
     const results: SharedListPayload[] = [];
     const seenIds = new Set<string>();
 
@@ -1137,23 +1219,13 @@ export const App: React.FC = () => {
     }
 
     try {
-      const snap = await getDocs(collection(db, 'sharedLists'));
-      snap.forEach((docSnap) => {
-        if (seenIds.has(docSnap.id)) return;
-        if (user && docSnap.id === user.uid) return;
-        const parsed = parseSharedListDoc(docSnap.id, docSnap.data());
-        const handleMatch = parsed.handle?.toLowerCase().includes(qLower);
-        const nameMatch =
-          parsed.ownerName.toLowerCase().includes(qLower) ||
-          parsed.displayName?.toLowerCase().includes(qLower);
-        const idMatch = parsed.id.toLowerCase() === qLower;
-        if (handleMatch || nameMatch || idMatch) {
-          results.push(parsed);
-          seenIds.add(parsed.id);
-        }
-      });
+      for (const profile of await searchProfiles(db, trimmed)) {
+        if (seenIds.has(profile.id) || (user && profile.id === user.uid)) continue;
+        results.push(profile);
+        seenIds.add(profile.id);
+      }
     } catch (err) {
-      console.error('Error searching sharedLists:', err);
+      console.error('Error searching profiles:', err);
     }
 
     return results;
@@ -1179,6 +1251,31 @@ export const App: React.FC = () => {
       }
     } catch {
       showToast(`Could not load ${friend.name}'s list`);
+    } finally {
+      setSharedListLoading(false);
+    }
+  };
+
+  // Shows anyone's list; profile-only entries (search, follower lists) load their spots first
+  const handleViewUserList = async (payload: SharedListPayload) => {
+    const uid = payload.ownerUid || payload.id;
+    const cached = friendListsMap[uid];
+    if (!payload.profileOnly || cached) {
+      setSharedList(cached || payload);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setSharedListLoading(true);
+    try {
+      const snap = await getDoc(doc(db, 'sharedLists', payload.id));
+      if (snap.exists()) {
+        setSharedList(parseSharedListDoc(snap.id, snap.data()));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        showToast(`${payload.ownerName} hasn’t shared a list yet`);
+      }
+    } catch {
+      showToast(`Could not load ${payload.ownerName}'s list`);
     } finally {
       setSharedListLoading(false);
     }
@@ -1255,47 +1352,13 @@ export const App: React.FC = () => {
       return null;
     }
 
-    const shareId = user.uid;
-    const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'My';
-    const effectiveHandle =
-      sanitizeHandle(overrideHandle || userHandle) ||
-      deriveDefaultHandle(user.displayName, user.email);
-    const cleanRestaurants = restaurants.slice(0, 500).map((r) => {
-      const clean: Record<string, any> = {};
-      Object.entries(toSharedEntry(r)).forEach(([k, v]) => {
-        if (v !== undefined) clean[k] = v;
-      });
-      return clean;
-    });
-    const cleanBookmarks = bookmarks.slice(0, 500).map((b) => {
-      const clean: Record<string, any> = {};
-      Object.entries(b).forEach(([k, v]) => {
-        if (v !== undefined) clean[k] = v;
-      });
-      return clean;
-    });
-
-    const payload: Record<string, any> = {
-      id: shareId,
-      ownerUid: user.uid,
-      ownerName,
-      displayName: user.displayName || ownerName,
-      handle: effectiveHandle,
-      restaurants: cleanRestaurants,
-      bookmarks: cleanBookmarks,
-      followingIds: friends.slice(0, 500).map((f) => f.uid),
-      updatedAt: Date.now(),
-      createdAt: Date.now(),
-    };
-    if (user.photoURL) payload.photoURL = user.photoURL;
-
-    await setDoc(doc(db, 'sharedLists', shareId), payload, { merge: true });
-
+    const lists = await publishPublicDocs(overrideHandle);
     trackEvent('publish_share_link', {
-      restaurants_count: cleanRestaurants.length,
-      bookmarks_count: cleanBookmarks.length,
+      restaurants_count: lists?.restaurants.length ?? 0,
+      bookmarks_count: lists?.bookmarks.length ?? 0,
     });
 
+    const shareId = user.uid;
     const baseUrl = window.location.origin;
     return `${baseUrl}/?list=${shareId}`;
   };
@@ -1676,16 +1739,6 @@ export const App: React.FC = () => {
     return list;
   }, [friends, friendListsMap, sharedList, user]);
 
-  const followGraph = useMemo(() => {
-    return buildFollowGraph(communityLists);
-  }, [communityLists]);
-
-  // Followers: jelly users whose public list has our uid in followingIds
-  const followers = useMemo(() => {
-    if (!user) return [];
-    return getFollowersForUser(followGraph, user.uid);
-  }, [followGraph, user]);
-
   const followedUids = useMemo(() => {
     const set = new Set<string>();
     for (const f of friends) {
@@ -1745,15 +1798,20 @@ export const App: React.FC = () => {
     return getFriendMatchesForSpot(activeDetailSpot, friendLists);
   }, [activeDetailSpot, friendLists]);
 
+  const detailStatKey = activeDetailSpot
+    ? placeStatKey(activeDetailSpot.placeId, activeDetailSpot.category ?? activeDetailSpot.categories?.[0])
+    : null;
+  const detailStatFor = usePlaceStats(detailStatKey ? [detailStatKey] : []);
+
   const activeDetailSocialMetrics = useMemo(() => {
     if (!activeDetailSpot) return null;
     return getSpotSocialMetrics(activeDetailSpot, {
       myUid: user?.uid,
       myRestaurants: restaurants,
       friendLists,
-      communityLists,
+      communityStat: detailStatFor(detailStatKey) ?? null,
     });
-  }, [activeDetailSpot, user, restaurants, friendLists, communityLists]);
+  }, [activeDetailSpot, user, restaurants, friendLists, detailStatFor, detailStatKey]);
 
   const isDetailSpotBookmarkedByMe = useMemo(() => {
     if (!activeDetailSpot) return false;
@@ -1961,53 +2019,13 @@ export const App: React.FC = () => {
                 </span>
               )}
               <div className="flex items-center gap-1.5 text-emerald-100/90 text-[11px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const list = getFollowersForUser(
-                      followGraph,
-                      sharedList.ownerUid || sharedList.id
-                    );
-                    setFollowListDialog({
-                      isOpen: true,
-                      title: `${sharedList.ownerName}'s Followers`,
-                      users: list,
-                    });
-                  }}
-                  className="hover:underline font-medium"
-                >
-                  {
-                    getFollowersForUser(
-                      followGraph,
-                      sharedList.ownerUid || sharedList.id
-                    ).length
-                  }{' '}
-                  followers
-                </button>
-                <span>·</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const list = getFollowingForUser(
-                      followGraph,
-                      sharedList.ownerUid || sharedList.id
-                    );
-                    setFollowListDialog({
-                      isOpen: true,
-                      title: `${sharedList.ownerName} is Following`,
-                      users: list,
-                    });
-                  }}
-                  className="hover:underline font-medium"
-                >
-                  {
-                    getFollowingForUser(
-                      followGraph,
-                      sharedList.ownerUid || sharedList.id
-                    ).length
-                  }{' '}
-                  following
-                </button>
+                <FollowCounts
+                  uid={sharedList.ownerUid || sharedList.id}
+                  followersTitle={`${sharedList.ownerName}'s Followers`}
+                  followingTitle={`${sharedList.ownerName} is Following`}
+                  onOpenFollowList={(title, users) => setFollowListDialog({ isOpen: true, title, users })}
+                  buttonClassName="hover:underline font-medium"
+                />
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -2659,7 +2677,6 @@ export const App: React.FC = () => {
             myUid={user?.uid}
             myRestaurants={restaurants}
             friendLists={friendLists}
-            communityLists={communityLists}
             bookmarkedPlaceIds={myBookmarkedPlaceIds}
             onBookmarkFromFriend={
               sharedList
@@ -2709,7 +2726,6 @@ export const App: React.FC = () => {
             myUid={user?.uid}
             myRestaurants={restaurants}
             friendLists={friendLists}
-            communityLists={communityLists}
             myBookmarkedPlaceIds={myBookmarkedPlaceIds}
             myBookmarkedNames={myBookmarkedNames}
             friendName={sharedList?.ownerName}
@@ -2759,7 +2775,6 @@ export const App: React.FC = () => {
         myUid={user?.uid}
         bookmarkedPlaceIds={myBookmarkedPlaceIds}
         friendLists={friendLists}
-        communityLists={communityLists}
         reRankingEntry={reRankingEntry}
         defaultCity={defaultCity}
         linearRatingScale={linearRatingScale}
@@ -2836,7 +2851,6 @@ export const App: React.FC = () => {
         friendListsMap={friendListsMap}
         followers={followers}
         newFollowerIds={newFollowerIds}
-        followGraph={followGraph}
         onOpenFollowList={(title, users) =>
           setFollowListDialog({ isOpen: true, title, users })
         }
@@ -2852,7 +2866,7 @@ export const App: React.FC = () => {
             setSharedList(friendListsMap[friendUid]);
           } else {
             const fromFollowers = followers.find((f) => f.id === friendUid);
-            if (fromFollowers) setSharedList(fromFollowers);
+            if (fromFollowers) handleViewUserList(fromFollowers);
           }
         }}
         onOpenBlendWithFriend={(friendUid: string) => {
@@ -2932,8 +2946,8 @@ export const App: React.FC = () => {
         onFollowUser={handleFollowFriend}
         onUnfollowUser={handleUnfollowFriend}
         onSelectUser={(selectedUser) => {
-          setSharedList(selectedUser);
-          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setFollowListDialog((prev) => ({ ...prev, isOpen: false }));
+          handleViewUserList(selectedUser);
         }}
       />
 

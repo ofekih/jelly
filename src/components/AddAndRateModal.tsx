@@ -15,6 +15,8 @@ import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
 import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
+import { placeStatKey } from '../lib/socialService';
+import { usePlaceStats } from '../lib/usePlaceStats';
 import {
   formatDistanceMiles,
   getItemDistanceMiles,
@@ -34,7 +36,6 @@ interface AddAndRateModalProps {
   myUid?: string | null;
   bookmarkedPlaceIds?: Set<string>;
   friendLists?: SharedListPayload[];
-  communityLists?: SharedListPayload[];
   reRankingEntry?: RestaurantEntry | null;
   defaultCity?: string;
   customPlacesApiKey?: string;
@@ -57,7 +58,6 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   myUid = null,
   bookmarkedPlaceIds,
   friendLists = [],
-  communityLists = [],
   reRankingEntry,
   defaultCity = '',
   customPlacesApiKey = '',
@@ -73,6 +73,11 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceCandidate[]>([]);
+  // Community stats for each result in the list it fits best
+  const candidateStatKey = (c: PlaceCandidate) => placeStatKey(c.placeId, c.categories?.[0]);
+  const statFor = usePlaceStats(
+    searchResults.map(candidateStatKey).filter((k): k is string => Boolean(k))
+  );
   const [isSearching, setIsSearching] = useState(false);
 
   const [selectedCandidate, setSelectedCandidate] = useState<PlaceCandidate | null>(null);
@@ -381,15 +386,14 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     const isAlreadyBookmarked = bookmarkedPlaceIds?.has(item.placeId);
                     const friendMatches =
                       friendLists.length > 0 ? getFriendMatchesForSpot(item, friendLists) : [];
+                    const communityStat = statFor(candidateStatKey(item)) ?? null;
                     const socialMetrics =
-                      existingRestaurants.length > 0 ||
-                      friendLists.length > 0 ||
-                      communityLists.length > 0
+                      existingRestaurants.length > 0 || friendLists.length > 0 || communityStat
                         ? getSpotSocialMetrics(item, {
                             myUid,
                             myRestaurants: existingRestaurants,
                             friendLists,
-                            communityLists,
+                            communityStat,
                           })
                         : null;
 

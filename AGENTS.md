@@ -26,7 +26,11 @@ ranking web app. Live at https://eatwithjelly.com.
 | `src/firebase.ts` | Firebase init, `trackEvent` (Analytics), `DEFAULT_PLACES_API_KEY` |
 | `src/lib/ratingTiers.ts` | Rating tiers (Skip…Incredible) and their gut-feeling labels; source of the spectrum's tier boundaries |
 | `src/lib/rankingEngine.ts` | Rating ⇄ Elo, non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` |
-| `src/lib/friendsService.ts` | Friend matching (`isSameSpot`), group blend ("Eat Together"), taste similarity / predicted rating, social metrics (friends + all-jelly averages) |
+| `src/lib/friendsService.ts` | Friend matching (`isSameSpot`), group blend ("Eat Together"), taste similarity / predicted rating (from followed friends), social metrics (friends avg + all-jelly avg from `placeStats`) |
+| `src/lib/socialService.ts` | Firestore reads/writes for `profiles` (build, prefix search), follower edges, follow counts, `placeStats` fetch; `usePlaceStats.ts` caches stats for components |
+| `src/lib/publicList.ts` | Builds the public `sharedLists` payload under the 500-item / ~1 MiB limits (drops notes before spots) |
+| `src/lib/localCache.ts` | localStorage keys for account data + cache owner (which account the local copy mirrors; only signed-out data is ever uploaded) |
+| `functions/` | Cloud Function `onRestaurantWritten` (recomputes `placeStats`), one-time `scripts/backfill.ts`, emulator tests (`npm run test:emulator`) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
@@ -44,7 +48,10 @@ ranking web app. Live at https://eatwithjelly.com.
 - `users/{uid}` – settings/profile (`customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, …)
 - `users/{uid}/restaurants/{id}` – `RestaurantEntry` (ranked spots: `category`, `initialRating`, `rankIndex`/`magicScore` within its category, cuisines, notes…; ID = `${placeId}__${category}`)
 - `users/{uid}/bookmarks/{id}` – `BookmarkEntry` (want-to-try)
-- `sharedLists/{shareId}` – public `SharedListPayload` snapshot of a user's list (used by friends, follower notifications via `followingIds`, community averages)
+- `sharedLists/{uid}` – public `SharedListPayload` snapshot of a user's list, read one doc at a time (share link, friends' lists). Never list or query the collection.
+- `profiles/{uid}` – small public profile (handle, name, photo, `followingIds`, `rankedCount`) for search and follower lists; rules reject unknown fields and nulls
+- `profiles/{uid}/followers/{followerUid}` – follower edge `{createdAt}`, created/deleted only by the follower
+- `placeStats/{placeId}__{category}` – community `{sum, count, avg}` per spot per list, written only by the Cloud Function from stored `magicScore`s
 - Signed-out users persist to `localStorage` (keys defined at top of `App.tsx`); signed-in users sync to Firestore.
 
 ## Conventions & gotchas

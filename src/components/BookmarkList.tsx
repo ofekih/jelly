@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { wantLabel } from '../lib/groups';
-import { getSpotSocialMetrics } from '../lib/friendsService';
+import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
+import { placeStatKey } from '../lib/socialService';
+import { usePlaceStats } from '../lib/usePlaceStats';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
@@ -14,7 +16,7 @@ interface SwipeableBookmarkRowProps {
   myUid?: string | null;
   myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
-  communityLists?: SharedListPayload[];
+  communityStat?: CommunityStat | null;
   openSwipeId: string | null;
   onSetOpenSwipeId: (id: string | null) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
@@ -32,7 +34,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   myUid = null,
   myRestaurants = [],
   friendLists = [],
-  communityLists = [],
+  communityStat = null,
   openSwipeId,
   onSetOpenSwipeId,
   onRankBookmark,
@@ -69,12 +71,12 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   ].filter(Boolean);
 
   const socialMetrics =
-    myRestaurants.length > 0 || friendLists.length > 0 || communityLists.length > 0
+    myRestaurants.length > 0 || friendLists.length > 0 || communityStat
       ? getSpotSocialMetrics(item, {
           myUid,
           myRestaurants,
           friendLists,
-          communityLists,
+          communityStat,
         })
       : null;
 
@@ -351,7 +353,6 @@ interface BookmarkListProps {
   myUid?: string | null;
   myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
-  communityLists?: SharedListPayload[];
   onRankBookmark: (bookmark: BookmarkEntry) => void;
   onDeleteBookmark: (id: string) => void;
   onOpenAddModal: () => void;
@@ -371,7 +372,6 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   myUid = null,
   myRestaurants = [],
   friendLists = [],
-  communityLists = [],
   onRankBookmark,
   onDeleteBookmark,
   onOpenAddModal,
@@ -381,6 +381,9 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   friendName,
 }) => {
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  const statFor = usePlaceStats(
+    bookmarks.map((b) => placeStatKey(b.placeId, b.category)).filter((k): k is string => Boolean(k))
+  );
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
     x: number;
@@ -523,7 +526,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
               myUid={myUid}
               myRestaurants={myRestaurants}
               friendLists={friendLists}
-              communityLists={communityLists}
+              communityStat={statFor(placeStatKey(item.placeId, item.category)) ?? null}
               openSwipeId={openSwipeId}
               onSetOpenSwipeId={setOpenSwipeId}
               onRankBookmark={onRankBookmark}

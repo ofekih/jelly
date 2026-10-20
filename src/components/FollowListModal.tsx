@@ -85,7 +85,7 @@ export const FollowListModal: React.FC<FollowListModalProps> = ({
                           )}
                         </div>
                         <div className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                          {item.restaurants?.length || 0} ranked spots
+                          {item.rankedCount ?? item.restaurants?.length ?? 0} ranked spots
                         </div>
                       </div>
                     </button>

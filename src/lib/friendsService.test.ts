@@ -244,30 +244,14 @@ describe('friendsService', () => {
       updatedAt: 1000,
     };
 
-    // Another community user "RandomUser" (not followed) who has opposite taste to me gives Hayato a 6.0
-    const randomCommunityList: SharedListPayload = {
-      id: 'rand',
-      ownerUid: 'rand',
-      ownerName: 'Rand',
-      restaurants: [
-        makeRestaurant({ placeId: 'target_hayato', name: 'Hayato', magicScore: 6.0, rankIndex: 3, cuisines: ['Japanese'] }),
-        makeRestaurant({ placeId: 'p4', name: 'Mid Cafe', magicScore: 9.5, rankIndex: 0 }),
-        makeRestaurant({ placeId: 'p3', name: 'Taco Stand', magicScore: 8.8, rankIndex: 1 }),
-        makeRestaurant({ placeId: 'p2', name: 'Bavel', magicScore: 6.5, rankIndex: 2 }),
-        makeRestaurant({ placeId: 'p1', name: 'Sushi Sho', magicScore: 5.5, rankIndex: 4 }),
-      ],
-      bookmarks: [],
-      createdAt: 1000,
-      updatedAt: 1000,
-    };
-
     const metrics = getSpotSocialMetrics(
       { placeId: 'target_hayato', name: 'Hayato', cuisines: ['Japanese'], categories: ['restaurants'] },
       {
         myUid: 'me_uid',
         myRestaurants,
         friendLists: [mayaList],
-        communityLists: [mayaList, randomCommunityList],
+        // Server-kept stats for everyone who ranked it: Maya (8.2) + a stranger (6.0)
+        communityStat: { sum: 14.2, count: 2 },
       }
     );
 
@@ -275,13 +259,30 @@ describe('friendsService', () => {
     expect(metrics.friendsAvg).toBe(8.2);
     expect(metrics.friendsCount).toBe(1);
 
-    // Global jelly Avg: Maya (8.2) + Rand (6.0) = 7.1 across 2 unique jelly users
+    // Global jelly Avg comes from the stats: 7.1 across 2 unique jelly users
     expect(metrics.communityAvg).toBe(7.1);
     expect(metrics.communityCount).toBe(2);
 
+    // Without stats it falls back to me + the friends I follow (only Maya ranked it)
+    const offline = getSpotSocialMetrics(
+      { placeId: 'target_hayato', name: 'Hayato', cuisines: ['Japanese'], categories: ['restaurants'] },
+      { myUid: 'me_uid', myRestaurants, friendLists: [mayaList] }
+    );
+    expect(offline.communityAvg).toBe(8.2);
+    expect(offline.communityCount).toBe(1);
+
+    // A stat that counts fewer raters than the friends visible here is lagging, so it's ignored
+    const twin = { ...mayaList, id: 'twin', ownerUid: 'twin', ownerName: 'Twin' };
+    const lagging = getSpotSocialMetrics(
+      { placeId: 'target_hayato', name: 'Hayato', cuisines: ['Japanese'], categories: ['restaurants'] },
+      { myUid: 'me_uid', myRestaurants, friendLists: [mayaList, twin], communityStat: { sum: 6, count: 1 } }
+    );
+    expect(lagging.communityAvg).toBe(8.2);
+    expect(lagging.communityCount).toBe(2);
+
     // Predicted score for me:
     // Because Maya has strong positive correlation with me and 8.2 is well above her harsh 6.8 average,
-    // while Rand has negative correlation with me (so Rand is ignored), my predicted score should be
+    // my predicted score should be
     // projected onto MY generous scale (> 8.8, even higher than Maya's raw 8.2!).
     expect(metrics.predictedScore).not.toBeNull();
     expect(metrics.predictedScore!).toBeGreaterThan(8.8);

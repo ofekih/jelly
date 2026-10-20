@@ -19,7 +19,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { wantLabel } from '../lib/groups';
-import { getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
+import { CommunityStat, getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
+import { placeStatKey } from '../lib/socialService';
+import { usePlaceStats } from '../lib/usePlaceStats';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
@@ -35,7 +37,7 @@ interface SortableRestaurantRowProps {
   myUid?: string | null;
   myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
-  communityLists?: SharedListPayload[];
+  communityStat?: CommunityStat | null;
   isBookmarkedInMyList?: boolean;
   onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   openSwipeId: string | null;
@@ -56,7 +58,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   myUid = null,
   myRestaurants = [],
   friendLists = [],
-  communityLists = [],
+  communityStat = null,
   isBookmarkedInMyList = false,
   onBookmarkFromFriend,
   openSwipeId,
@@ -150,12 +152,12 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
       : [];
 
   const socialMetrics =
-    friendLists.length > 0 || communityLists.length > 0
+    friendLists.length > 0 || communityStat
       ? getSpotSocialMetrics(restaurant, {
           myUid,
           myRestaurants,
           friendLists,
-          communityLists,
+          communityStat,
         })
       : null;
 
@@ -460,7 +462,6 @@ interface RestaurantListProps {
   myUid?: string | null;
   myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
-  communityLists?: SharedListPayload[];
   bookmarkedPlaceIds?: Set<string>;
   onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   onReorderDragEnd: (activeId: string, overId: string) => void;
@@ -481,7 +482,6 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   myUid = null,
   myRestaurants = [],
   friendLists = [],
-  communityLists = [],
   bookmarkedPlaceIds,
   onBookmarkFromFriend,
   onReorderDragEnd,
@@ -491,6 +491,9 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   onOpenAddModal,
 }) => {
   const [openSwipeId, setOpenSwipeId] = useState<string | null>(null);
+  const statFor = usePlaceStats(
+    restaurants.map((r) => placeStatKey(r.placeId, r.category)).filter((k): k is string => Boolean(k))
+  );
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
     x: number;
@@ -651,7 +654,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
                     myUid={myUid}
                     myRestaurants={myRestaurants}
                     friendLists={friendLists}
-                    communityLists={communityLists}
+                    communityStat={statFor(placeStatKey(restaurant.placeId, restaurant.category)) ?? null}
                     isBookmarkedInMyList={isBookmarked}
                     onBookmarkFromFriend={onBookmarkFromFriend}
                     openSwipeId={openSwipeId}

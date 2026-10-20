@@ -319,7 +319,6 @@ export function computeGroupBlend(
     const metrics = getSpotSocialMetrics(item, {
       myRestaurants,
       friendLists: selectedFriendLists,
-      communityLists: selectedFriendLists,
     });
     if (metrics.predictedScore !== null) {
       item.combinedScore = metrics.predictedScore;
@@ -571,10 +570,17 @@ export interface SpotSocialMetrics {
   predictionBasis: string | null;
 }
 
+/** Server-kept community stats for one place in one list (`placeStats/{placeId}__{category}`). */
+export interface CommunityStat {
+  sum: number;
+  count: number;
+}
+
 /**
  * Computes:
  * 1. `friendsAvg`: Average score among followed friends who ranked this spot
- * 2. `communityAvg`: Average score across all unique jelly users who ranked this spot
+ * 2. `communityAvg`: Average score across all unique jelly users who ranked this spot (from
+ *    `communityStat`; without one, or when it lags behind, you plus the friends you follow)
  * 3. `predictedScore`: Personalized 1.0–10.0 score prediction for the active user using
  *    Resnick's Z-Score Collaborative Filtering (weighted by Pearson + Kendall palate similarity)
  *    blended with the user's personal Cuisine & Category affinity prior.
@@ -593,15 +599,11 @@ export function getSpotSocialMetrics(
     myUid?: string | null;
     myRestaurants?: RestaurantEntry[];
     friendLists?: SharedListPayload[];
-    communityLists?: SharedListPayload[];
+    communityStat?: CommunityStat | null;
   }
 ): SpotSocialMetrics {
   const myRestaurants = options.myRestaurants || [];
   const friendLists = deduplicateUserLists(options.friendLists || []);
-  const allExternalLists = deduplicateUserLists([
-    ...(options.communityLists || []),
-    ...friendLists,
-  ]);
 
   const friendUidSet = new Set(friendLists.map((fl) => fl.ownerUid || fl.id));
 
@@ -639,18 +641,14 @@ export function getSpotSocialMetrics(
     list: RestaurantEntry[];
   }> = [];
 
-  for (const cl of allExternalLists) {
+  // Taste-based predictions only draw on the friends you follow (their lists are loaded)
+  for (const cl of friendLists) {
     const uid = cl.ownerUid || cl.id;
     if (options.myUid && uid === options.myUid) continue;
     const matches = (cl.restaurants || []).filter(matchesSpot);
     if (matches.length > 0) {
       const bestScore = Math.max(...matches.map((m) => m.magicScore));
-      // If we didn't already include the user's own local score, or if this is a distinct user:
-      if (!options.myUid && myMatches.length > 0 && cl.restaurants?.length === myRestaurants.length) {
-        // Avoid double-counting unauthenticated user's identical list
-      } else {
-        communityScores.push(bestScore);
-      }
+      communityScores.push(bestScore);
       otherRaters.push({
         uid,
         name: cl.ownerName || 'User',
@@ -661,11 +659,14 @@ export function getSpotSocialMetrics(
     }
   }
 
-  const communityCount = communityScores.length;
+  // The server stat covers everyone, but can lag behind what's visible here (scores just
+  // changed, friends on older app versions); never show fewer raters than you + your friends
+  const stat = options.communityStat;
+  const useStat = Boolean(stat && stat.count > 0 && stat.count >= communityScores.length);
+  const communityCount = useStat ? stat!.count : communityScores.length;
+  const communitySum = useStat ? stat!.sum : communityScores.reduce((a, b) => a + b, 0);
   const communityAvg =
-    communityCount > 0
-      ? Math.round((communityScores.reduce((a, b) => a + b, 0) / communityCount) * 10) / 10
-      : null;
+    communityCount > 0 ? Math.round((communitySum / communityCount) * 10) / 10 : null;
 
   // 3. Personalized Taste Prediction Model
   if (myRestaurants.length === 0) {
