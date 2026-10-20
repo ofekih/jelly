@@ -5,6 +5,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { affectedPlaceKeys, placeStatId } from './placeStats';
 import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from './predictionJobs';
+import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
 
 initializeApp();
@@ -43,6 +44,24 @@ export const onBookmarkWritten = onDocumentWritten('users/{uid}/bookmarks/{id}',
   const after = event.data?.after.data();
   if (before && after && before.placeId === after.placeId && before.category === after.category) return;
   await markPredictionsDirty(getFirestore(), event.params.uid);
+});
+
+/**
+ * Following or unfollowing someone changes whose ratings weigh more, so it queues a recompute.
+ * A new display name queues the followers too, since friends can be named in the basis.
+ */
+export const onProfileWritten = onDocumentWritten('profiles/{uid}', async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  const { uid } = event.params;
+  const db = getFirestore();
+  const jobs: Promise<void>[] = [];
+  if (!sameIdSet(before?.followingIds, after?.followingIds)) jobs.push(markPredictionsDirty(db, uid));
+  if (before && after && before.displayName !== after.displayName) {
+    const followers = await db.collection(`profiles/${uid}/followers`).select().get();
+    jobs.push(...followers.docs.map((d) => markPredictionsDirty(db, d.id)));
+  }
+  await Promise.all(jobs);
 });
 
 /** Recomputes the predictions of users whose spots changed (debounced via `predictionJobs`). */

@@ -102,3 +102,37 @@ describe('taste predictions (Functions emulator)', () => {
     for (const uid of ['a', 'b', 'c', 'd']) expect(await stored(uid)).toEqual(await expectedFor(uid));
   });
 });
+
+describe('profile changes queue prediction recomputes (Functions emulator)', () => {
+  const jobIds = async () => (await db.collection('predictionJobs').get()).docs.map((d) => d.id).sort();
+  const settle = () => new Promise((r) => setTimeout(r, 3000));
+
+  // Clearing deletes ranked spots, whose triggers queue jobs: let them land, then drop them
+  beforeAll(async () => {
+    await clearProject(PROJECT);
+    await settle();
+    await clearProject(PROJECT);
+  });
+
+  it('follow changes mark me dirty; other profile fields do not', async () => {
+    await db.doc('profiles/me').set({ followingIds: [], rankedCount: 0 });
+    await db.doc('profiles/me').update({ rankedCount: 3 });
+    await settle();
+    expect(await jobIds()).toEqual([]);
+
+    await db.doc('profiles/me').update({ followingIds: ['d'] });
+    await waitForJobs(['me']);
+    expect(await jobIds()).toEqual(['me']);
+  });
+
+  it('a new display name marks the people who follow them dirty', async () => {
+    await db.doc('profiles/d').set({ displayName: 'Dana', followingIds: [], rankedCount: 1 });
+    await db.doc('profiles/d/followers/me').set({ createdAt: Date.now() });
+    await settle();
+    await db.doc('predictionJobs/me').delete();
+
+    await db.doc('profiles/d').update({ displayName: 'Dana R' });
+    await waitForJobs(['me']);
+    expect(await jobIds()).toEqual(['me']);
+  });
+});

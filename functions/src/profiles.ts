@@ -61,3 +61,10 @@ export function profileFromSharedList(
   }
   return profile;
 }
+
+/** Whether two `followingIds` values hold the same uids (order and duplicates ignored). */
+export function sameIdSet(a: unknown, b: unknown): boolean {
+  const toSet = (v: unknown) => new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  const [sa, sb] = [toSet(a), toSet(b)];
+  return sa.size === sb.size && [...sa].every((id) => sb.has(id));
+}
