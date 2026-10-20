@@ -36,6 +36,14 @@ export interface ProfileDoc {
 
 const IN_QUERY_LIMIT = 30;
 
+/**
+ * Accent- and case-insensitive key for searching names by prefix ("zoe" finds "Zoë").
+ * Stored as `profiles/{uid}.nameLower`; queries must use the same key.
+ */
+export function nameSearchKey(name: string): string {
+  return name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+}
+
 /** Builds `profiles/{uid}`; empty fields are omitted because the rules reject nulls. */
 export function buildProfileDoc(input: {
   handle?: string | null;
@@ -56,7 +64,7 @@ export function buildProfileDoc(input: {
   const displayName = (input.displayName || '').trim().slice(0, 200);
   if (displayName) {
     profile.displayName = displayName;
-    profile.nameLower = displayName.toLowerCase();
+    profile.nameLower = nameSearchKey(displayName).slice(0, 200);
   }
   if (input.photoURL && input.photoURL.length <= 1000) profile.photoURL = input.photoURL;
   return profile;
@@ -117,20 +125,25 @@ export async function searchProfiles(
   rawQuery: string,
   max = 10
 ): Promise<SharedListPayload[]> {
-  const q = rawQuery.trim().replace(/^@+/, '').toLowerCase();
-  if (!q) return [];
+  const raw = rawQuery.trim().replace(/^@+/, '');
+  const handleQuery = sanitizeHandle(raw);
+  const nameQuery = nameSearchKey(raw);
+  if (!handleQuery && !nameQuery) return [];
   const profiles = collection(db, 'profiles');
-  const byField = (field: string) =>
-    getDocs(query(profiles, orderBy(field), where(field, '>=', q), where(field, '<', prefixEnd(q)), limit(max)));
-  const [byHandle, byName] = await Promise.all([byField('handleLower'), byField('nameLower')]);
+  const byField = async (field: string, q: string) =>
+    q
+      ? (await getDocs(query(profiles, orderBy(field), where(field, '>=', q), where(field, '<', prefixEnd(q)), limit(max)))).docs
+      : [];
+  const [byHandle, byName] = await Promise.all([
+    byField('handleLower', handleQuery),
+    byField('nameLower', nameQuery),
+  ]);
   const results: SharedListPayload[] = [];
   const seen = new Set<string>();
-  for (const snap of [byHandle, byName]) {
-    snap.forEach((d) => {
-      if (seen.has(d.id)) return;
-      seen.add(d.id);
-      results.push(profileToPayload(d.id, d.data()));
-    });
+  for (const d of [...byHandle, ...byName]) {
+    if (seen.has(d.id)) continue;
+    seen.add(d.id);
+    results.push(profileToPayload(d.id, d.data()));
   }
   return results.slice(0, max);
 }

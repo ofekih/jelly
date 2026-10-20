@@ -8,11 +8,9 @@ import {
 import {
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDoc,
   onSnapshot,
-  QuerySnapshot,
   setDoc,
   WriteBatch,
 } from 'firebase/firestore';
@@ -64,6 +62,7 @@ import {
   changedDocs,
   commitInBatches,
   logWriteError,
+  onWriteError,
   stripUndefined,
 } from './lib/firestoreDoc';
 import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
@@ -75,14 +74,10 @@ import { RATING_TIERS } from './lib/ratingTiers';
 import {
   buildEntryId,
   getCategoryList,
-  isFromNewerVersion,
-  isLegacyDoc,
   loadBookmarks,
   loadRestaurants,
   recomputeAllCategoryScores,
-  staleDerivedScores,
   replaceCategoryList,
-  sanitizeLoadedBookmark,
 } from './lib/categoryLists';
 import {
   appendComparisons,
@@ -118,6 +113,10 @@ import { WhatsNewModal } from './components/WhatsNewModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { useBodyScrollLock } from './lib/useBodyScrollLock';
+import { subscribeAccountLists } from './lib/sync/accountLists';
+import { reconcileFollowEdges, saveFollowChange } from './lib/sync/follows';
+import { mergeCloudFriends, subscribeUserDoc } from './lib/sync/userDoc';
+import { publishPublicDocs } from './lib/sync/publish';
 import {
   clearAccountCache,
   isForeignCache,
@@ -127,23 +126,17 @@ import {
   LOCAL_SEEN_FOLLOWERS_KEY,
   LOCAL_STORAGE_KEY,
   readCacheOwner,
-  readSyncedFollowEdges,
-  shouldSeedCloudFromLocal,
-  writeCacheOwner,
-  writeSyncedFollowEdges,
-} from './lib/localCache';
+} from './lib/sync/localCache';
 import {
-  buildProfileDoc,
   fetchProfiles,
   placeStatKey,
   searchProfiles,
-  setFollowEdge,
 } from './lib/socialService';
 import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
 import { usePredictionMap, usePredictions, watchPredictions } from './lib/usePredictions';
 import { buildForYouSpots, ForYouSpot } from './lib/predictions';
 import { FollowCounts } from './components/FollowCounts';
-import { buildPublicLists, PublicListTrim } from './lib/publicList';
+import { PublicListTrim } from './lib/publicList';
 
 const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
   bookmarkNotes: 'Your list is too big to share in full – friends won’t see your bookmark notes',
@@ -385,6 +378,23 @@ export const App: React.FC = () => {
     }, durationMs);
   };
 
+  // A rejected save (usually an outdated app hitting newer rules) would otherwise only reach the
+  // console and quietly undo itself on the next load
+  const lastWriteErrorAtRef = useRef(0);
+  useEffect(
+    () =>
+      onWriteError(() => {
+        const now = Date.now();
+        if (now - lastWriteErrorAtRef.current < 10_000) return;
+        lastWriteErrorAtRef.current = now;
+        showToast('Couldn’t save your last change – reload jelly and try again', {
+          label: 'Reload',
+          onClick: () => window.location.reload(),
+        }, 8000);
+      }),
+    []
+  );
+
   const requestUserLocation = (opts?: { enableSortByNearest?: boolean; silent?: boolean }) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       if (!opts?.silent) showToast('Location access is not supported by your browser');
@@ -488,14 +498,6 @@ export const App: React.FC = () => {
     });
   };
 
-  // Which of the account's collections the server has confirmed this session; once both have,
-  // the local copies are a mirror of that account (see `CACHE_OWNER_KEY`)
-  const serverSyncedRef = useRef<Set<'restaurants' | 'bookmarks'>>(new Set());
-  const markServerSynced = (uid: string, part: 'restaurants' | 'bookmarks') => {
-    serverSyncedRef.current.add(part);
-    if (serverSyncedRef.current.size === 2 && readCacheOwner() !== uid) writeCacheOwner(uid);
-  };
-
   const resetAccountState = () => {
     clearAccountCache();
     restaurantsRef.current = [];
@@ -511,7 +513,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       cloudLoadedRef.current = false;
-      serverSyncedRef.current = new Set();
       lastProfileJsonRef.current = '';
       // Signed out (here or in another tab) or a different account: drop the previous account's
       // local copies so they are neither shown nor uploaded into this account
@@ -529,60 +530,35 @@ export const App: React.FC = () => {
   // Taste predictions from every jelly user, kept by a Cloud Function (owner-read only)
   useEffect(() => watchPredictions(user?.uid), [user?.uid]);
 
-  // Load user profile doc (friends, handle, defaultCity, seenFollowerIds) when signed in
+  // Your private settings and follows from users/{uid}
   useEffect(() => {
     if (!user) return;
-    const userDocRef = doc(db, 'users', user.uid);
-    const unsub = onSnapshot(
-      userDocRef,
-      (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (typeof data.defaultCity === 'string') {
-          setDefaultCity(data.defaultCity);
-        }
-        if (typeof data.linearRatingScale === 'boolean') {
-          setLinearRatingScale(data.linearRatingScale);
-        }
-        if (typeof data.useCurrentLocation === 'boolean') {
-          setUseCurrentLocation(data.useCurrentLocation);
-        } else {
-          setUseCurrentLocation(true);
-        }
-        if (typeof data.handle === 'string' && data.handle.trim()) {
-          setUserHandle(data.handle.trim());
-        }
-        if (Array.isArray(data.seenFollowerIds)) {
+    return subscribeUserDoc({
+      db,
+      uid: user.uid,
+      onDoc: (cloud, keepLocalFriends) => {
+        if (cloud.defaultCity !== undefined) setDefaultCity(cloud.defaultCity);
+        if (cloud.linearRatingScale !== undefined) setLinearRatingScale(cloud.linearRatingScale);
+        setUseCurrentLocation(cloud.useCurrentLocation);
+        if (cloud.handle) setUserHandle(cloud.handle);
+        if (cloud.seenFollowerIds) {
+          const seen = cloud.seenFollowerIds;
           setSeenFollowerIds((prev) => {
-            const next = new Set(prev);
-            for (const uid of data.seenFollowerIds) {
-              if (typeof uid === 'string') next.add(uid);
-            }
+            const next = new Set([...prev, ...seen]);
             localStorage.setItem(LOCAL_SEEN_FOLLOWERS_KEY, JSON.stringify(Array.from(next)));
             return next;
           });
         }
-        if (Array.isArray(data.friends)) {
-          // Once this device mirrors the account the cloud list wins, so unfollows made on other
-          // devices stick; signed-out follows are merged in until then
-          const keepLocal = readCacheOwner() !== user.uid;
+        if (cloud.friends) {
+          const cloudFriends = cloud.friends;
           setFriends((prev) => {
-            const mergedMap = new Map<string, FriendProfile>();
-            if (keepLocal) for (const f of prev) mergedMap.set(f.uid, f);
-            for (const f of data.friends) {
-              if (f && typeof f.uid === 'string') {
-                mergedMap.set(f.uid, f as FriendProfile);
-              }
-            }
-            const next = Array.from(mergedMap.values()).sort((a, b) => b.addedAt - a.addedAt);
+            const next = mergeCloudFriends(prev, cloudFriends, keepLocalFriends);
             localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(next));
             return next;
           });
         }
       },
-      () => {}
-    );
-    return () => unsub();
+    });
   }, [user]);
 
   const markFollowersSeen = (followerUids: string[]) => {
@@ -661,257 +637,53 @@ export const App: React.FC = () => {
   // Follows made before follower edges existed (or on an older app version) get their edge once
   useEffect(() => {
     if (!user || friends.length === 0) return;
-    const done = readSyncedFollowEdges();
-    const missing = friends.map((f) => f.uid).filter((uid) => uid && !done.has(uid));
-    if (missing.length === 0) return;
-    Promise.all(
-      missing.map((uid) =>
-        setFollowEdge(db, user.uid, uid, true).then(
-          () => uid,
-          () => null
-        )
-      )
-    ).then((synced) => writeSyncedFollowEdges([...done, ...synced.filter((u): u is string => !!u)]));
+    reconcileFollowEdges(
+      db,
+      user.uid,
+      friends.map((f) => f.uid)
+    ).catch(logWriteError('follower edges'));
   }, [user, friends]);
 
-  // Firestore subscription for Ranked Restaurants
+  // Your lists, kept in step with the cloud and the device's local copy (src/lib/sync)
   useEffect(() => {
     if (!user) return;
-
-    const colRef = collection(db, 'users', user.uid, 'restaurants');
-    // Metadata changes are needed to learn when the server confirms what the cache showed
-    let applied = false;
-    // Scores are recomputed on load (the scoring model can change between versions); once per
-    // load, save any that moved so the stored docs, and the community averages built from them,
-    // stay current
-    let storedScoresChecked = false;
-    const refreshStoredScores = (snapshot: QuerySnapshot) => {
-      const { fromCache, hasPendingWrites } = snapshot.metadata;
-      if (storedScoresChecked || fromCache || hasPendingWrites || snapshot.empty) return;
-      storedScoresChecked = true;
-      const storedById = new Map(snapshot.docs.map((d) => [d.id, d.data()]));
-      const stale = staleDerivedScores(storedById, loadRestaurants([...storedById.values()]));
-      if (stale.length === 0) return;
-      commitInBatches(
-        db,
-        stale.map(({ id, fields }) => (b: WriteBatch) =>
-          b.update(doc(db, 'users', user.uid, 'restaurants', id), { ...fields })
-        )
-      ).catch(logWriteError('refresh stored scores'));
-    };
-    const unsub = onSnapshot(
-      colRef,
-      { includeMetadataChanges: true },
-      async (snapshot) => {
-        const { fromCache } = snapshot.metadata;
-        refreshStoredScores(snapshot);
-        if (applied && snapshot.docChanges().length === 0) {
-          if (!fromCache) markServerSynced(user.uid, 'restaurants');
-          return;
-        }
-        if (snapshot.empty) {
-          // An empty offline cache says nothing about the account; wait for the server
-          if (fromCache && !applied) return;
-          // Only on first load: later empties are deletions, never a reason to re-upload
-          const localRaw =
-            !applied && shouldSeedCloudFromLocal(readCacheOwner(), fromCache)
-              ? localStorage.getItem(LOCAL_STORAGE_KEY)
-              : null;
-          if (localRaw) {
-            try {
-              const localItems = loadRestaurants(JSON.parse(localRaw) as any[]);
-              if (localItems.length > 0) {
-                await commitInBatches(
-                  db,
-                  localItems.map((item) => (b) =>
-                    b.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item))
-                  )
-                );
-                return;
-              }
-            } catch {
-              // Ignore
-            }
-          }
-          applied = true;
-          cloudLoadedRef.current = true;
-          restaurantsRef.current = [];
-          setRestaurants([]);
-          localStorage.setItem(LOCAL_STORAGE_KEY, '[]');
-          if (!fromCache) markServerSynced(user.uid, 'restaurants');
-          return;
-        }
-
-        const rawDocs: any[] = [];
-        const legacyDocIds: string[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          rawDocs.push(data);
-          if (isLegacyDoc(data)) legacyDocIds.push(docSnap.id);
-        });
-        const normalized = loadRestaurants(rawDocs);
-
-        // One-time migration from legacy meal occasions to separate category lists:
-        // drop the old meal-keyed docs and write the re-keyed, per-category ranked docs.
-        if (legacyDocIds.length > 0) {
-          try {
-            const keepIds = new Set(normalized.map((r) => r.id));
-            await commitInBatches(db, [
-              ...legacyDocIds
-                .filter((id) => !keepIds.has(id))
-                .map((id) => (b: WriteBatch) => b.delete(doc(db, 'users', user.uid, 'restaurants', id))),
-              ...normalized.map((item) => (b: WriteBatch) =>
-                b.set(doc(db, 'users', user.uid, 'restaurants', item.id), stripUndefined(item))
-              ),
-            ]);
-            return; // The snapshot listener fires again with the migrated docs
-          } catch (err) {
-            console.error('Failed to migrate restaurants to category lists:', err);
-          }
-        }
-
-        applied = true;
+    return subscribeAccountLists({
+      db,
+      uid: user.uid,
+      onRestaurants: (items) => {
         cloudLoadedRef.current = true;
-        setRestaurants(normalized);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
-        if (!fromCache) markServerSynced(user.uid, 'restaurants');
+        restaurantsRef.current = items;
+        setRestaurants(items);
       },
-      (err) => {
-        console.error('Firestore subscription error:', err);
-      }
-    );
-
-    return () => unsub();
-  }, [user]);
-
-  // Firestore subscription for Bookmarks (Want to Try)
-  useEffect(() => {
-    if (!user) return;
-
-    const colRef = collection(db, 'users', user.uid, 'bookmarks');
-    // Metadata changes are needed to learn when the server confirms what the cache showed
-    let applied = false;
-    const unsub = onSnapshot(
-      colRef,
-      { includeMetadataChanges: true },
-      async (snapshot) => {
-        const { fromCache } = snapshot.metadata;
-        if (applied && snapshot.docChanges().length === 0) {
-          if (!fromCache) markServerSynced(user.uid, 'bookmarks');
-          return;
-        }
-        if (snapshot.empty) {
-          // An empty offline cache says nothing about the account; wait for the server
-          if (fromCache && !applied) return;
-          // Only on first load: later empties are deletions, never a reason to re-upload
-          const localRaw =
-            !applied && shouldSeedCloudFromLocal(readCacheOwner(), fromCache)
-              ? localStorage.getItem(LOCAL_BOOKMARKS_KEY)
-              : null;
-          if (localRaw) {
-            try {
-              const localItems = loadBookmarks(JSON.parse(localRaw) as any[]);
-              if (localItems.length > 0) {
-                await commitInBatches(
-                  db,
-                  localItems.map((item) => (b) =>
-                    b.set(doc(db, 'users', user.uid, 'bookmarks', item.id), stripUndefined(item))
-                  )
-                );
-                return;
-              }
-            } catch {
-              // Ignore
-            }
-          }
-          applied = true;
-          setBookmarks([]);
-          localStorage.setItem(LOCAL_BOOKMARKS_KEY, '[]');
-          if (!fromCache) markServerSynced(user.uid, 'bookmarks');
-          return;
-        }
-
-        const loaded: BookmarkEntry[] = [];
-        const legacyBookmarks: BookmarkEntry[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (isFromNewerVersion(data)) return;
-          const bm = sanitizeLoadedBookmark(data);
-          loaded.push(bm);
-          if (isLegacyDoc(data)) legacyBookmarks.push(bm);
-        });
-        // One-time migration: rewrite legacy bookmarks without the old meal fields
-        if (legacyBookmarks.length > 0) {
-          commitInBatches(
-            db,
-            legacyBookmarks.map((bm) => (b) =>
-              b.set(doc(db, 'users', user.uid, 'bookmarks', bm.id), stripUndefined(bm))
-            )
-          ).catch(logWriteError('migrate legacy bookmarks'));
-        }
-        applied = true;
-        loaded.sort((a, b) => b.createdAt - a.createdAt);
-        setBookmarks(loaded);
-        localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(loaded));
-        if (!fromCache) markServerSynced(user.uid, 'bookmarks');
-      },
-      (err) => {
-        console.error('Firestore bookmarks subscription error:', err);
-      }
-    );
-
-    return () => unsub();
+      onBookmarks: setBookmarks,
+    });
   }, [user]);
 
   // Public docs friends read: sharedLists/{uid} (the list behind your link) and profiles/{uid}
   // (search, follower lists). The profile is only rewritten when it changes.
   const lastProfileJsonRef = useRef('');
   const trimWarnedRef = useRef(false);
-  const publishPublicDocs = async (overrideHandle?: string) => {
+  const publishMyPublicDocs = async (overrideHandle?: string) => {
     if (!user) return null;
-    const ownerName = user.displayName ? user.displayName.split(' ')[0] : 'Friend';
-    const effectiveHandle =
-      sanitizeHandle(overrideHandle || userHandle) || deriveDefaultHandle(user.displayName, user.email);
-    const lists = buildPublicLists(restaurants, bookmarks);
+    const { lists, profileJson } = await publishPublicDocs(
+      db,
+      {
+        uid: user.uid,
+        displayName: user.displayName,
+        email: user.email,
+        photoURL: user.photoURL,
+        handle: overrideHandle || userHandle,
+        restaurants,
+        bookmarks,
+        friends,
+      },
+      lastProfileJsonRef.current
+    );
+    lastProfileJsonRef.current = profileJson;
     if (lists.trimmed !== 'none' && !trimWarnedRef.current) {
       trimWarnedRef.current = true;
       showToast(PUBLIC_TRIM_MESSAGE[lists.trimmed], undefined, 6000);
     }
-
-    const payload: Record<string, any> = {
-      id: user.uid,
-      ownerUid: user.uid,
-      ownerName,
-      displayName: user.displayName || ownerName,
-      handle: effectiveHandle,
-      restaurants: lists.restaurants,
-      bookmarks: lists.bookmarks,
-      // Who you follow is public on profiles/{uid}; drop the old copy here
-      followingIds: deleteField(),
-      updatedAt: Date.now(),
-      createdAt: Date.now(),
-    };
-    if (user.photoURL) payload.photoURL = user.photoURL;
-
-    const profile = buildProfileDoc({
-      handle: effectiveHandle,
-      displayName: user.displayName || ownerName,
-      photoURL: user.photoURL,
-      followingIds: friends.map((f) => f.uid),
-      rankedCount: restaurants.length,
-    });
-    const profileJson = JSON.stringify(profile);
-    const writes: Promise<unknown>[] = [
-      setDoc(doc(db, 'sharedLists', user.uid), payload, { merge: true }),
-    ];
-    if (profileJson !== lastProfileJsonRef.current) {
-      writes.push(
-        setDoc(doc(db, 'profiles', user.uid), { ...profile, updatedAt: Date.now() }).then(() => {
-          lastProfileJsonRef.current = profileJson;
-        })
-      );
-    }
-    await Promise.all(writes);
     return lists;
   };
 
@@ -920,7 +692,7 @@ export const App: React.FC = () => {
     if (restaurants.length === 0 && bookmarks.length === 0 && friends.length === 0) return;
 
     const timer = setTimeout(() => {
-      publishPublicDocs().catch(logWriteError('shared list sync'));
+      publishMyPublicDocs().catch(logWriteError('shared list sync'));
     }, 900);
 
     return () => clearTimeout(timer);
@@ -952,7 +724,7 @@ export const App: React.FC = () => {
             .filter((k): k is string => Boolean(k))
         );
       } catch (err) {
-        console.error('Failed to persist to Firestore:', err);
+        logWriteError('save list')(err);
       }
     }
   };
@@ -1048,17 +820,15 @@ export const App: React.FC = () => {
     handleAddBookmark(candidate, { name: friendName, uid: friendUid });
   };
 
-  // Keeps profiles/{friend}/followers/{me} in step with following, and remembers which edges exist
-  const syncFollowEdge = (friendUid: string, following: boolean) => {
+  // Saves the private follow list and the public follower edge together
+  const commitFollowChange = (
+    nextFriends: FriendProfile[],
+    friendUid: string,
+    following: boolean,
+    context: string
+  ) => {
     if (!user) return;
-    setFollowEdge(db, user.uid, friendUid, following)
-      .then(() => {
-        const synced = readSyncedFollowEdges();
-        if (following) synced.add(friendUid);
-        else synced.delete(friendUid);
-        writeSyncedFollowEdges(synced);
-      })
-      .catch(logWriteError(following ? 'follower edge' : 'remove follower edge'));
+    saveFollowChange(db, user.uid, nextFriends, friendUid, following).catch(logWriteError(context));
   };
 
   const handleFollowFriend = async (listPayload: SharedListPayload) => {
@@ -1083,18 +853,7 @@ export const App: React.FC = () => {
       }));
     }
 
-    if (user) {
-      setDoc(
-        doc(db, 'users', user.uid),
-        {
-          friends: nextFriends,
-          followingIds: nextFriends.map((f) => f.uid),
-          updatedAt: Date.now(),
-        },
-        { merge: true }
-      ).catch(logWriteError('follow friend'));
-      syncFollowEdge(friendUid, true);
-    }
+    commitFollowChange(nextFriends, friendUid, true, 'follow friend');
 
     trackEvent('follow_friend', {
       friend_uid: friendUid,
@@ -1126,18 +885,7 @@ export const App: React.FC = () => {
     setFriends(nextFriends);
     localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(nextFriends));
 
-    if (user) {
-      setDoc(
-        doc(db, 'users', user.uid),
-        {
-          friends: nextFriends,
-          followingIds: nextFriends.map((f) => f.uid),
-          updatedAt: Date.now(),
-        },
-        { merge: true }
-      ).catch(logWriteError('unfollow friend'));
-      syncFollowEdge(friendUid, false);
-    }
+    commitFollowChange(nextFriends, friendUid, false, 'unfollow friend');
 
     if (removed) {
       trackEvent('unfollow_friend', { friend_uid: friendUid });
@@ -1148,18 +896,7 @@ export const App: React.FC = () => {
           onClick: () => {
             setFriends(prevFriends);
             localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(prevFriends));
-            if (user) {
-              setDoc(
-                doc(db, 'users', user.uid),
-                {
-                  friends: prevFriends,
-                  followingIds: prevFriends.map((f) => f.uid),
-                  updatedAt: Date.now(),
-                },
-                { merge: true }
-              ).catch(logWriteError('undo unfollow'));
-              syncFollowEdge(friendUid, true);
-            }
+            commitFollowChange(prevFriends, friendUid, true, 'undo unfollow');
           },
         },
         5000
@@ -1405,7 +1142,7 @@ export const App: React.FC = () => {
       return null;
     }
 
-    const lists = await publishPublicDocs(overrideHandle);
+    const lists = await publishMyPublicDocs(overrideHandle);
     trackEvent('publish_share_link', {
       restaurants_count: lists?.restaurants.length ?? 0,
       bookmarks_count: lists?.bookmarks.length ?? 0,

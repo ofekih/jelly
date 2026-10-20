@@ -1,4 +1,4 @@
-import { updateLocalSettings } from './localSettings';
+import { LOCAL_SETTINGS_KEY } from '../localSettings';
 
 export const LOCAL_STORAGE_KEY = 'palatelo_restaurants_v2';
 export const LEGACY_LOCAL_STORAGE_KEY = 'palate_personal_restaurants_v1';
@@ -15,6 +15,11 @@ export const LOCAL_FOLLOW_EDGES_KEY = 'jelly_follow_edges_v1';
  */
 export const CACHE_OWNER_KEY = 'jelly_cache_owner_v1';
 
+/** The browser's localStorage; tests pass their own per simulated device. */
+export function defaultStorage(): Storage {
+  return globalThis.localStorage;
+}
+
 const ACCOUNT_KEYS = [
   LOCAL_STORAGE_KEY,
   LEGACY_LOCAL_STORAGE_KEY,
@@ -25,34 +30,34 @@ const ACCOUNT_KEYS = [
   CACHE_OWNER_KEY,
 ];
 
-export function readCacheOwner(): string | null {
+export function readCacheOwner(storage = defaultStorage()): string | null {
   try {
-    return localStorage.getItem(CACHE_OWNER_KEY) || null;
+    return storage.getItem(CACHE_OWNER_KEY) || null;
   } catch {
     return null;
   }
 }
 
-export function writeCacheOwner(uid: string): void {
+export function writeCacheOwner(uid: string, storage = defaultStorage()): void {
   try {
-    localStorage.setItem(CACHE_OWNER_KEY, uid);
+    storage.setItem(CACHE_OWNER_KEY, uid);
   } catch {
     // Ignore (storage full or unavailable)
   }
 }
 
-export function readSyncedFollowEdges(): Set<string> {
+export function readSyncedFollowEdges(storage = defaultStorage()): Set<string> {
   try {
-    const parsed = JSON.parse(localStorage.getItem(LOCAL_FOLLOW_EDGES_KEY) || '[]');
+    const parsed = JSON.parse(storage.getItem(LOCAL_FOLLOW_EDGES_KEY) || '[]');
     return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : []);
   } catch {
     return new Set();
   }
 }
 
-export function writeSyncedFollowEdges(uids: Iterable<string>): void {
+export function writeSyncedFollowEdges(uids: Iterable<string>, storage = defaultStorage()): void {
   try {
-    localStorage.setItem(LOCAL_FOLLOW_EDGES_KEY, JSON.stringify([...new Set(uids)]));
+    storage.setItem(LOCAL_FOLLOW_EDGES_KEY, JSON.stringify([...new Set(uids)]));
   } catch {
     // Ignore (storage full or unavailable)
   }
@@ -72,11 +77,36 @@ export function shouldSeedCloudFromLocal(cacheOwner: string | null, fromCache: b
 }
 
 /** Forgets every local copy of account data (lists, friends, handle) and its owner. */
-export function clearAccountCache(): void {
+export function clearAccountCache(storage = defaultStorage()): void {
   try {
-    for (const key of ACCOUNT_KEYS) localStorage.removeItem(key);
+    for (const key of ACCOUNT_KEYS) storage.removeItem(key);
+    // The handle belongs to the account; device settings (theme, city, …) stay
+    const settings = JSON.parse(storage.getItem(LOCAL_SETTINGS_KEY) || '{}');
+    if (settings && typeof settings === 'object' && 'handle' in settings) {
+      delete settings.handle;
+      storage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settings));
+    }
   } catch {
-    // Ignore (storage unavailable)
+    // Ignore (storage unavailable or settings unreadable)
   }
-  updateLocalSettings({ handle: undefined });
+}
+
+/** Reads a JSON array stored under `key`, or null when missing or unreadable. */
+export function readStoredArray(key: string, storage = defaultStorage()): unknown[] | null {
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeStoredArray(key: string, items: unknown[], storage = defaultStorage()): void {
+  try {
+    storage.setItem(key, JSON.stringify(items));
+  } catch {
+    // Ignore (storage full or unavailable)
+  }
 }

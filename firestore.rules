@@ -107,7 +107,8 @@ rules_version = '2';
 //   - handle: string (0..30 chars, matches ^[a-z0-9_.-]{0,30}$) - public handle
 //   - handleLower: string (0..30 chars, == handle.lower() when handle present) - search key
 //   - displayName: string (0..200 chars) - public display name
-//   - nameLower: string (0..200 chars, == displayName.lower() when displayName present) - search key
+//   - nameLower: string (0..200 chars) - accent- and case-insensitive search key for displayName
+//     (rules' lower() only folds A-Z, so the client's key can't be checked against it)
 //   - photoURL: string (0..1000 chars) - avatar URL
 //   - followingIds: list<string> (<= 2000 items) - followed UIDs
 //   - rankedCount: int (0..100000) - number of ranked spots
@@ -311,8 +312,7 @@ service cloud.firestore {
         (!('displayName' in data) ||
           (data.displayName is string && data.displayName.size() <= 200)) &&
         (!('nameLower' in data) ||
-          (data.nameLower is string && data.nameLower.size() <= 200 &&
-           (!('displayName' in data) || data.nameLower == data.displayName.lower()))) &&
+          (data.nameLower is string && data.nameLower.size() <= 200)) &&
         (!('photoURL' in data) ||
           (data.photoURL is string && data.photoURL.size() <= 1000)) &&
         (!('followingIds' in data) || isValidList(data.followingIds, 2000)) &&

@@ -9,7 +9,7 @@ import {
   shouldSeedCloudFromLocal,
   writeCacheOwner,
 } from './localCache';
-import { LOCAL_SETTINGS_KEY, readLocalSettings } from './localSettings';
+import { LOCAL_SETTINGS_KEY, readLocalSettings } from '../localSettings';
 
 const store = new Map<string, string>();
 globalThis.localStorage = {

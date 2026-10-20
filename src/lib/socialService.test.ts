@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildProfileDoc, placeStatKey, prefixEnd, profileToPayload } from './socialService';
+import { buildProfileDoc, nameSearchKey, placeStatKey, prefixEnd, profileToPayload } from './socialService';
 
 describe('buildProfileDoc', () => {
   it('matches what isValidProfile accepts: sanitized handle, lowercase copies, no empty fields', () => {
@@ -19,6 +19,14 @@ describe('buildProfileDoc', () => {
       rankedCount: 12,
     });
     expect('photoURL' in profile).toBe(false);
+  });
+
+  it('keys names for accent- and case-insensitive search', () => {
+    expect(buildProfileDoc({ displayName: 'Zoë ÅLVAREZ', followingIds: [], rankedCount: 0 }).nameLower).toBe(
+      'zoe alvarez'
+    );
+    expect(nameSearchKey(' Émile Ünal ')).toBe('emile unal');
+    expect(nameSearchKey('李 小龍')).toBe('李 小龍');
   });
 
   it('omits handle and name when there are none', () => {

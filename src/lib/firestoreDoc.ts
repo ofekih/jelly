@@ -49,7 +49,22 @@ export async function commitInBatches(
   }
 }
 
-/** `.catch` handler for fire-and-forget writes: these usually fail on a `firestore.rules` mismatch. */
+type WriteErrorListener = (context: string, err: unknown) => void;
+const writeErrorListeners = new Set<WriteErrorListener>();
+
+/** Hears about every failed write reported through `logWriteError` (e.g. to tell the user). */
+export function onWriteError(listener: WriteErrorListener): () => void {
+  writeErrorListeners.add(listener);
+  return () => {
+    writeErrorListeners.delete(listener);
+  };
+}
+
+/**
+ * `.catch` handler for fire-and-forget writes: these usually fail on a `firestore.rules` mismatch
+ * (offline writes don't fail; Firestore queues them). Logs and notifies `onWriteError` listeners.
+ */
 export const logWriteError = (context: string) => (err: unknown) => {
   console.error(`Firestore write failed (${context}):`, err);
+  writeErrorListeners.forEach((listener) => listener(context, err));
 };

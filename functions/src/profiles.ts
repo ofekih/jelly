@@ -10,6 +10,11 @@ export interface ProfileDoc {
   rankedCount: number;
 }
 
+/** Same as `nameSearchKey` in `src/lib/socialService.ts` (accent- and case-insensitive). */
+export function nameSearchKey(name: string): string {
+  return name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+}
+
 /** Same as `sanitizeHandle` in `src/lib/friendsService.ts`. */
 export function sanitizeHandle(raw: string): string {
   return raw
@@ -54,7 +59,7 @@ export function profileFromSharedList(
   if (rawName) {
     const displayName = rawName.trim().slice(0, 200);
     profile.displayName = displayName;
-    profile.nameLower = displayName.toLowerCase();
+    profile.nameLower = nameSearchKey(displayName).slice(0, 200);
   }
   if (typeof data.photoURL === 'string' && data.photoURL && data.photoURL.length <= 1000) {
     profile.photoURL = data.photoURL;

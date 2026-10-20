@@ -11,7 +11,8 @@ ranking web app. Live at https://eatwithjelly.com.
 
 ## Commands
 - `npm run dev` – local dev server
-- `npm test` – Vitest (`src/lib/*.test.ts`)
+- `npm test` – Vitest (`src/**/*.test.ts`)
+- `npm run test:emulator` – sync tests (`src/**/*.emu.test.ts`) against the Firestore emulator with the real `firestore.rules`; run after touching `src/lib/sync/` or the rules. Functions have their own: `cd functions && npm run test:emulator`
 - `npm run build` – `tsc -b && vite build` (must pass with zero TS errors)
 - Deploy: `npx -y firebase-tools@latest deploy --only hosting --project ofek-beli-ranker`
 - Firestore rules deploy: `npx -y firebase-tools@latest deploy --only firestore:rules --project ofek-beli-ranker`
@@ -31,7 +32,7 @@ ranking web app. Live at https://eatwithjelly.com.
 | `src/lib/predictions.ts`, `usePredictions.ts` | Parse + one `onSnapshot` of `users/{uid}/private/predictions`, looked up per spot by `placeId__category` |
 | `src/lib/socialService.ts` | Firestore reads/writes for `profiles` (build, prefix search), follower edges, follow counts, `placeStats` fetch; `usePlaceStats.ts` caches stats for components |
 | `src/lib/publicList.ts` | Builds the public `sharedLists` payload under the 500-item / ~1 MiB limits (drops notes before spots) |
-| `src/lib/localCache.ts` | localStorage keys for account data + cache owner (which account the local copy mirrors; only signed-out data is ever uploaded) |
+| `src/lib/sync/` | Account sync, kept out of `App.tsx` and tested against the emulator (`sync.emu.test.ts`): `accountLists` (both lists ⇄ cloud + local copy: server-confirmed seeding, stored-score refresh, migrations), `userDoc` (settings + friends merge), `follows` (follow list + follower edges), `publish` (`sharedLists` + `profiles`), `localCache` (local keys + which account the copy mirrors; only signed-out data is ever uploaded) |
 | `functions/` | Cloud Functions: `onRestaurantWritten` (recomputes `placeStats`, marks `predictionJobs/{uid}` dirty), `onBookmarkWritten`, `processPredictionJobs` (every minute, debounced), `nightlyPredictions`; one-time `scripts/backfill.ts`; emulator tests (`npm run test:emulator`). Compiles `src/lib/tasteModel.ts` + `src/types.ts` too (rootDir `..`, main `lib/functions/src/index.js`) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |

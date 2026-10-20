@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin } from 'vite';
+import type { Plugin } from 'vite';
+import { configDefaults, defineConfig } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 
 // Unique per build (and per dev-server start); compared against /version.json to detect deploys.
@@ -47,5 +48,9 @@ export default defineConfig({
   },
   esbuild: {
     jsx: 'automatic',
+  },
+  test: {
+    // Emulator tests run via `npm run test:emulator`; functions/ and worktrees have their own
+    exclude: [...configDefaults.exclude, '**/*.emu.test.ts', 'functions/**', '.claude/**'],
   },
 });
