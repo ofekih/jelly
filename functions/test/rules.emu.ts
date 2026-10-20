@@ -128,9 +128,19 @@ describe('placeStats/{id}', () => {
   });
 });
 
-describe('sharedLists (unchanged in Phase 1)', () => {
-  it('is still publicly gettable and listable for old clients', async () => {
+describe('sharedLists', () => {
+  it('can be opened one at a time by anyone, but never listed or queried', async () => {
     await assertSucceeds(getDoc(doc(anon(), 'sharedLists/bob')));
-    await assertSucceeds(getDocs(collection(anon(), 'sharedLists')));
+    await assertFails(getDocs(collection(anon(), 'sharedLists')));
+    await assertFails(getDocs(collection(as('alice'), 'sharedLists')));
+    await assertFails(getDocs(collection(as('bob'), 'sharedLists')));
+  });
+
+  it('lets you create only your own list, and update only lists you own', async () => {
+    const list = { ownerUid: 'alice', restaurants: [] };
+    await assertFails(setDoc(doc(as('alice'), 'sharedLists/dave'), list));
+    await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), list));
+    await assertSucceeds(updateDoc(doc(as('alice'), 'sharedLists/alice'), { title: 'Mine' }));
+    await assertFails(updateDoc(doc(as('alice'), 'sharedLists/bob'), { title: 'Hijack' }));
   });
 });

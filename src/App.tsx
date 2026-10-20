@@ -8,6 +8,7 @@ import {
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -879,8 +880,8 @@ export const App: React.FC = () => {
       handle: effectiveHandle,
       restaurants: lists.restaurants,
       bookmarks: lists.bookmarks,
-      // Still read by app versions from before profiles/follower edges
-      followingIds: friends.slice(0, 500).map((f) => f.uid),
+      // Who you follow is public on profiles/{uid}; drop the old copy here
+      followingIds: deleteField(),
       updatedAt: Date.now(),
       createdAt: Date.now(),
     };

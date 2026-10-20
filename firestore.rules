@@ -364,8 +364,12 @@ service cloud.firestore {
     }
 
     match /sharedLists/{shareId} {
-      allow read: if true;
+      // Anyone with the link can open one list; nobody can list or query them all
+      allow get: if true;
+      allow list: if false;
+      // A new list lives at your own uid, so nobody can claim someone else's link first
       allow create: if isAuthenticated() &&
+        shareId == request.auth.uid &&
         isValidSharedList(request.resource.data);
       allow update: if isAuthenticated() &&
         resource.data.ownerUid == request.auth.uid &&

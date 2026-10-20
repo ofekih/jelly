@@ -17,6 +17,20 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.2.0',
+    date: '2026-10-19',
+    title: 'More private, and faster',
+    highlights: [
+      'Your list can only be opened from your share link—nobody can browse or download everyone’s lists any more',
+      'jelly opens faster: it no longer loads every jelly user’s list, just yours and the friends you follow',
+      'Find friends by the start of their name or @handle',
+      'jelly averages update by themselves a few seconds after anyone ranks a spot',
+      '“For you” predictions now come from the friends you follow',
+      'Signing out clears your lists from the device, so the next person can’t see them',
+      'Deleting your last spot or bookmark on one device no longer brings it back from another, and unfollows stick everywhere',
+    ],
+  },
+  {
     version: '2.1.0',
     date: '2026-10-19',
     title: 'Scores that match how you felt',
