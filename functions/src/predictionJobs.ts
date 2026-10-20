@@ -1,6 +1,5 @@
 import { FieldValue, type DocumentSnapshot, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import type { TastePrediction } from '../../src/lib/tasteModel';
 import {
   buildCorpus,
   computeUserPredictions,
@@ -9,6 +8,7 @@ import {
   type CorpusUser,
   type RankedDoc,
   type SpotDoc,
+  type StoredPrediction,
 } from './predictions';
 
 /**
@@ -40,7 +40,7 @@ async function loadCorpusUsers(db: Firestore, targets: string[] | 'all'): Promis
 
   const ranked = await db
     .collectionGroup('restaurants')
-    .select('placeId', 'name', 'city', 'category', 'cuisines', 'magicScore')
+    .select('placeId', 'name', 'city', 'neighborhood', 'lat', 'lng', 'category', 'cuisines', 'magicScore')
     .get();
   for (const d of ranked.docs) {
     // Only `users/{uid}/restaurants/{id}` counts
@@ -52,7 +52,7 @@ async function loadCorpusUsers(db: Firestore, targets: string[] | 'all'): Promis
   const targetUids = targets === 'all' ? [...users.keys()] : targets;
   await Promise.all(
     targetUids.map(async (uid) => {
-      const snap = await db.collection(`users/${uid}/bookmarks`).select('placeId', 'name', 'city', 'category', 'cuisines').get();
+      const snap = await db.collection(`users/${uid}/bookmarks`).select('placeId', 'name', 'city', 'neighborhood', 'lat', 'lng', 'category', 'cuisines').get();
       userFor(uid).bookmarks = snap.docs.map((d) => toSpotDoc(d.data())).filter((b): b is SpotDoc => b !== null);
     })
   );
@@ -90,7 +90,7 @@ function canonical(value: unknown): string {
 }
 
 /** Writes the doc only when it changed (so the app's listener isn't woken up for nothing). */
-async function writePredictions(db: Firestore, uid: string, spots: Record<string, TastePrediction>): Promise<boolean> {
+async function writePredictions(db: Firestore, uid: string, spots: Record<string, StoredPrediction>): Promise<boolean> {
   const ref = predictionsDoc(db, uid);
   const existing = await ref.get();
   if (Object.keys(spots).length === 0) {

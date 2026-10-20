@@ -316,7 +316,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           ) : (
             <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
               {reRankingEntry
-                ? `Re-rank · ${CATEGORY_LABEL[reRankingEntry.category]}`
+                ? `${existingRestaurants.some((r) => r.id === reRankingEntry.id) ? 'Re-rank' : 'Rank'} · ${
+                    CATEGORY_LABEL[reRankingEntry.category]
+                  }`
                 : 'Add a Place'}
             </span>
           )}

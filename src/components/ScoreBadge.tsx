@@ -3,6 +3,8 @@ import React from 'react';
 interface ScoreBadgeProps {
   score: number;
   size?: 'sm' | 'md' | 'lg';
+  /** A prediction rather than your own score: dashed ring */
+  predicted?: boolean;
 }
 
 function getScoreCircleClasses(score: number): string {
@@ -18,7 +20,7 @@ function getScoreCircleClasses(score: number): string {
   return 'border-rose-500/80 text-rose-700 bg-rose-50/60 dark:border-rose-400/70 dark:text-rose-300 dark:bg-rose-950/50';
 }
 
-export const ScoreBadge: React.FC<ScoreBadgeProps> = ({ score, size = 'md' }) => {
+export const ScoreBadge: React.FC<ScoreBadgeProps> = ({ score, size = 'md', predicted = false }) => {
   const circle = getScoreCircleClasses(score);
 
   const sizeClasses =
@@ -30,7 +32,7 @@ export const ScoreBadge: React.FC<ScoreBadgeProps> = ({ score, size = 'md' }) =>
 
   return (
     <div
-      className={`rounded-full flex items-center justify-center shrink-0 tabular-nums tracking-tight select-none ${circle} ${sizeClasses}`}
+      className={`rounded-full flex items-center justify-center shrink-0 tabular-nums tracking-tight select-none ${circle} ${sizeClasses}${predicted ? ' border-dashed' : ''}`}
     >
       {score.toFixed(1)}
     </div>

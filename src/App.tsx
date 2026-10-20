@@ -103,6 +103,7 @@ import {
 } from './lib/friendsService';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
+import { ForYouList } from './components/ForYouList';
 import { ConfirmModal } from './components/ConfirmModal';
 import { EatTogetherModal } from './components/EatTogetherModal';
 import { FollowListModal } from './components/FollowListModal';
@@ -139,7 +140,8 @@ import {
   setFollowEdge,
 } from './lib/socialService';
 import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
-import { usePredictions, watchPredictions } from './lib/usePredictions';
+import { usePredictionMap, usePredictions, watchPredictions } from './lib/usePredictions';
+import { buildForYouSpots, ForYouSpot } from './lib/predictions';
 import { FollowCounts } from './components/FollowCounts';
 import { buildPublicLists, PublicListTrim } from './lib/publicList';
 
@@ -275,7 +277,7 @@ export const App: React.FC = () => {
   });
 
   // View & Filter State
-  const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try'>('ranked');
+  const [activeTab, setActiveTab] = useState<'ranked' | 'want_to_try' | 'for_you'>('ranked');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   // Each category is a fully separate list; exactly one is shown at a time (its group's lists are the tabs)
   const [selectedCategory, setSelectedCategory] = useState<SpotCategory>(() => {
@@ -1324,6 +1326,11 @@ export const App: React.FC = () => {
 
   const handleStartRankFromBookmark = (bookmark: BookmarkEntry) => {
     setRankingBookmark(bookmark);
+    openRankFor(bookmark);
+  };
+
+  /** Opens the rank flow for a spot that isn't in your list yet (a bookmark or a "For you" pick). */
+  const openRankFor = (bookmark: BookmarkEntry) => {
     const pseudoEntry: RestaurantEntry = {
       id: buildEntryId(bookmark.placeId || bookmark.id, bookmark.category),
       placeId: bookmark.placeId || bookmark.id,
@@ -1349,6 +1356,47 @@ export const App: React.FC = () => {
     };
     setReRankingEntry(pseudoEntry);
     setIsAddModalOpen(true);
+  };
+
+  const findMyBookmark = (spot: { placeId?: string; name: string }) =>
+    bookmarks.find(
+      (b) =>
+        (spot.placeId && b.placeId === spot.placeId) ||
+        b.name.trim().toLowerCase() === spot.name.trim().toLowerCase()
+    );
+
+  const handleToggleForYouBookmark = (spot: ForYouSpot) => {
+    const existing = findMyBookmark(spot);
+    if (existing) {
+      executeDeleteBookmark(existing.id);
+      return;
+    }
+    trackEvent('for_you_bookmark', { category: spot.category, predicted_score: spot.prediction.score });
+    handleAddBookmark({
+      placeId: spot.placeId!,
+      name: spot.name,
+      formattedAddress: spot.formattedAddress,
+      neighborhood: spot.neighborhood,
+      city: spot.city,
+      lat: spot.lat,
+      lng: spot.lng,
+      googleMapsUri: spot.googleMapsUri,
+      categories: [spot.category],
+      cuisines: spot.cuisines,
+      source: 'google_places',
+    });
+  };
+
+  const handleRankForYou = (spot: BookmarkEntry) => {
+    trackEvent('open_rank_from_for_you', { category: spot.category });
+    const existing = findMyBookmark(spot);
+    if (existing) {
+      // Ranking it here also clears it from your bookmarks
+      handleStartRankFromBookmark({ ...existing, category: spot.category });
+      return;
+    }
+    setRankingBookmark(null);
+    openRankFor(spot);
   };
 
   const handlePublishShareLink = async (overrideHandle?: string): Promise<string | null> => {
@@ -1828,7 +1876,22 @@ export const App: React.FC = () => {
     );
   }, [activeDetailSpot, myBookmarkedPlaceIds, myBookmarkedNames]);
 
-  const currentSourceItems = activeTab === 'ranked' ? activeRestaurants : activeBookmarks;
+  // "For you": server predictions for this group's lists, minus spots you've ranked since
+  const { predictions: storedPredictions, loaded: predictionsLoaded } = usePredictionMap();
+  const groupForYou = useMemo(
+    () =>
+      user && !sharedList
+        ? GROUP_CATEGORIES[selectedGroup].flatMap((c) => buildForYouSpots(storedPredictions, c, restaurants))
+        : [],
+    [user, sharedList, selectedGroup, storedPredictions, restaurants]
+  );
+  // Shared lists have no "For you"
+  useEffect(() => {
+    if (sharedList && activeTab === 'for_you') setActiveTab('ranked');
+  }, [sharedList, activeTab]);
+
+  const currentSourceItems =
+    activeTab === 'ranked' ? activeRestaurants : activeTab === 'for_you' ? groupForYou : activeBookmarks;
 
   // City counts across active source items in this group
   const cityCounts = useMemo(() => {
@@ -1964,6 +2027,26 @@ export const App: React.FC = () => {
     listSearchQuery,
     userLocation,
   ]);
+
+  const filteredForYou = useMemo(() => {
+    const q = listSearchQuery.trim().toLowerCase();
+    const base = groupForYou.filter((s) => {
+      if (s.category !== selectedCategory) return false;
+      if (selectedCity !== 'ALL' && s.city !== selectedCity) return false;
+      if (selectedCuisine !== 'ALL' && !s.cuisines.includes(selectedCuisine)) return false;
+      if (q && !`${s.name} ${s.formattedAddress} ${s.cuisines.join(' ')}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    if (!sortByNearest || !userLocation) return base;
+    return [...base].sort((a, b) => {
+      const da = getItemDistanceMiles(a, userLocation);
+      const db = getItemDistanceMiles(b, userLocation);
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return da - db;
+    });
+  }, [groupForYou, selectedCategory, selectedCity, selectedCuisine, listSearchQuery, sortByNearest, userLocation]);
 
   const isFiltered =
     selectedCity !== 'ALL' ||
@@ -2386,7 +2469,7 @@ export const App: React.FC = () => {
                 setActiveTab('ranked');
                 trackEvent('switch_tab', { tab: 'ranked' });
               }}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`px-2 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 sm:gap-1.5 ${
                 activeTab === 'ranked'
                   ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                   : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -2404,7 +2487,7 @@ export const App: React.FC = () => {
                 setActiveTab('want_to_try');
                 trackEvent('switch_tab', { tab: 'want_to_try' });
               }}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`px-2 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 sm:gap-1.5 ${
                 activeTab === 'want_to_try'
                   ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                   : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -2418,6 +2501,24 @@ export const App: React.FC = () => {
                 </span>
               )}
             </button>
+
+            {!sharedList && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('for_you');
+                  trackEvent('switch_tab', { tab: 'for_you' });
+                }}
+                className={`px-2 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 sm:gap-1.5 ${
+                  activeTab === 'for_you'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-emerald-500" />
+                <span>For you</span>
+              </button>
+            )}
           </div>
 
           {/* List <-> Map Toggle */}
@@ -2428,7 +2529,7 @@ export const App: React.FC = () => {
                 setViewMode('list');
                 trackEvent('switch_view_mode', { mode: 'list' });
               }}
-              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
+              className={`px-2 sm:px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
                 viewMode === 'list'
                   ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                   : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -2444,7 +2545,7 @@ export const App: React.FC = () => {
                 setViewMode('map');
                 trackEvent('switch_view_mode', { mode: 'map' });
               }}
-              className={`px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
+              className={`px-2 sm:px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
                 viewMode === 'map'
                   ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
                   : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
@@ -2468,6 +2569,8 @@ export const App: React.FC = () => {
               placeholder={
                 activeTab === 'ranked'
                   ? 'Filter your ranked list...'
+                  : activeTab === 'for_you'
+                  ? 'Filter your picks...'
                   : `Filter your ${groupCopy.want.toLowerCase()} list...`
               }
               autoFocus
@@ -2535,23 +2638,23 @@ export const App: React.FC = () => {
                       requestUserLocation({ enableSortByNearest: true });
                       return;
                     }
-                    if (activeTab === 'ranked') {
+                    if (activeTab !== 'want_to_try') {
                       const next = !sortByNearest;
                       setSortByNearest(next);
                       trackEvent('toggle_sort_nearest', { sort_by_nearest: next });
                     }
                   }}
                   className={`px-2.5 py-1.5 rounded-full text-xs font-semibold shrink-0 flex items-center gap-1 transition-colors ${
-                    (activeTab === 'ranked' ? sortByNearest && Boolean(userLocation) : Boolean(userLocation))
+                    (activeTab !== 'want_to_try' ? sortByNearest && Boolean(userLocation) : Boolean(userLocation))
                       ? 'bg-blue-600 text-white dark:bg-blue-500 dark:text-zinc-950'
                       : 'bg-zinc-200/70 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800'
                   }`}
                   title={
                     !userLocation
                       ? 'Use my location to sort by nearest'
-                      : activeTab === 'ranked'
+                      : activeTab !== 'want_to_try'
                       ? sortByNearest
-                        ? 'Sorted by nearest · Click to sort by rank'
+                        ? `Sorted by nearest · Click to sort by ${activeTab === 'ranked' ? 'rank' : 'predicted score'}`
                         : 'Sort by nearest to me'
                       : 'Sorted by nearest to me'
                   }
@@ -2652,9 +2755,9 @@ export const App: React.FC = () => {
           <div className="py-16 text-center text-xs text-zinc-400">Loading shared list...</div>
         ) : viewMode === 'map' ? (
           <RestaurantMapView
-            mode={activeTab}
+            mode={activeTab === 'for_you' ? 'want_to_try' : activeTab}
             restaurants={filteredRestaurants}
-            bookmarks={filteredBookmarks}
+            bookmarks={activeTab === 'for_you' ? filteredForYou : filteredBookmarks}
             darkMode={darkMode}
             userLocation={userLocation}
             selectedCity={selectedCity}
@@ -2670,7 +2773,22 @@ export const App: React.FC = () => {
               });
               setActiveDetailSpot(spot);
             }}
-            onRankBookmark={handleStartRankFromBookmark}
+            onRankBookmark={activeTab === 'for_you' ? handleRankForYou : handleStartRankFromBookmark}
+          />
+        ) : activeTab === 'for_you' ? (
+          <ForYouList
+            spots={filteredForYou}
+            isFiltered={isFiltered}
+            selectedCategory={selectedCategory}
+            totalUnfilteredCount={selectedCategoryTotal}
+            rankedInCategory={getCategoryList(restaurants, selectedCategory).length}
+            isSignedIn={Boolean(user)}
+            loaded={predictionsLoaded}
+            userLocation={userLocation}
+            isSaved={(spot) => Boolean(findMyBookmark(spot))}
+            onSignIn={handleGoogleSignIn}
+            onToggleBookmark={handleToggleForYouBookmark}
+            onRank={handleRankForYou}
           />
         ) : activeTab === 'ranked' ? (
           <RestaurantList

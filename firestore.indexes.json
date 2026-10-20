@@ -9,5 +9,11 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "private",
+      "fieldPath": "spots",
+      "indexes": []
+    }
+  ]
 }

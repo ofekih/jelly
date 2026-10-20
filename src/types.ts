@@ -202,6 +202,19 @@ export interface BookmarkEntry {
   updatedAt: number;
 }
 
+/**
+ * What the "For you" list shows for a predicted spot, stored next to each prediction in
+ * `users/{uid}/private/predictions` (kept small: the doc holds up to `MAX_PREDICTIONS` of them).
+ */
+export interface PredictionPlace {
+  name: string;
+  city?: string;
+  neighborhood?: string;
+  lat?: number;
+  lng?: number;
+  cuisines?: string[];
+}
+
 export interface SharedListPayload {
   id: string;
   ownerUid: string;

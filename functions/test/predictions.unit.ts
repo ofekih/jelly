@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildCorpus, computeUserPredictions, MAX_PREDICTIONS, type CorpusUser, type RankedDoc } from '../src/predictions';
+import {
+  buildCorpus,
+  computeUserPredictions,
+  MAX_PREDICTIONS,
+  predictionPlace,
+  type CorpusUser,
+  type RankedDoc,
+} from '../src/predictions';
 
 const r = (placeId: string, magicScore: number, category = 'restaurants', cuisines = ['Japanese']): RankedDoc => ({
   placeId, name: placeId, category, cuisines, magicScore,
@@ -65,5 +72,56 @@ describe('computeUserPredictions', () => {
       'me'
     );
     expect(Object.keys(result)).toHaveLength(MAX_PREDICTIONS);
+  });
+
+  it('stores how to show each spot: the name most people use, area, location and top tags', () => {
+    const at = (name: string, extra: Partial<RankedDoc> = {}) => ({ ...r('new', 8.4, 'restaurants', ['Thai', 'Noodles']), name, ...extra });
+    const result = computeUserPredictions(
+      corpus([
+        { uid: 'me', entries: base, followingIds: ['f', 'g', 'h'] },
+        { uid: 'f', entries: [...alike(1), at('Lers Ros', { city: 'SF', lat: 37.123456789, lng: -122.4 })] },
+        { uid: 'g', entries: [...alike(0.5), at('Lers Ros Thai', { city: 'SF', neighborhood: 'Tenderloin' })] },
+        { uid: 'h', entries: [...alike(1.5), at('Lers Ros')] },
+      ]),
+      'me'
+    );
+    expect(result['new__restaurants'].place).toEqual({
+      name: 'Lers Ros',
+      city: 'SF',
+      neighborhood: 'Tenderloin',
+      lat: 37.12346,
+      lng: -122.4,
+      cuisines: ['Noodles', 'Thai'],
+    });
+  });
+
+  it('never stores undefined values, and caps names and tags', () => {
+    const place = predictionPlace(
+      [{ name: 'x'.repeat(500), category: 'restaurants', cuisines: [] }],
+      ['A', 'B', 'C', 'D']
+    );
+    expect(place).toEqual({ name: 'x'.repeat(80), cuisines: ['A', 'B', 'C'] });
+    expect(Object.values(place)).not.toContain(undefined);
+  });
+
+  it('keeps a full doc of long-named spots well under 1 MiB', () => {
+    const long = (i: number): RankedDoc => ({
+      ...r(`ChIJ${'x'.repeat(23)}${i}`, 8, 'restaurants', ['Middle Eastern', 'Mediterranean', 'Cocktail Bar', 'Wine Bar']),
+      name: `A Rather Long Restaurant Name That Goes On ${i} ${'y'.repeat(40)}`,
+      city: 'San Francisco Bay Area Somewhere Long',
+      neighborhood: 'Some Quite Long Neighborhood Name Here',
+      lat: 37.123456789,
+      lng: -122.123456789,
+    });
+    const extra = Array.from({ length: MAX_PREDICTIONS + 10 }, (_, i) => long(i));
+    const result = computeUserPredictions(
+      corpus([
+        { uid: 'me', entries: base, followingIds: ['f'] },
+        { uid: 'f', entries: [...alike(1), ...extra], displayName: 'A Friend With A Long Display Name' },
+      ]),
+      'me'
+    );
+    expect(Object.keys(result)).toHaveLength(MAX_PREDICTIONS);
+    expect(new TextEncoder().encode(JSON.stringify({ spots: result })).length).toBeLessThan(800 * 1024);
   });
 });

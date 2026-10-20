@@ -17,7 +17,7 @@ import {
   type TasteRater,
   type TasteSimilarityResult,
 } from '../../src/lib/tasteModel';
-import { CATEGORY_GROUP, type SpotCategory } from '../../src/types';
+import { CATEGORY_GROUP, type PredictionPlace, type SpotCategory } from '../../src/types';
 import { placeKeyOf, placeStatId } from './placeStats';
 
 /** A ranked or bookmarked spot as stored at `users/{uid}/restaurants|bookmarks/{id}`. */
@@ -25,6 +25,9 @@ export interface SpotDoc {
   placeId?: string;
   name: string;
   city?: string;
+  neighborhood?: string;
+  lat?: number;
+  lng?: number;
   category: string;
   cuisines: string[];
 }
@@ -51,12 +54,20 @@ export interface Corpus {
   raters: Map<string, Map<string, RankedDoc>>;
 }
 
+/** A prediction as stored, with what the "For you" list needs to show the spot. */
+export type StoredPrediction = TastePrediction & { place: PredictionPlace };
+
 /** Most predictions kept per user (the doc must stay well under Firestore's 1 MiB). */
-export const MAX_PREDICTIONS = 2000;
+export const MAX_PREDICTIONS = 1500;
+/** Longest stored place name and most cuisine tags per spot, so one odd entry can't bloat the doc. */
+const MAX_NAME_LENGTH = 80;
+const MAX_PLACE_CUISINES = 3;
 
 const groupOf = (category: string) => CATEGORY_GROUP[category as SpotCategory];
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const coord = (v: unknown, max: number): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? v : undefined;
 
 /** A spot doc as the model needs it, or null when unusable. */
 export function toSpotDoc(data: Record<string, unknown> | undefined): SpotDoc | null {
@@ -68,6 +79,9 @@ export function toSpotDoc(data: Record<string, unknown> | undefined): SpotDoc | 
     placeId: str(data.placeId),
     name,
     city: str(data.city),
+    neighborhood: str(data.neighborhood),
+    lat: coord(data.lat, 90),
+    lng: coord(data.lng, 180),
     category,
     cuisines: Array.isArray(data.cuisines) ? data.cuisines.filter((c): c is string => typeof c === 'string') : [],
   };
@@ -104,11 +118,47 @@ function mergedCuisines(entries: SpotDoc[]): string[] {
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([c]) => c);
 }
 
+/** The value most of `values` agree on (first seen wins ties), ignoring blanks. */
+function mostCommon<T>(values: Array<T | undefined>): T | undefined {
+  const counts = new Map<T, number>();
+  let best: T | undefined;
+  for (const v of values) {
+    if (v === undefined) continue;
+    const n = (counts.get(v) || 0) + 1;
+    counts.set(v, n);
+    if (best === undefined || n > counts.get(best)!) best = v;
+  }
+  return best;
+}
+
+/**
+ * How to show a spot in "For you", from the user's bookmark and everyone's entries for it. Only
+ * place facts (name, area, location, tags), never anyone's notes; no undefined values (Firestore
+ * rejects them).
+ */
+export function predictionPlace(sources: SpotDoc[], cuisines: string[]): PredictionPlace {
+  const name = mostCommon(sources.map((s) => s.name))!.slice(0, MAX_NAME_LENGTH);
+  const city = mostCommon(sources.map((s) => s.city));
+  const located = sources.find((s) => s.lat !== undefined && s.lng !== undefined);
+  const neighborhood = mostCommon(sources.map((s) => s.neighborhood));
+  const place: PredictionPlace = { name };
+  if (city) place.city = city.slice(0, MAX_NAME_LENGTH);
+  if (neighborhood) place.neighborhood = neighborhood.slice(0, MAX_NAME_LENGTH);
+  if (located) {
+    // ~1 m is plenty for a pin, and keeps the doc small
+    place.lat = Math.round(located.lat! * 1e5) / 1e5;
+    place.lng = Math.round(located.lng! * 1e5) / 1e5;
+  }
+  const tags = cuisines.slice(0, MAX_PLACE_CUISINES).map((c) => c.slice(0, MAX_NAME_LENGTH));
+  if (tags.length > 0) place.cuisines = tags;
+  return place;
+}
+
 /**
  * Predictions for `uid` keyed by `placeId__category`: spots others ranked that the user hasn't
  * (only when someone's score went into it), plus the user's bookmarks.
  */
-export function computeUserPredictions(corpus: Corpus, uid: string): Record<string, TastePrediction> {
+export function computeUserPredictions(corpus: Corpus, uid: string): Record<string, StoredPrediction> {
   const me = corpus.users.get(uid);
   const mine: TasteEntry[] = me?.entries ?? [];
   if (!me || mine.length === 0) return {};
@@ -138,7 +188,7 @@ export function computeUserPredictions(corpus: Corpus, uid: string): Record<stri
   const candidates = new Set<string>([...bookmarks.keys()]);
   for (const key of corpus.raters.keys()) if (!myKeys.has(key)) candidates.add(key);
 
-  const results: Array<{ key: string; bookmarked: boolean; prediction: TastePrediction }> = [];
+  const results: Array<{ key: string; bookmarked: boolean; prediction: TastePrediction; place: PredictionPlace }> = [];
   for (const key of candidates) {
     const raters: TasteRater[] = [];
     let correlatedStrangers = 0;
@@ -165,14 +215,15 @@ export function computeUserPredictions(corpus: Corpus, uid: string): Record<stri
 
     const sources: SpotDoc[] = [...(bookmark ? [bookmark] : []), ...rated.map(([, e]) => e)];
     const first = sources[0];
+    const cuisines = mergedCuisines(sources);
     const prediction = predictTaste(
-      { placeId: first.placeId, name: first.name, city: first.city, category: first.category, cuisines: mergedCuisines(sources) },
+      { placeId: first.placeId, name: first.name, city: first.city, category: first.category, cuisines },
       mine,
       raters,
       groupOf
     );
     if (!prediction || (prediction.raters === 0 && !bookmark)) continue;
-    results.push({ key, bookmarked: Boolean(bookmark), prediction });
+    results.push({ key, bookmarked: Boolean(bookmark), prediction, place: predictionPlace(sources, cuisines) });
   }
 
   // Bookmarks first, then the best-supported predictions
@@ -182,5 +233,7 @@ export function computeUserPredictions(corpus: Corpus, uid: string): Record<stri
     if (isStrongerPrediction(b.prediction, a.prediction)) return 1;
     return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
   });
-  return Object.fromEntries(results.slice(0, MAX_PREDICTIONS).map((r) => [r.key, r.prediction]));
+  return Object.fromEntries(
+    results.slice(0, MAX_PREDICTIONS).map((r) => [r.key, { ...r.prediction, place: r.place }])
+  );
 }

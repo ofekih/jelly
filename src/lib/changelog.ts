@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.4.0',
+    date: '2026-10-19',
+    title: 'For you',
+    highlights: [
+      'A new “For you” tab next to Want to Try lists the spots you’ll probably love most in each list, best first',
+      'Each pick shows how sure jelly is and what it’s based on; tap one for details and a Maps link',
+      'Save a pick to Want to Try or rank it right from the list, or see your picks on the map',
+    ],
+  },
+  {
     version: '2.3.0',
     date: '2026-10-19',
     title: 'Predictions for everyone',
