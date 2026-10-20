@@ -101,6 +101,26 @@ rules_version = '2';
 //   - createdAt: number | timestamp (optional) - creation timestamp
 //   - updatedAt: number | timestamp (optional) - last update timestamp
 //
+// Collection: profiles (publicly readable/listable)
+// Document ID: {uid} (matches Firebase Auth UID; only the owner may write)
+// Fields (all optional; no other fields allowed):
+//   - handle: string (0..30 chars, matches ^[a-z0-9_.-]{0,30}$) - public handle
+//   - handleLower: string (0..30 chars, == handle.lower() when handle present) - search key
+//   - displayName: string (0..200 chars) - public display name
+//   - nameLower: string (0..200 chars, == displayName.lower() when displayName present) - search key
+//   - photoURL: string (0..1000 chars) - avatar URL
+//   - followingIds: list<string> (<= 2000 items) - followed UIDs
+//   - rankedCount: int (0..100000) - number of ranked spots
+//   - updatedAt: number | timestamp - last update time
+//
+// Collection: profiles/{uid}/followers (publicly readable/listable)
+// Document ID: {followerUid} (the follower's Auth UID; only that user may create/delete; no self-follow; no update)
+// Fields:
+//   - createdAt: number | timestamp (required) - follow time
+//
+// Collection: placeStats (publicly readable/listable; written only by Cloud Functions / Admin SDK)
+// Document ID: {statId}
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -277,6 +297,36 @@ service cloud.firestore {
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
     }
 
+    function isValidProfile(data) {
+      return data.keys().hasOnly([
+          'handle', 'handleLower', 'displayName', 'nameLower',
+          'photoURL', 'followingIds', 'rankedCount', 'updatedAt'
+        ]) &&
+        (!('handle' in data) ||
+          (data.handle is string && data.handle.size() <= 30 &&
+           data.handle.matches('^[a-z0-9_.-]{0,30}$'))) &&
+        (!('handleLower' in data) ||
+          (data.handleLower is string && data.handleLower.size() <= 30 &&
+           (!('handle' in data) || data.handleLower == data.handle.lower()))) &&
+        (!('displayName' in data) ||
+          (data.displayName is string && data.displayName.size() <= 200)) &&
+        (!('nameLower' in data) ||
+          (data.nameLower is string && data.nameLower.size() <= 200 &&
+           (!('displayName' in data) || data.nameLower == data.displayName.lower()))) &&
+        (!('photoURL' in data) ||
+          (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+        (!('followingIds' in data) || isValidList(data.followingIds, 2000)) &&
+        (!('rankedCount' in data) ||
+          (data.rankedCount is int && data.rankedCount >= 0 && data.rankedCount <= 100000)) &&
+        (!('updatedAt' in data) || data.updatedAt is number || data.updatedAt is timestamp);
+    }
+
+    function isValidFollower(data) {
+      return data.keys().hasOnly(['createdAt']) &&
+        data.keys().hasAll(['createdAt']) &&
+        (data.createdAt is number || data.createdAt is timestamp);
+    }
+
     function isDocIdUnchanged() {
       return !('id' in resource.data) ||
         !('id' in request.resource.data) ||
@@ -322,6 +372,25 @@ service cloud.firestore {
         isValidSharedList(request.resource.data);
       allow delete: if isAuthenticated() &&
         resource.data.ownerUid == request.auth.uid;
+    }
+
+    match /profiles/{uid} {
+      allow read: if true;
+      allow create, update: if isOwner(uid) && isValidProfile(request.resource.data);
+      allow delete: if isOwner(uid);
+
+      match /followers/{followerUid} {
+        allow read: if true;
+        allow create: if isOwner(followerUid) &&
+          followerUid != uid &&
+          isValidFollower(request.resource.data);
+        allow delete: if isOwner(followerUid);
+      }
+    }
+
+    match /placeStats/{statId} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // Default deny on all other paths
