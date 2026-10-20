@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.3.0',
+    date: '2026-10-19',
+    title: 'Predictions for everyone',
+    highlights: [
+      '“For you” predictions now work without following anyone: jelly learns from people whose taste matches yours',
+      'Your lists stay private—a prediction only uses people you don’t follow when at least three of them share your taste, and never names them',
+      'Want to Try spots get a predicted score too',
+    ],
+  },
+  {
     version: '2.2.0',
     date: '2026-10-19',
     title: 'More private, and faster',

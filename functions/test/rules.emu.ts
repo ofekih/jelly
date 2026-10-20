@@ -26,6 +26,10 @@ beforeEach(async () => {
     await setDoc(doc(db, 'profiles/bob/followers/carol'), { createdAt: 1 });
     await setDoc(doc(db, 'placeStats/p1__bars'), { sum: 8, count: 1, avg: 8 });
     await setDoc(doc(db, 'sharedLists/bob'), { ownerUid: 'bob', restaurants: [] });
+    await setDoc(doc(db, 'users/bob/private/predictions'), {
+      spots: { p1__bars: { score: 8.1, confidence: 'high', basis: 'Based on 3 taste-matched jelly users', raters: 3 } },
+    });
+    await setDoc(doc(db, 'predictionJobs/bob'), { dirtyAt: 1 });
   });
 });
 
@@ -142,5 +146,36 @@ describe('sharedLists', () => {
     await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), list));
     await assertSucceeds(updateDoc(doc(as('alice'), 'sharedLists/alice'), { title: 'Mine' }));
     await assertFails(updateDoc(doc(as('alice'), 'sharedLists/bob'), { title: 'Hijack' }));
+  });
+});
+
+describe('users/{uid}/private/predictions', () => {
+  it('only the owner can read it', async () => {
+    await assertSucceeds(getDoc(doc(as('bob'), 'users/bob/private/predictions')));
+    await assertFails(getDoc(doc(as('alice'), 'users/bob/private/predictions')));
+    await assertFails(getDoc(doc(anon(), 'users/bob/private/predictions')));
+    await assertFails(getDocs(collection(as('alice'), 'users/bob/private')));
+  });
+
+  it('nobody can write it from a client, not even the owner', async () => {
+    const forged = { spots: { p2__bars: { score: 10, confidence: 'high', basis: 'x', raters: 9 } } };
+    await assertFails(setDoc(doc(as('bob'), 'users/bob/private/predictions'), forged));
+    await assertFails(updateDoc(doc(as('bob'), 'users/bob/private/predictions'), forged));
+    await assertFails(deleteDoc(doc(as('bob'), 'users/bob/private/predictions')));
+    await assertFails(setDoc(doc(as('alice'), 'users/alice/private/predictions'), forged));
+    await assertFails(setDoc(doc(as('alice'), 'users/bob/private/predictions'), forged));
+  });
+
+  it('other docs under private/ stay closed', async () => {
+    await assertFails(setDoc(doc(as('bob'), 'users/bob/private/other'), { a: 1 }));
+    await assertFails(getDoc(doc(as('bob'), 'users/bob/private/other')));
+  });
+});
+
+describe('predictionJobs/{uid}', () => {
+  it('is server-only', async () => {
+    await assertFails(getDoc(doc(as('bob'), 'predictionJobs/bob')));
+    await assertFails(setDoc(doc(as('bob'), 'predictionJobs/bob'), { dirtyAt: 2 }));
+    await assertFails(getDocs(collection(anon(), 'predictionJobs')));
   });
 });

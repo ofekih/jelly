@@ -22,6 +22,8 @@ import { wantLabel } from '../lib/groups';
 import { CommunityStat, getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
+import { usePredictions } from '../lib/usePredictions';
+import type { TastePrediction } from '../lib/tasteModel';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
@@ -38,6 +40,7 @@ interface SortableRestaurantRowProps {
   myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
   communityStat?: CommunityStat | null;
+  serverPrediction?: TastePrediction | null;
   isBookmarkedInMyList?: boolean;
   onBookmarkFromFriend?: (restaurant: RestaurantEntry) => void;
   openSwipeId: string | null;
@@ -59,6 +62,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   myRestaurants = [],
   friendLists = [],
   communityStat = null,
+  serverPrediction = null,
   isBookmarkedInMyList = false,
   onBookmarkFromFriend,
   openSwipeId,
@@ -152,12 +156,13 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
       : [];
 
   const socialMetrics =
-    friendLists.length > 0 || communityStat
+    friendLists.length > 0 || communityStat || serverPrediction
       ? getSpotSocialMetrics(restaurant, {
           myUid,
           myRestaurants,
           friendLists,
           communityStat,
+          serverPrediction,
         })
       : null;
 
@@ -494,6 +499,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   const statFor = usePlaceStats(
     restaurants.map((r) => placeStatKey(r.placeId, r.category)).filter((k): k is string => Boolean(k))
   );
+  const predictionFor = usePredictions();
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
     x: number;
@@ -655,6 +661,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
                     myRestaurants={myRestaurants}
                     friendLists={friendLists}
                     communityStat={statFor(placeStatKey(restaurant.placeId, restaurant.category)) ?? null}
+                    serverPrediction={predictionFor(restaurant)}
                     isBookmarkedInMyList={isBookmarked}
                     onBookmarkFromFriend={onBookmarkFromFriend}
                     openSwipeId={openSwipeId}

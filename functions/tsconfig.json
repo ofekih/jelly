@@ -4,12 +4,12 @@
     "target": "es2022",
     "lib": ["es2022"],
     "outDir": "lib",
-    "rootDir": "src",
+    "rootDir": "..",
     "strict": true,
     "noUnusedLocals": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "sourceMap": true
   },
-  "include": ["src"]
+  "include": ["src", "../src/lib/tasteModel.ts", "../src/types.ts"]
 }

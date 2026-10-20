@@ -1,9 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": ".",
+    "rootDir": "..",
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "scripts", "test"]
+  "include": ["src", "scripts", "test", "../src/lib/tasteModel.ts", "../src/types.ts"]
 }

@@ -5,6 +5,8 @@ import { wantLabel } from '../lib/groups';
 import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
+import { usePredictions } from '../lib/usePredictions';
+import type { TastePrediction } from '../lib/tasteModel';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
@@ -17,6 +19,7 @@ interface SwipeableBookmarkRowProps {
   myRestaurants?: RestaurantEntry[];
   friendLists?: SharedListPayload[];
   communityStat?: CommunityStat | null;
+  serverPrediction?: TastePrediction | null;
   openSwipeId: string | null;
   onSetOpenSwipeId: (id: string | null) => void;
   onRankBookmark: (bookmark: BookmarkEntry) => void;
@@ -35,6 +38,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   myRestaurants = [],
   friendLists = [],
   communityStat = null,
+  serverPrediction = null,
   openSwipeId,
   onSetOpenSwipeId,
   onRankBookmark,
@@ -77,6 +81,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
           myRestaurants,
           friendLists,
           communityStat,
+          serverPrediction,
         })
       : null;
 
@@ -384,6 +389,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
   const statFor = usePlaceStats(
     bookmarks.map((b) => placeStatKey(b.placeId, b.category)).filter((k): k is string => Boolean(k))
   );
+  const predictionFor = usePredictions();
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
     x: number;
@@ -527,6 +533,7 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
               myRestaurants={myRestaurants}
               friendLists={friendLists}
               communityStat={statFor(placeStatKey(item.placeId, item.category)) ?? null}
+              serverPrediction={predictionFor(item)}
               openSwipeId={openSwipeId}
               onSetOpenSwipeId={setOpenSwipeId}
               onRankBookmark={onRankBookmark}

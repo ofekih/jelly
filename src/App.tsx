@@ -139,6 +139,7 @@ import {
   setFollowEdge,
 } from './lib/socialService';
 import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
+import { usePredictions, watchPredictions } from './lib/usePredictions';
 import { FollowCounts } from './components/FollowCounts';
 import { buildPublicLists, PublicListTrim } from './lib/publicList';
 
@@ -522,6 +523,9 @@ export const App: React.FC = () => {
     });
     return () => unsub();
   }, []);
+
+  // Taste predictions from every jelly user, kept by a Cloud Function (owner-read only)
+  useEffect(() => watchPredictions(user?.uid), [user?.uid]);
 
   // Load user profile doc (friends, handle, defaultCity, seenFollowerIds) when signed in
   useEffect(() => {
@@ -1803,6 +1807,7 @@ export const App: React.FC = () => {
     ? placeStatKey(activeDetailSpot.placeId, activeDetailSpot.category ?? activeDetailSpot.categories?.[0])
     : null;
   const detailStatFor = usePlaceStats(detailStatKey ? [detailStatKey] : []);
+  const predictionFor = usePredictions();
 
   const activeDetailSocialMetrics = useMemo(() => {
     if (!activeDetailSpot) return null;
@@ -1811,8 +1816,9 @@ export const App: React.FC = () => {
       myRestaurants: restaurants,
       friendLists,
       communityStat: detailStatFor(detailStatKey) ?? null,
+      serverPrediction: predictionFor(activeDetailSpot),
     });
-  }, [activeDetailSpot, user, restaurants, friendLists, detailStatFor, detailStatKey]);
+  }, [activeDetailSpot, user, restaurants, friendLists, detailStatFor, detailStatKey, predictionFor]);
 
   const isDetailSpotBookmarkedByMe = useMemo(() => {
     if (!activeDetailSpot) return false;

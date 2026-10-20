@@ -6,6 +6,21 @@ import {
   RestaurantEntry,
   SharedListPayload,
 } from '../types';
+import {
+  bestScoreFor,
+  buildRater,
+  computeTasteSimilarity,
+  isSameSpot,
+  isStrongerPrediction,
+  normalizeName,
+  predictTaste,
+  type PredictionConfidence,
+  type TastePrediction,
+  type TasteRater,
+  type TasteSimilarityResult,
+} from './tasteModel';
+
+export { isSameSpot };
 
 export function sanitizeHandle(raw: string): string {
   return raw
@@ -30,40 +45,6 @@ export function deriveDefaultHandle(
     if (cleaned.length >= 2) return cleaned;
   }
   return uid ? `jelly_${uid.slice(0, 6).toLowerCase()}` : 'jellyuser';
-}
-
-function normalizeName(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/^the\s+/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-export function isSameSpot(
-  a: { placeId?: string; name: string; city?: string; formattedAddress?: string },
-  b: { placeId?: string; name: string; city?: string; formattedAddress?: string }
-): boolean {
-  if (
-    a.placeId &&
-    b.placeId &&
-    !a.placeId.startsWith('manual_') &&
-    !b.placeId.startsWith('manual_') &&
-    a.placeId === b.placeId
-  ) {
-    return true;
-  }
-
-  const normA = normalizeName(a.name);
-  const normB = normalizeName(b.name);
-  if (!normA || normA !== normB) return false;
-
-  if (a.city && b.city) {
-    return a.city.toLowerCase().trim() === b.city.toLowerCase().trim();
-  }
-  return true;
 }
 
 /**
@@ -377,187 +358,13 @@ export function deduplicateUserLists(lists: SharedListPayload[]): SharedListPayl
   return Array.from(byOwner.values());
 }
 
-interface UserRatingStats {
-  mean: number;
-  std: number;
-  count: number;
-}
+export type { TasteSimilarityResult };
 
-function computeUserRatingStats(restaurants: RestaurantEntry[]): UserRatingStats {
-  if (!restaurants || restaurants.length === 0) {
-    return { mean: 7.4, std: 1.1, count: 0 };
-  }
-  // Deduplicate by spot (take highest score if ranked across multiple lists)
-  const scores = restaurants.map((r) => r.magicScore);
-  const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
-  if (scores.length < 2) {
-    return { mean, std: 1.0, count: scores.length };
-  }
-  const variance =
-    scores.reduce((acc, s) => acc + (s - mean) * (s - mean), 0) / scores.length;
-  const std = Math.max(0.45, Math.sqrt(variance));
-  return { mean, std, count: scores.length };
-}
-
-export interface TasteSimilarityResult {
-  sharedCount: number;
-  pearson: number;
-  kendallTau: number;
-  zAgreement: number;
-  similarity: number; // Shrinkage-regularized [-1, 1] weight
-  tasteMatchPct: number | null; // 0..99% human-readable taste match
-}
-
-/**
- * Computes taste similarity between two users' ranked lists using a hybrid of:
- * 1. Pearson linear correlation on shared spots (scale-invariant relative preference)
- * 2. Kendall's rank correlation tau on all pairs of shared spots (order concordance)
- * 3. Standardized Z-score proximity agreement (handles 1–2 shared spots gracefully)
- * 4. Bayesian significance shrinkage n / (n + 3) so tiny overlaps don't overfit.
- */
 export function computeUserTasteSimilarity(
   myRestaurants: RestaurantEntry[],
   otherRestaurants: RestaurantEntry[]
 ): TasteSimilarityResult {
-  if (!myRestaurants.length || !otherRestaurants.length) {
-    return {
-      sharedCount: 0,
-      pearson: 0,
-      kendallTau: 0,
-      zAgreement: 0,
-      similarity: 0.12, // Small positive baseline community prior
-      tasteMatchPct: null,
-    };
-  }
-
-  const myStats = computeUserRatingStats(myRestaurants);
-  const otherStats = computeUserRatingStats(otherRestaurants);
-
-  const sharedPairs: Array<{ myScore: number; otherScore: number; myZ: number; otherZ: number }> = [];
-  const usedOtherIndices = new Set<number>();
-
-  for (const mySpot of myRestaurants) {
-    let bestIdx = -1;
-    let bestScore = -Infinity;
-    for (let j = 0; j < otherRestaurants.length; j++) {
-      if (usedOtherIndices.has(j)) continue;
-      // Only pair up scores from the same category list
-      if (
-        mySpot.category === otherRestaurants[j].category &&
-        isSameSpot(mySpot, otherRestaurants[j])
-      ) {
-        if (otherRestaurants[j].magicScore > bestScore) {
-          bestScore = otherRestaurants[j].magicScore;
-          bestIdx = j;
-        }
-      }
-    }
-    if (bestIdx !== -1) {
-      usedOtherIndices.add(bestIdx);
-      const otherSpot = otherRestaurants[bestIdx];
-      sharedPairs.push({
-        myScore: mySpot.magicScore,
-        otherScore: otherSpot.magicScore,
-        myZ: (mySpot.magicScore - myStats.mean) / myStats.std,
-        otherZ: (otherSpot.magicScore - otherStats.mean) / otherStats.std,
-      });
-    }
-  }
-
-  const n = sharedPairs.length;
-  if (n === 0) {
-    return {
-      sharedCount: 0,
-      pearson: 0,
-      kendallTau: 0,
-      zAgreement: 0,
-      similarity: 0.12,
-      tasteMatchPct: null,
-    };
-  }
-
-  // 1. Standardized Z-Score + absolute score proximity agreement in [-1, 1]
-  const meanZDiff =
-    sharedPairs.reduce((acc, p) => acc + Math.min(2.2, Math.abs(p.myZ - p.otherZ)), 0) / n;
-  const pureZAgreement = Math.max(-1, Math.min(1, 1 - meanZDiff));
-  const meanAbsDiff =
-    sharedPairs.reduce((acc, p) => acc + Math.min(4.5, Math.abs(p.myScore - p.otherScore)), 0) / n;
-  const absAgreement = Math.max(-1, Math.min(1, 1 - meanAbsDiff / 2.2));
-  const zAgreement = Math.max(pureZAgreement, 0.55 * pureZAgreement + 0.45 * absAgreement);
-
-  if (n === 1) {
-    const shrink = 1 / (1 + 3);
-    const similarity = shrink * zAgreement + (1 - shrink) * 0.15;
-    const rawPct = Math.round(68 + zAgreement * 28);
-    return {
-      sharedCount: 1,
-      pearson: zAgreement,
-      kendallTau: zAgreement,
-      zAgreement,
-      similarity,
-      tasteMatchPct: Math.max(35, Math.min(98, rawPct)),
-    };
-  }
-
-  // 2. Pearson correlation on shared spots
-  const meanMy = sharedPairs.reduce((a, p) => a + p.myScore, 0) / n;
-  const meanOther = sharedPairs.reduce((a, p) => a + p.otherScore, 0) / n;
-  let num = 0;
-  let denMy = 0;
-  let denOther = 0;
-  for (const p of sharedPairs) {
-    const dMy = p.myScore - meanMy;
-    const dOther = p.otherScore - meanOther;
-    num += dMy * dOther;
-    denMy += dMy * dMy;
-    denOther += dOther * dOther;
-  }
-  const pearson =
-    denMy > 1e-4 && denOther > 1e-4
-      ? Math.max(-1, Math.min(1, num / Math.sqrt(denMy * denOther)))
-      : zAgreement;
-
-  // 3. Kendall's rank correlation tau on shared pairs
-  let concordant = 0;
-  let discordant = 0;
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      const myDiff = sharedPairs[i].myScore - sharedPairs[j].myScore;
-      const otherDiff = sharedPairs[i].otherScore - sharedPairs[j].otherScore;
-      if (Math.abs(myDiff) < 0.05 && Math.abs(otherDiff) < 0.05) {
-        concordant += 1;
-      } else if (myDiff * otherDiff > 0) {
-        concordant += 1;
-      } else if (myDiff * otherDiff < 0) {
-        discordant += 1;
-      }
-    }
-  }
-  const totalPairs = concordant + discordant;
-  const kendallTau = totalPairs > 0 ? (concordant - discordant) / totalPairs : zAgreement;
-
-  // Combine Pearson (50%), Kendall tau (35%), and Z-agreement (15%)
-  const rawSim = 0.5 * pearson + 0.35 * kendallTau + 0.15 * zAgreement;
-
-  // Bayesian shrinkage with prior s0 = 0.15 and shrinkage constant tau = 3
-  const shrink = n / (n + 3);
-  const similarity = Math.max(-1, Math.min(1, shrink * rawSim + (1 - shrink) * 0.15));
-
-  // Map [-1, 1] similarity + rawSim into a human-friendly 35..99% Taste Match
-  const blendedForDisplay = 0.65 * rawSim + 0.35 * zAgreement;
-  const tasteMatchPct = Math.max(
-    35,
-    Math.min(99, Math.round(68 + blendedForDisplay * 30))
-  );
-
-  return {
-    sharedCount: n,
-    pearson,
-    kendallTau,
-    zAgreement,
-    similarity,
-    tasteMatchPct,
-  };
+  return computeTasteSimilarity(myRestaurants, otherRestaurants);
 }
 
 export interface SpotSocialMetrics {
@@ -566,7 +373,7 @@ export interface SpotSocialMetrics {
   communityAvg: number | null;
   communityCount: number;
   predictedScore: number | null;
-  predictionConfidence: 'high' | 'medium' | 'low' | null;
+  predictionConfidence: PredictionConfidence | null;
   predictionBasis: string | null;
 }
 
@@ -581,9 +388,9 @@ export interface CommunityStat {
  * 1. `friendsAvg`: Average score among followed friends who ranked this spot
  * 2. `communityAvg`: Average score across all unique jelly users who ranked this spot (from
  *    `communityStat`; without one, or when it lags behind, you plus the friends you follow)
- * 3. `predictedScore`: Personalized 1.0–10.0 score prediction for the active user using
- *    Resnick's Z-Score Collaborative Filtering (weighted by Pearson + Kendall palate similarity)
- *    blended with the user's personal Cuisine & Category affinity prior.
+ * 3. `predictedScore`: Personalized prediction (`predictTaste` in `tasteModel.ts`) from the
+ *    friends you follow, or the server's prediction from all taste-matched jelly users
+ *    (`serverPrediction`, from `users/{uid}/private/predictions`) when that rests on more evidence.
  */
 export function getSpotSocialMetrics(
   spot: {
@@ -600,25 +407,27 @@ export function getSpotSocialMetrics(
     myRestaurants?: RestaurantEntry[];
     friendLists?: SharedListPayload[];
     communityStat?: CommunityStat | null;
+    serverPrediction?: TastePrediction | null;
   }
 ): SpotSocialMetrics {
   const myRestaurants = options.myRestaurants || [];
   const friendLists = deduplicateUserLists(options.friendLists || []);
 
-  const friendUidSet = new Set(friendLists.map((fl) => fl.ownerUid || fl.id));
-
-  // When the spot belongs to a specific list, only scores from that same list count
-  const matchesSpot = (r: RestaurantEntry) =>
-    (!spot.category || r.category === spot.category) && isSameSpot(spot, r);
-
-  // 1. Friends Average
+  // 1. Friends Average (when the spot belongs to a specific list, only that list counts)
   const friendScores: number[] = [];
+  const raters: TasteRater[] = [];
   for (const fl of friendLists) {
-    const matches = (fl.restaurants || []).filter(matchesSpot);
-    if (matches.length > 0) {
-      const best = Math.max(...matches.map((m) => m.magicScore));
-      friendScores.push(best);
-    }
+    const uid = fl.ownerUid || fl.id;
+    const best = bestScoreFor(spot, fl.restaurants || []);
+    if (best === null) continue;
+    friendScores.push(best);
+    if (options.myUid && uid === options.myUid) continue;
+    raters.push(
+      buildRater(myRestaurants, fl.restaurants || [], best, {
+        name: fl.ownerName || 'User',
+        isFriend: true,
+      })
+    );
   }
   const friendsCount = friendScores.length;
   const friendsAvg =
@@ -627,37 +436,9 @@ export function getSpotSocialMetrics(
       : null;
 
   // 2. Global jelly Community Average (all unique users including current user if ranked)
-  const communityScores: number[] = [];
-  const myMatches = myRestaurants.filter(matchesSpot);
-  if (myMatches.length > 0) {
-    communityScores.push(Math.max(...myMatches.map((m) => m.magicScore)));
-  }
-
-  const otherRaters: Array<{
-    uid: string;
-    name: string;
-    isFriend: boolean;
-    score: number;
-    list: RestaurantEntry[];
-  }> = [];
-
-  // Taste-based predictions only draw on the friends you follow (their lists are loaded)
-  for (const cl of friendLists) {
-    const uid = cl.ownerUid || cl.id;
-    if (options.myUid && uid === options.myUid) continue;
-    const matches = (cl.restaurants || []).filter(matchesSpot);
-    if (matches.length > 0) {
-      const bestScore = Math.max(...matches.map((m) => m.magicScore));
-      communityScores.push(bestScore);
-      otherRaters.push({
-        uid,
-        name: cl.ownerName || 'User',
-        isFriend: friendUidSet.has(uid),
-        score: bestScore,
-        list: cl.restaurants || [],
-      });
-    }
-  }
+  const communityScores: number[] = raters.map((r) => r.score);
+  const myBest = bestScoreFor(spot, myRestaurants);
+  if (myBest !== null) communityScores.unshift(myBest);
 
   // The server stat covers everyone, but can lag behind what's visible here (scores just
   // changed, friends on older app versions); never show fewer raters than you + your friends
@@ -668,158 +449,18 @@ export function getSpotSocialMetrics(
   const communityAvg =
     communityCount > 0 ? Math.round((communitySum / communityCount) * 10) / 10 : null;
 
-  // 3. Personalized Taste Prediction Model
-  if (myRestaurants.length === 0) {
-    return {
-      friendsAvg,
-      friendsCount,
-      communityAvg,
-      communityCount,
-      predictedScore: null,
-      predictionConfidence: null,
-      predictionBasis: null,
-    };
-  }
-
-  const myStats = computeUserRatingStats(myRestaurants);
-
-  // 3a. Personal Cuisine & Category Affinity Prior
-  const spotCuisines = (spot.cuisines || []).map((c) => c.toLowerCase());
-  const spotCategories = new Set<SpotCategory>(
-    spot.category ? [spot.category] : spot.categories || []
-  );
-
-  let cuisineDelta = 0;
-  let matchedCuisineName: string | null = null;
-  let matchedCuisineCount = 0;
-
-  if (spotCuisines.length > 0) {
-    // Tags only mean the same thing within a group (e.g. "History" museum vs. "History" city)
-    const spotGroups = new Set([...spotCategories].map((c) => CATEGORY_GROUP[c]));
-    const sameCuisineSpots = myRestaurants.filter(
-      (r) =>
-        (spotGroups.size === 0 || spotGroups.has(CATEGORY_GROUP[r.category])) &&
-        (r.cuisines || []).some((c) => spotCuisines.includes(c.toLowerCase()))
-    );
-    matchedCuisineCount = sameCuisineSpots.length;
-    if (matchedCuisineCount > 0) {
-      const rawAvg =
-        sameCuisineSpots.reduce((acc, r) => acc + r.magicScore, 0) / matchedCuisineCount;
-      // Bayesian damping n / (n + 2)
-      cuisineDelta = ((rawAvg - myStats.mean) * matchedCuisineCount) / (matchedCuisineCount + 2);
-      matchedCuisineName = spot.cuisines?.[0] || null;
-    }
-  }
-
-  let categoryDelta = 0;
-  if (spotCategories.size > 0) {
-    const sameCategorySpots = myRestaurants.filter((r) => spotCategories.has(r.category));
-    if (sameCategorySpots.length >= 2) {
-      const rawCategoryAvg =
-        sameCategorySpots.reduce((acc, r) => acc + r.magicScore, 0) / sameCategorySpots.length;
-      categoryDelta = ((rawCategoryAvg - myStats.mean) * sameCategorySpots.length) / (sameCategorySpots.length + 3);
-    }
-  }
-
-  const personalAffinityPrior = Math.max(
-    1.0,
-    Math.min(10.0, myStats.mean + cuisineDelta + 0.35 * categoryDelta)
-  );
-
-  // 3b. Collaborative Filtering across positively correlated raters (Resnick's Z-score projection)
-  let weightedZSum = 0;
-  let weightSum = 0;
-  let tasteMatchedRatersCount = 0;
-  let bestFriendMatch: { name: string; pct: number } | null = null;
-
-  for (const rater of otherRaters) {
-    const raterStats = computeUserRatingStats(rater.list);
-    const raterZ = Math.max(-2.6, Math.min(2.6, (rater.score - raterStats.mean) / raterStats.std));
-    const sim = computeUserTasteSimilarity(myRestaurants, rater.list);
-
-    // Only include positively correlated raters in the taste neighborhood
-    if (sim.similarity <= 0) {
-      continue;
-    }
-
-    if (sim.sharedCount > 0) {
-      tasteMatchedRatersCount += 1;
-      if (
-        rater.isFriend &&
-        sim.tasteMatchPct !== null &&
-        (!bestFriendMatch || sim.tasteMatchPct > bestFriendMatch.pct)
-      ) {
-        bestFriendMatch = { name: rater.name, pct: sim.tasteMatchPct };
-      }
-    }
-
-    // Friends you follow get a 1.35x trust boost
-    const friendMultiplier = rater.isFriend ? 1.35 : 1.0;
-    const effectiveWeight = sim.similarity * friendMultiplier;
-
-    weightedZSum += effectiveWeight * raterZ;
-    weightSum += effectiveWeight;
-  }
-
-  if (otherRaters.length === 0 && matchedCuisineCount < 2) {
-    return {
-      friendsAvg,
-      friendsCount,
-      communityAvg,
-      communityCount,
-      predictedScore: null,
-      predictionConfidence: null,
-      predictionBasis: null,
-    };
-  }
-
-  let predictedRaw: number;
-  if (weightSum > 0.02) {
-    const predictedZ = weightedZSum / weightSum;
-    const cfEstimate = myStats.mean + myStats.std * predictedZ;
-    // Blend CF estimate with personal cuisine/category affinity prior based on total weight evidence
-    const cfAlpha = weightSum / (weightSum + 0.35);
-    predictedRaw = cfAlpha * cfEstimate + (1 - cfAlpha) * personalAffinityPrior;
-  } else {
-    predictedRaw = personalAffinityPrior;
-  }
-
-  const predictedScore = Math.max(1.0, Math.min(10.0, Math.round(predictedRaw * 10) / 10));
-
-  const predictionConfidence: 'high' | 'medium' | 'low' =
-    tasteMatchedRatersCount >= 2 || (tasteMatchedRatersCount >= 1 && matchedCuisineCount >= 2)
-      ? 'high'
-      : otherRaters.length >= 1 || matchedCuisineCount >= 3
-      ? 'medium'
-      : 'low';
-
-  let predictionBasis = 'Based on your rating distribution';
-  if (bestFriendMatch) {
-    predictionBasis = `Based on ${bestFriendMatch.name} (${bestFriendMatch.pct}% taste match)${
-      matchedCuisineName && matchedCuisineCount >= 2 ? ` & your ${matchedCuisineName} ratings` : ''
-    }`;
-  } else if (tasteMatchedRatersCount > 0) {
-    predictionBasis = `Based on ${tasteMatchedRatersCount} taste-matched jelly ${
-      tasteMatchedRatersCount === 1 ? 'user' : 'users'
-    }${matchedCuisineName && matchedCuisineCount >= 2 ? ` & your ${matchedCuisineName} ratings` : ''}`;
-  } else if (otherRaters.length > 0 && matchedCuisineName && matchedCuisineCount >= 2) {
-    predictionBasis = `Based on jelly raters & your ${matchedCuisineName} history`;
-  } else if (otherRaters.length > 0) {
-    predictionBasis = `Calibrated from ${otherRaters.length} jelly ${
-      otherRaters.length === 1 ? 'rater' : 'raters'
-    } to your scale`;
-  } else if (matchedCuisineName && matchedCuisineCount >= 2) {
-    predictionBasis = `Based on your ${matchedCuisineCount} ranked ${matchedCuisineName} spots`;
-  }
+  // 3. Personalized Taste Prediction: friends here, everyone (privacy-guarded) on the server
+  const local = predictTaste(spot, myRestaurants, raters, (c) => CATEGORY_GROUP[c as SpotCategory]);
+  const server = myRestaurants.length > 0 ? options.serverPrediction : null;
+  const prediction = server && isStrongerPrediction(server, local) ? server : local;
 
   return {
     friendsAvg,
     friendsCount,
     communityAvg,
     communityCount,
-    predictedScore,
-    predictionConfidence,
-    predictionBasis,
+    predictedScore: prediction?.score ?? null,
+    predictionConfidence: prediction?.confidence ?? null,
+    predictionBasis: prediction?.basis ?? null,
   };
 }
-

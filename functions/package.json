@@ -2,12 +2,12 @@
   "name": "jelly-functions",
   "private": true,
   "type": "commonjs",
-  "main": "lib/index.js",
+  "main": "lib/functions/src/index.js",
   "engines": {
     "node": "22"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf lib && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "test:unit": "vitest run unit",
     "test:emulator": "npm run build && firebase emulators:exec --project demo-jelly --only firestore,functions \"vitest run\"",

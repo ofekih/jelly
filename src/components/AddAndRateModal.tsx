@@ -17,6 +17,7 @@ import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
+import { usePredictions } from '../lib/usePredictions';
 import {
   formatDistanceMiles,
   getItemDistanceMiles,
@@ -78,6 +79,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const statFor = usePlaceStats(
     searchResults.map(candidateStatKey).filter((k): k is string => Boolean(k))
   );
+  const predictionFor = usePredictions();
   const [isSearching, setIsSearching] = useState(false);
 
   const [selectedCandidate, setSelectedCandidate] = useState<PlaceCandidate | null>(null);
@@ -394,6 +396,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                             myRestaurants: existingRestaurants,
                             friendLists,
                             communityStat,
+                            serverPrediction: predictionFor(item),
                           })
                         : null;
 

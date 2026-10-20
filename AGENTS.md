@@ -26,11 +26,13 @@ ranking web app. Live at https://eatwithjelly.com.
 | `src/firebase.ts` | Firebase init, `trackEvent` (Analytics), `DEFAULT_PLACES_API_KEY` |
 | `src/lib/ratingTiers.ts` | Rating tiers (Skip…Incredible) and their gut-feeling labels; source of the spectrum's tier boundaries |
 | `src/lib/rankingEngine.ts` | Rating ⇄ Elo, non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` |
-| `src/lib/friendsService.ts` | Friend matching (`isSameSpot`), group blend ("Eat Together"), taste similarity / predicted rating (from followed friends), social metrics (friends avg + all-jelly avg from `placeStats`) |
+| `src/lib/tasteModel.ts` | Pure, dependency-free taste model shared with `functions/`: `isSameSpot`, similarity (Pearson+Kendall+z), `predictTaste` with the privacy guard (non-followed raters only when ≥3 are positively correlated; never named) |
+| `src/lib/friendsService.ts` | Friend matching, group blend ("Eat Together"), social metrics (friends avg + all-jelly avg from `placeStats`; prediction from followed friends or the stronger server prediction) |
+| `src/lib/predictions.ts`, `usePredictions.ts` | Parse + one `onSnapshot` of `users/{uid}/private/predictions`, looked up per spot by `placeId__category` |
 | `src/lib/socialService.ts` | Firestore reads/writes for `profiles` (build, prefix search), follower edges, follow counts, `placeStats` fetch; `usePlaceStats.ts` caches stats for components |
 | `src/lib/publicList.ts` | Builds the public `sharedLists` payload under the 500-item / ~1 MiB limits (drops notes before spots) |
 | `src/lib/localCache.ts` | localStorage keys for account data + cache owner (which account the local copy mirrors; only signed-out data is ever uploaded) |
-| `functions/` | Cloud Function `onRestaurantWritten` (recomputes `placeStats`), one-time `scripts/backfill.ts`, emulator tests (`npm run test:emulator`) |
+| `functions/` | Cloud Functions: `onRestaurantWritten` (recomputes `placeStats`, marks `predictionJobs/{uid}` dirty), `onBookmarkWritten`, `processPredictionJobs` (every minute, debounced), `nightlyPredictions`; one-time `scripts/backfill.ts`; emulator tests (`npm run test:emulator`). Compiles `src/lib/tasteModel.ts` + `src/types.ts` too (rootDir `..`, main `lib/functions/src/index.js`) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
@@ -52,6 +54,8 @@ ranking web app. Live at https://eatwithjelly.com.
 - `profiles/{uid}` – small public profile (handle, name, photo, `followingIds`, `rankedCount`) for search and follower lists; rules reject unknown fields and nulls
 - `profiles/{uid}/followers/{followerUid}` – follower edge `{createdAt}`, created/deleted only by the follower
 - `placeStats/{placeId}__{category}` – community `{sum, count, avg}` per spot per list, written only by the Cloud Function from stored `magicScore`s
+- `users/{uid}/private/predictions` – `{spots: {[placeId__category]: {score, confidence, basis, raters}}, updatedAt}`, owner-read only, written only by the prediction functions
+- `predictionJobs/{uid}` – `{dirtyAt}` debounce marker for prediction recomputes (server-only)
 - Signed-out users persist to `localStorage` (keys defined at top of `App.tsx`); signed-in users sync to Firestore.
 
 ## Conventions & gotchas
