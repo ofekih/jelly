@@ -17,6 +17,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '2.5.0',
+    date: '2026-10-20',
+    title: 'Your order, trusted',
+    highlights: [
+      'Gut ratings now count as a rough first impression: if you rank a place you rated 7 above one you rated 8, it now scores higher instead of both getting 7.5',
+      'Places you rated the same get spread out by your order instead of sharing one score',
+      'jelly learns how literally to take your gut ratings from how well they match your order',
+      'Your scores may shift a little; the About page explains how it works',
+    ],
+  },
+  {
     version: '2.4.0',
     date: '2026-10-19',
     title: 'For you',

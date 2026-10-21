@@ -42,37 +42,59 @@ const scoresOf = (guts: number[]) =>
     (r) => r.magicScore
   );
 
-describe('recomputeMagicScores (robust isotonic fit of gut ratings)', () => {
-  it.each([20, 200])('keeps score = gut on a consistent list of %i spots', (n) => {
+describe('recomputeMagicScores (expected true score given gut ratings and order)', () => {
+  const nonIncreasing = (scores: number[]) => scores.every((s, i) => i === 0 || s <= scores[i - 1]);
+
+  it('keeps a single spot at its gut rating', () => {
+    expect(scoresOf([7.3])).toEqual([7.3]);
+  });
+
+  it.each([20, 200])('stays close to the guts on a consistent list of %i spots', (n) => {
     const guts = Array.from({ length: n }, (_, i) => Math.round((9.5 - (i * 1.5) / (n - 1)) * 10) / 10);
-    expect(scoresOf(guts)).toEqual(guts);
+    const scores = scoresOf(guts);
+    scores.forEach((s, i) => expect(Math.abs(s - guts[i])).toBeLessThanOrEqual(0.25 + 1e-9));
+    expect(nonIncreasing(scores)).toBe(true);
   });
 
   it('does not stretch a long list of amazing places down the scale', () => {
-    const guts = Array.from({ length: 150 }, (_, i) => 9.5 - (i * 1.5) / 149);
-    const scores = scoresOf(guts);
-    expect(scores[0]).toBe(9.5);
-    expect(scores[149]).toBe(8.0);
+    const scores = scoresOf(Array.from({ length: 150 }, (_, i) => 9.5 - (i * 1.5) / 149));
+    expect(scores[0]).toBeLessThanOrEqual(9.8);
+    expect(scores[149]).toBeGreaterThanOrEqual(7.7);
   });
 
-  it('meets in the middle when a gut-8.0 spot is placed above a gut-8.5 spot', () => {
-    expect(scoresOf([8.0, 8.5])).toEqual([8.3, 8.3]);
+  it('puts a gut-7 spot ranked above a gut-8 spot higher, instead of pinning both at 7.5', () => {
+    const [a, b] = scoresOf([7.0, 8.0]);
+    expect(a).toBeGreaterThan(b);
+    expect(a).toBeGreaterThan(7.5);
+    expect(b).toBeLessThan(7.5);
     const scores = scoresOf([9.5, 9.0, 8.0, 8.5, 7.5, 7.0]);
-    expect(scores[2]).toBeCloseTo(8.3, 1);
-    expect(scores[3]).toBeCloseTo(8.3, 1);
-    expect([scores[0], scores[1], scores[4], scores[5]]).toEqual([9.5, 9.0, 7.5, 7.0]);
+    expect(scores[2]).toBeGreaterThan(scores[3]);
+    expect(nonIncreasing(scores)).toBe(true);
   });
 
-  it('ignores a gut rating the order clearly overrules', () => {
+  it('spreads out spots with the same gut rating by their order', () => {
+    const scores = scoresOf(Array(10).fill(8.0));
+    expect(scores[0]).toBeGreaterThan(scores[9]);
+    expect(nonIncreasing(scores)).toBe(true);
+    scores.forEach((s) => expect(Math.abs(s - 8)).toBeLessThanOrEqual(0.5));
+  });
+
+  it('mostly ignores a gut rating the order clearly overrules', () => {
     // A gut-6.0 spot dragged to the top of a list of 9s
     const scores = scoresOf([6.0, 9.2, 9.1, 9.0, 9.0, 8.9, 8.8]);
-    // It shares the top score rather than averaging the 9s down towards 6
-    expect(scores[0]).toBeGreaterThanOrEqual(9.0);
-    [9.2, 9.1, 9.0, 9.0, 8.9, 8.8].forEach((g, i) => expect(Math.abs(scores[i + 1] - g)).toBeLessThanOrEqual(0.2 + 1e-9));
+    expect(scores[0]).toBeGreaterThanOrEqual(9.2);
+    [9.2, 9.1, 9.0, 9.0, 8.9].forEach((g, i) => expect(Math.abs(scores[i + 1] - g)).toBeLessThanOrEqual(0.2 + 1e-9));
   });
 
-  it('leaves 9.0 and below untouched when a gut-6.0 spot is dragged to #1', () => {
-    expect(scoresOf([6.0, 9.4, 9.0, 8.6, 8.1, 7.5]).slice(2)).toEqual([9.0, 8.6, 8.1, 7.5]);
+  it('never rises down the list and stays within 1–10', () => {
+    let seed = 3;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let t = 0; t < 30; t++) {
+      const guts = Array.from({ length: 1 + Math.floor(rnd() * 40) }, () => Math.round((1 + rnd() * 9) * 10) / 10);
+      const scores = scoresOf(guts);
+      expect(nonIncreasing(scores)).toBe(true);
+      scores.forEach((s) => expect(s >= 1 && s <= 10).toBe(true));
+    }
   });
 
   it('keeps one drag from moving scores far from the moved spot', () => {
@@ -86,7 +108,7 @@ describe('recomputeMagicScores (robust isotonic fit of gut ratings)', () => {
     order.forEach((orig, pos) => {
       if (orig === moved) return;
       const nearMoved = Math.abs(pos - 5) <= 2;
-      expect(Math.abs(after[pos] - before[orig])).toBeLessThanOrEqual(nearMoved ? 0.3 : 0.1 + 1e-9);
+      expect(Math.abs(after[pos] - before[orig])).toBeLessThanOrEqual(nearMoved ? 0.4 : 0.2 + 1e-9);
     });
     expect(after[5]).toBeGreaterThan(8.5);
   });

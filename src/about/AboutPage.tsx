@@ -327,43 +327,63 @@ export const AboutPage: React.FC = () => (
       <Section id="score" eyebrow="Step 3" title="From order to score">
         <p>
           Once everything is in order, jelly turns positions into the 1–10 scores you see. The order is fixed; only the
-          numbers are being decided. Each score is as close to your own gut rating as your order allows:
+          numbers are being decided. jelly treats your order as the truth and each gut rating as a rough reading of it:
+          when people rate the same thing twice, each rating is typically about a point off, so a gut rating is a hint,
+          not a verdict.
         </p>
         <ol className="list-decimal space-y-1.5 pl-5 marker:font-bold marker:text-jade-600">
           <li>
-            <b>Your gut, your scale.</b> Where your order and your gut agree, a place's score is simply its gut rating.
-            A list of 150 places that all felt amazing stays in the 9s however long it gets, and adding place #151
-            doesn't nudge the others. That's how Alex and Sam end up in different places above.
+            <b>Your gut, your scale.</b> Where your order and your gut agree, a place's score stays close to its gut
+            rating. The level comes from you: a list of 150 places that all felt amazing stays high however long it
+            gets. That's how Alex and Sam end up in different places above.
           </li>
           <li>
-            <b>Never against the order.</b> Scores only go down the list. If a place you rated 8.0 beat one you rated
-            8.5, both get 8.3 rather than contradicting your choice. Neighbours can share a score.
+            <b>Your order beats your gut.</b> If a place you rated 7.0 beat one you rated 8.0, your choice says the first
+            is better, and that's what the scores show: about 7.7 and 7.3. Scores only go down the list, and places
+            you rated the same get spread out by your order instead of sharing one number.
           </li>
           <li>
             <b>Clear overrules win.</b> Drag a place you rated 6.0 above a run of 9s and your order has clearly
             overruled your gut. jelly then mostly ignores that 6.0 instead of dragging every 9 down to meet it: the
             moved place joins the 9s and the rest barely move.
           </li>
+          <li>
+            <b>It learns how much to trust you.</b> If your gut ratings keep agreeing with your order, jelly takes them
+            more literally; if they're all over the place, it leans more on the order.
+          </li>
         </ol>
         <ScoreDemo />
         <Nerd>
           <p>
-            With gut ratings <Tex>g_1, \dots, g_n</Tex> in list order, the scores are a weighted <b>isotonic
-            regression</b>: the closest scores to your gut ratings that never increase down the list.
+            Each place <Tex>k</Tex> in list order has a true score <Tex>s_k</Tex>, with{' '}
+            <Tex>{String.raw`s_1 \ge s_2 \ge \cdots \ge s_n`}</Tex>. Its gut rating is that score plus noise, drawn
+            from a heavy-tailed Student-<Tex>t</Tex> (4 degrees of freedom) so the occasional way-off gut doesn't
+            drag its neighbours. Before seeing any gut ratings, true scores are spread around your list's median gut
+            rating <Tex>m</Tex>:
           </p>
-          <Tex block>{String.raw`\hat s = \arg\min_{s_1 \,\ge\, s_2 \,\ge\, \cdots \,\ge\, s_n} \sum_k w_k\,\bigl(s_k - g_k\bigr)^2`}</Tex>
+          <Tex block>{String.raw`g_k = s_k + \sigma\,\varepsilon_k,\quad \varepsilon_k \sim t_4, \qquad s_k \sim \mathcal N(m, \tau^2)`}</Tex>
           <p>
-            It's solved with <i>pool adjacent violators</i>: walk down the list, and whenever two neighbours are out of
-            order, replace them with their weighted average and keep going. To make it <b>robust</b>, jelly starts with
-            equal weights, then reweights each place by how far its gut sits from the fit and solves again, 10 times:
+            Your score is the expected true score given all your gut ratings and the order,{' '}
+            <Tex>{String.raw`\hat s_k = \mathbb E[s_k \mid g_1, \dots, g_n,\ s_1 \ge \cdots \ge s_n]`}</Tex>. Since the
+            order only links neighbours, it's computed exactly on a 0.1-point grid with one pass down the list and one
+            back up, like a hidden Markov model.
           </p>
-          <Tex block>{String.raw`w_k = \frac{1}{1 + \bigl((g_k - \hat s_k)/c\bigr)^2}`}</Tex>
           <p>
-            The scale <Tex>c</Tex> adapts to your list: three times the typical gap between your gut ratings and the
-            fit (<Tex>{String.raw`1.48 \times`}</Tex> the median gap, a robust standard deviation), and at least 0.8
-            points. If your gut and your order mostly agree, <Tex>c</Tex> stays at 0.8, so a gut rating 3 points off
-            counts about a fifteenth as much. If your gut ratings are all over the place, <Tex>c</Tex> widens and jelly
-            leans on all of them rather than throwing most away. Scores are rounded to 0.1 and kept within 1–10.
+            <b>How noisy is a gut feeling?</b> In re-rating studies, people rate the same movies again a day or
+            weeks later and often give a different answer: on a 1–10 scale, each rating is typically about 0.9–1
+            points off (Amatriain et al. 2009), and answers drift further over weeks and months (Hill et al. 1995;
+            Cosley et al. 2003). So jelly starts from noise of about ±1 point (<Tex>{String.raw`\sigma = 0.75`}</Tex> for the <Tex>t</Tex>), and doesn't fix <Tex>\sigma</Tex> or the spread{' '}
+            <Tex>\tau</Tex>: it averages over a range of both, weighting each by how well it explains your gut ratings
+            given your order, <Tex>{String.raw`P(g \mid \text{order}, \sigma, \tau)`}</Tex>. A list whose guts keep
+            agreeing with its order points to small noise and a tight spread, so a long list of amazing places isn't
+            stretched down the scale. Scores are rounded to 0.1 and kept within 1–10.
+          </p>
+          <p>
+            <b>Why not just fit the guts?</b> Earlier versions found the closest scores to your gut ratings that never
+            rise down the list (isotonic regression). That trusts every gut rating to the decimal: a 7.0 you ranked
+            above an 8.0 met it at 7.5, and the two stayed pinned there for good. In simulations of people whose
+            gut ratings are off by up to a point and a half, the new scores land 10–28% closer to how they really feel
+            on lists of 20 or more (more the noisier the guts), and about the same on very short lists.
           </p>
           <p>
             <b>Why not Elo?</b> Earlier versions spread the Elo ratings from Step 2 over your scale. But you answer

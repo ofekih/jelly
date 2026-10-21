@@ -123,50 +123,29 @@ function normalizeWeights(weights: number[]): number[] {
   return weights.map((w) => w / sum);
 }
 
-/**
- * Weighted Pool-Adjacent-Violators for a non-increasing sequence:
- * finds z_0 >= z_1 >= ... >= z_{n-1} minimizing sum w_i (z_i - y_i)^2.
+/*
+ * Scores from order + gut ratings. Each spot has a true score; the list order says true scores never
+ * rise down the list, and each gut rating is a noisy reading of one. The score shown is the expected
+ * true score given all the gut ratings and the order, computed exactly on a grid with one pass down
+ * the list and one back up. So a 7 ranked above an 8 ends up just above it instead of both being
+ * pinned at 7.5, and a gut the order clearly overrules is mostly ignored (heavy-tailed noise).
+ *
+ * Two things are unknown and averaged over, each setting weighted by how well it explains this
+ * list's gut ratings given its order:
+ * - how noisy the gut ratings are. Re-rating studies put this at about ±1 point on a 1–10 scale
+ *   (Amatriain et al. 2009; Hill et al. 1995), so that's the starting belief; a list whose guts keep
+ *   agreeing with its order shows they're more precise, and then scores stay close to them.
+ * - how spread out the list's true scores are around its median gut rating, so a long list of
+ *   places that all felt amazing isn't stretched down the scale.
+ * Tuned by simulating noisy users against the earlier isotonic fit and against fixed settings.
  */
-function isotonicDecreasing(y: number[], w: number[] = y.map(() => 1)): number[] {
-  interface Block {
-    sum: number; // Weighted sum of y
-    weight: number;
-    start: number;
-    end: number;
-  }
-
-  const blocks: Block[] = [];
-  for (let i = 0; i < y.length; i++) {
-    blocks.push({ sum: w[i] * y[i], weight: w[i], start: i, end: i });
-    while (blocks.length >= 2) {
-      const last = blocks[blocks.length - 1];
-      const prev = blocks[blocks.length - 2];
-      if (prev.sum / prev.weight < last.sum / last.weight) {
-        prev.sum += last.sum;
-        prev.weight += last.weight;
-        prev.end = last.end;
-        blocks.pop();
-      } else {
-        break;
-      }
-    }
-  }
-
-  const result = new Array<number>(y.length);
-  for (const b of blocks) {
-    const mean = b.sum / b.weight;
-    for (let i = b.start; i <= b.end; i++) {
-      result[i] = mean;
-    }
-  }
-  return result;
-}
-
-// Cauchy scale = max(floor, 3 robust SDs of the residuals): tight when your guts mostly agree with
-// your order, wider when they're noisy, so only clear outliers get ignored
-const ROBUST_SCALE_FLOOR = 0.8;
-const ROBUST_SCALE_MADS = 3;
-const ROBUST_ITERATIONS = 10;
+const GUT_NOISE_DOF = 4; // Student-t: heavy tails, so a clear overrule is mostly ignored
+const GUT_NOISE_DEFAULT = 0.75; // t scale; ≈ ±1 point typical spread
+const GUT_NOISE_PRIOR_LOG_SD = 0.35; // How far a list's own evidence can pull the noise from the default
+const GUT_NOISE_OPTIONS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 0.9, 1.1, 1.3, 1.6];
+const SPREAD_OPTIONS = [0.3, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+const GRID_STEP = 0.1;
+const SCORE_GRID: number[] = Array.from({ length: Math.round(9 / GRID_STEP) + 1 }, (_, k) => 1 + k * GRID_STEP);
 const ELO_STEP = 2; // Fixed Elo gap kept between neighbours (Elo no longer feeds the scores)
 
 function median(values: number[]): number {
@@ -175,30 +154,132 @@ function median(values: number[]): number {
   return sorted.length % 2 ? sorted[mid] : 0.5 * (sorted[mid - 1] + sorted[mid]);
 }
 
-/**
- * Robust isotonic fit of gut ratings to the list order: the closest non-increasing scores to the
- * gut ratings, refit with Cauchy weights so a gut rating the order clearly overrules (a 6.0 dragged
- * above a run of 9s) is mostly ignored instead of dragging its neighbours down. The Cauchy scale
- * adapts to how noisy this list's guts are (1.4826·MAD ≈ SD of the residuals). Simulated on noisy
- * users, it matches plain isotonic regression when guts are noisy and still ignores clear overrules.
- */
-export function fitScoresToOrder(guts: number[]): number[] {
-  let fit = isotonicDecreasing(guts);
-  for (let iter = 0; iter < ROBUST_ITERATIONS; iter++) {
-    const residuals = guts.map((g, i) => g - fit[i]);
-    const scale = Math.max(
-      ROBUST_SCALE_FLOOR,
-      ROBUST_SCALE_MADS * 1.4826 * median(residuals.map(Math.abs))
-    );
-    const weights = residuals.map((r) => 1 / (1 + (r / scale) ** 2));
-    fit = isotonicDecreasing(guts, weights);
+const K = SCORE_GRID.length;
+const NEGLIGIBLE_WEIGHT = 1e-4; // Settings this much less likely than the best are left out
+
+function normalizedPrior(center: number, spread: number): Float64Array {
+  const prior = new Float64Array(K);
+  let sum = 0;
+  for (let k = 0; k < K; k++) {
+    prior[k] = Math.exp(-0.5 * ((SCORE_GRID[k] - center) / spread) ** 2);
+    sum += prior[k];
   }
-  return fit;
+  for (let k = 0; k < K; k++) prior[k] /= sum;
+  return prior;
 }
 
 /**
- * Turns an ordered category list into 1.0–10.0 scores: a robust isotonic fit of each spot's gut
- * rating to its position, so scores stay on the gut-label scale and never rise down the list.
+ * Forward pass down the list (the spot above sits at the same grid point or higher), each row
+ * normalised in place into `rows` (n·K); returns log P(evidence, order). `evidence` is n·K too.
+ */
+function forwardPass(n: number, evidence: Float64Array, rows: Float64Array): number {
+  let logZ = 0;
+  for (let i = 0; i < n; i++) {
+    const at = i * K;
+    let atOrAbove = 0;
+    let sum = 0;
+    for (let k = K - 1; k >= 0; k--) {
+      if (i === 0) {
+        rows[k] = evidence[k];
+      } else {
+        atOrAbove += rows[at - K + k];
+        rows[at + k] = evidence[at + k] * atOrAbove;
+      }
+      sum += rows[at + k];
+    }
+    logZ += Math.log(sum);
+    for (let k = 0; k < K; k++) rows[at + k] /= sum;
+  }
+  return logZ;
+}
+
+/** Adds weight × each spot's expected grid value to `out`, via a backward pass up the list */
+function addPosteriorMeans(n: number, evidence: Float64Array, rows: Float64Array, weight: number, out: number[]): void {
+  let backward = new Float64Array(K).fill(1); // ∝ P(guts below spot i | spot i at grid k)
+  let next = new Float64Array(K);
+  for (let i = n - 1; i >= 0; i--) {
+    const at = i * K;
+    let total = 0;
+    let weighted = 0;
+    for (let k = 0; k < K; k++) {
+      const p = rows[at + k] * backward[k];
+      total += p;
+      weighted += p * SCORE_GRID[k];
+    }
+    out[i] += (weight * weighted) / total;
+    if (i > 0) {
+      let atOrBelow = 0;
+      for (let k = 0; k < K; k++) {
+        atOrBelow += evidence[at + k] * backward[k];
+        next[k] = atOrBelow;
+      }
+      for (let k = 0; k < K; k++) next[k] /= atOrBelow;
+      [backward, next] = [next, backward];
+    }
+  }
+}
+
+/**
+ * Expected true scores for spots in list order, given their gut ratings: never increasing down the
+ * list, each pulled towards its gut rating, its neighbours' and the list's median.
+ */
+export function fitScoresToOrder(guts: number[]): number[] {
+  const n = guts.length;
+  if (n === 0) return [];
+  const center = median(guts);
+
+  // Gut-rating likelihoods per noise level (Student-t; the constant cancels except for 1/noise)
+  const likelihoods = GUT_NOISE_OPTIONS.map((noise) => {
+    const lik = new Float64Array(n * K);
+    for (let i = 0; i < n; i++) {
+      for (let k = 0; k < K; k++) {
+        const r = (guts[i] - SCORE_GRID[k]) / noise;
+        lik[i * K + k] = Math.pow(1 + (r * r) / GUT_NOISE_DOF, -(GUT_NOISE_DOF + 1) / 2) / noise;
+      }
+    }
+    return lik;
+  });
+
+  // How well each (noise, spread) explains the guts given the order. Dividing by P(order) on the
+  // same grid keeps a narrow spread from winning just by letting spots tie on one grid point.
+  const rows = new Float64Array(n * K);
+  const settings: Array<{ noise: number; prior: Float64Array; logWeight: number }> = [];
+  for (const spread of SPREAD_OPTIONS) {
+    const prior = normalizedPrior(center, spread);
+    const priorOnly = new Float64Array(n * K);
+    for (let i = 0; i < n; i++) priorOnly.set(prior, i * K);
+    const orderOnly = forwardPass(n, priorOnly, rows);
+    GUT_NOISE_OPTIONS.forEach((noise, j) => {
+      const evidence = withPrior(likelihoods[j], prior, n);
+      const noisePrior = -0.5 * (Math.log(noise / GUT_NOISE_DEFAULT) / GUT_NOISE_PRIOR_LOG_SD) ** 2;
+      settings.push({ noise, prior, logWeight: forwardPass(n, evidence, rows) - orderOnly + noisePrior });
+    });
+  }
+
+  const top = Math.max(...settings.map((s) => s.logWeight));
+  const scores = new Array<number>(n).fill(0);
+  let total = 0;
+  for (const s of settings) {
+    const weight = Math.exp(s.logWeight - top);
+    if (weight < NEGLIGIBLE_WEIGHT) continue;
+    const evidence = withPrior(likelihoods[GUT_NOISE_OPTIONS.indexOf(s.noise)], s.prior, n);
+    forwardPass(n, evidence, rows);
+    addPosteriorMeans(n, evidence, rows, weight, scores);
+    total += weight;
+  }
+  return scores.map((s) => s / total);
+}
+
+function withPrior(likelihood: Float64Array, prior: Float64Array, n: number): Float64Array {
+  const evidence = new Float64Array(n * K);
+  for (let i = 0; i < n; i++) for (let k = 0; k < K; k++) evidence[i * K + k] = likelihood[i * K + k] * prior[k];
+  return evidence;
+}
+
+/**
+ * Turns an ordered category list into 1.0–10.0 scores: the expected true score of each spot given
+ * its position and everyone's gut ratings, so scores stay on the gut-label scale and never rise
+ * down the list.
  * Elo is kept only for compatibility: it tracks the score and steps down by at least ELO_STEP.
  */
 export function recomputeMagicScores(orderedList: RestaurantEntry[]): RestaurantEntry[] {

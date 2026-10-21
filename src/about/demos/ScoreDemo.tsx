@@ -81,8 +81,8 @@ export const ScoreDemo: React.FC = () => {
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 text-[12.5px] text-zinc-500">
         <span>
-          To start, Pho Saigon felt like an 8.0 but sits below Casa Verde (7.5), so they meet in the middle. Try moving
-          Burger Barn up: the further it climbs past its 6.0, the less that 6.0 counts.
+          To start, Pho Saigon felt like an 8.0 but sits below Casa Verde (7.5): your order says Casa Verde is better,
+          so it scores higher. Try moving Burger Barn up: the further it climbs past its 6.0, the less that 6.0 counts.
         </span>
         <button type="button" aria-label="Reset" className={iconBtn} onClick={() => setSpots(START)}>
           <RotateCcw className="h-3.5 w-3.5" />
