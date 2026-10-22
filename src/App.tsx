@@ -2089,14 +2089,14 @@ export const App: React.FC = () => {
                 <button
                   type="button"
                   onClick={requestSignOut}
-                  className="p-1 rounded-full hover:opacity-80 transition-opacity"
+                  className="p-1 rounded-full shrink-0 hover:opacity-80 transition-opacity"
                   title={`Signed in as ${user.email} · Click to sign out`}
                 >
                   {user.photoURL ? (
                     <img
                       src={user.photoURL}
                       alt={user.displayName || 'User'}
-                      className="w-7 h-7 rounded-full border border-zinc-200 dark:border-zinc-700"
+                      className="w-7 h-7 max-w-none rounded-full object-cover border border-zinc-200 dark:border-zinc-700"
                     />
                   ) : (
                     <div className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
