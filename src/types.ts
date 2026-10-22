@@ -22,18 +22,22 @@ export type SpotCategory =
   | 'countries'
   // Watch
   | 'movies'
-  | 'tv_shows';
+  | 'tv_shows'
+  // Read
+  | 'fiction'
+  | 'nonfiction';
 
-/** Top-level groups of lists (Eat · Explore · Travel · Watch); only one group's lists are shown at a time. */
-export type SpotGroup = 'eat' | 'explore' | 'travel' | 'watch';
+/** Top-level groups of lists (Eat · Explore · Travel · Watch · Read); only one group's lists are shown at a time. */
+export type SpotGroup = 'eat' | 'explore' | 'travel' | 'watch' | 'read';
 
-export const ALL_GROUPS: SpotGroup[] = ['eat', 'explore', 'travel', 'watch'];
+export const ALL_GROUPS: SpotGroup[] = ['eat', 'explore', 'travel', 'watch', 'read'];
 
 export const GROUP_CATEGORIES: Record<SpotGroup, SpotCategory[]> = {
   eat: ['restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars'],
   explore: ['museums', 'theme_parks', 'zoos', 'nature'],
   travel: ['cities', 'getaways', 'countries'],
   watch: ['movies', 'tv_shows'],
+  read: ['fiction', 'nonfiction'],
 };
 
 export const ALL_CATEGORIES: SpotCategory[] = ALL_GROUPS.flatMap((g) => GROUP_CATEGORIES[g]);
@@ -49,6 +53,7 @@ export const GROUP_LABEL: Record<SpotGroup, string> = {
   explore: 'Explore',
   travel: 'Travel',
   watch: 'Watch',
+  read: 'Read',
 };
 
 export const GROUP_EMOJI: Record<SpotGroup, string> = {
@@ -56,6 +61,7 @@ export const GROUP_EMOJI: Record<SpotGroup, string> = {
   explore: '🧭',
   travel: '✈️',
   watch: '🍿',
+  read: '📚',
 };
 
 export const CATEGORY_LABEL: Record<SpotCategory, string> = {
@@ -74,6 +80,8 @@ export const CATEGORY_LABEL: Record<SpotCategory, string> = {
   countries: 'Countries',
   movies: 'Movies',
   tv_shows: 'TV Shows',
+  fiction: 'Fiction',
+  nonfiction: 'Nonfiction',
 };
 
 export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
@@ -92,6 +100,8 @@ export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
   countries: '🌍',
   movies: '🎬',
   tv_shows: '📺',
+  fiction: '🐉',
+  nonfiction: '🧠',
 };
 
 export function isSpotCategory(raw: unknown): raw is SpotCategory {
@@ -127,13 +137,14 @@ export const COMMON_CUISINES: string[] = [
 ];
 
 /**
- * What a movie or show carries instead of an address (Watch lists). Its `placeId` is
- * `tmdb:movie:<id>` / `tmdb:tv:<id>` and `formattedAddress` holds the "2021 · Director" line.
+ * What a title (movie, show or book) carries instead of an address. Its `placeId` is
+ * `tmdb:movie:<id>` / `tmdb:tv:<id>` / `book:<author>:<title>`, and `formattedAddress` holds the
+ * "2021 · Director" line.
  */
 export interface MediaInfo {
   year?: number;
-  poster?: string; // TMDB image path, e.g. "/abc.jpg"
-  creator?: string; // Director(s) of a movie, creator(s) of a show
+  poster?: string; // TMDB image path ("/abc.jpg") or a full https cover URL (books)
+  creator?: string; // Director(s) of a movie, creator(s) of a show, author(s) of a book
 }
 
 /** A movie or show as the `/api/tmdb/search` proxy returns it (see `functions/src/tmdb.ts`). */
@@ -145,6 +156,17 @@ export interface TmdbTitle {
   poster?: string;
   creator?: string;
   genres: string[]; // Watch tags (`GROUP_COPY.watch.tagOptions`)
+}
+
+/** A book as the `/api/books/search` proxy returns it (see `functions/src/books.ts`). */
+export interface BookResult {
+  placeId: string; // `book:<author>:<title>`, the same for every edition
+  title: string;
+  year?: number; // Earliest edition found, often a reprint: not shown
+  cover?: string;
+  creator?: string;
+  list?: 'fiction' | 'nonfiction';
+  tags: string[]; // Read tags (`GROUP_COPY.read.tagOptions`)
 }
 
 export interface RankedHistoryEvent {
@@ -210,7 +232,7 @@ export interface PlaceCandidate {
   cuisines: string[]; // Auto-detected cuisines
   primaryTypeDisplay?: string;
   media?: MediaInfo;
-  source: 'google_places' | 'osm_photon' | 'manual' | 'tmdb';
+  source: 'google_places' | 'osm_photon' | 'manual' | 'tmdb' | 'google_books';
 }
 
 export interface BookmarkEntry {

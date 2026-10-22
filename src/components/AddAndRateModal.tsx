@@ -30,7 +30,7 @@ import {
 import { pctToSpectrumRating, spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
 import { RATING_TIERS, getRatingTier, getVibeLabel } from '../lib/ratingTiers';
 import { trackEvent } from '../firebase';
-import { PosterThumb, TmdbCredit } from './PosterThumb';
+import { PosterThumb, TitleCredit } from './PosterThumb';
 
 interface AddAndRateModalProps {
   isOpen: boolean;
@@ -73,7 +73,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   // The add flow always stays within the group (Eat / Explore / Travel) being viewed
   const group = CATEGORY_GROUP[reRankingEntry?.category ?? defaultCategory];
   const copy = GROUP_COPY[group];
-  const isWatch = group === 'watch';
+  const isTitles = !copy.hasLocation; // Movies, shows and books
   useBodyScrollLock(isOpen);
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
@@ -154,8 +154,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     setIsSearching(true);
 
     const timer = setTimeout(async () => {
-      const { results, error } = isWatch
-        ? await searchTitles(trimmed)
+      const { results, error } = isTitles
+        ? await searchTitles(trimmed, group)
         : {
             ...(await searchPlaces(
               trimmed,
@@ -182,7 +182,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation, isWatch]);
+  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation, isTitles, group]);
 
   // Ensure scroll container always starts at top when query or results change
   useEffect(() => {
@@ -331,7 +331,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 ? `${existingRestaurants.some((r) => r.id === reRankingEntry.id) ? 'Re-rank' : 'Rank'} · ${
                     CATEGORY_LABEL[reRankingEntry.category]
                   }`
-                : isWatch
+                : isTitles
                 ? 'Add a Title'
                 : 'Add a Place'}
             </span>
@@ -423,7 +423,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                         key={item.placeId}
                         className="w-full py-2.5 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors flex items-center justify-between gap-2 group"
                       >
-                        {isWatch && <PosterThumb src={poster} className="w-9 h-[54px]" />}
+                        {isTitles && <PosterThumb src={poster} className="w-9 h-[54px]" />}
                         <button
                           type="button"
                           onClick={() => handleSelectCandidate(item)}
@@ -513,7 +513,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   className="w-full py-2.5 px-3 rounded-xl text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left flex items-center justify-between"
                 >
                   <span>
-                    Add &ldquo;{searchQuery.trim()}&rdquo; as a custom {isWatch ? 'title' : 'spot'}
+                    Add &ldquo;{searchQuery.trim()}&rdquo; as a custom {isTitles ? 'title' : 'spot'}
                   </span>
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -529,7 +529,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 </div>
               )}
 
-              {isWatch && <TmdbCredit />}
+              {isTitles && <TitleCredit group={group} />}
             </div>
           )}
 
@@ -546,7 +546,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                   {selectedCandidate.name}
                 </h2>
-                {isWatch ? (
+                {isTitles ? (
                   spotPlaceLabel(selectedCandidate) && (
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
                       {spotPlaceLabel(selectedCandidate)}
@@ -705,7 +705,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   >
                     <Bookmark className="w-3.5 h-3.5" />
                     <span>
-                      {isWatch ? 'Haven’t watched it yet?' : 'Haven’t been yet?'} Save to {copy.want}
+                      {copy.notYet} Save to {copy.want}
                     </span>
                   </button>
                 </div>

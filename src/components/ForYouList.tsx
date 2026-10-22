@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bookmark, ExternalLink, LogIn, Sparkles } from 'lucide-react';
-import { CATEGORY_LABEL, SpotCategory } from '../types';
-import { hasLocation, wantLabel } from '../lib/groups';
+import { CATEGORY_GROUP, CATEGORY_LABEL, SpotCategory } from '../types';
+import { GROUP_COPY, hasLocation, wantLabel } from '../lib/groups';
 import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { PosterThumb } from './PosterThumb';
 import type { ForYouSpot } from '../lib/predictions';
@@ -100,7 +100,7 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
             className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
           >
             <ExternalLink className="w-3 h-3" />
-            <span>{item.media ? 'Open in TMDB' : 'Open in Google Maps'}</span>
+            <span>Open in {link.site}</span>
           </a>
         )}
       </div>
@@ -122,7 +122,7 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
           type="button"
           onClick={() => onRank(item)}
           className="px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-          title={hasLocation(item.category) ? 'Been here! Rate & rank it now' : 'Watched it! Rate & rank it now'}
+          title={`${GROUP_COPY[CATEGORY_GROUP[item.category]].done}! Rate & rank it now`}
         >
           <Sparkles className="w-3 h-3" />
           <span>Rank</span>
@@ -216,7 +216,7 @@ export const ForYouList: React.FC<ForYouListProps> = ({
       <EmptyState
         title={`No ${label} picks yet`}
         body={`They show up here as people with your taste rank ${
-          hasLocation(selectedCategory) ? "spots you haven't been to" : "titles you haven't watched"
+          hasLocation(selectedCategory) ? "spots you haven't been to" : "titles you haven't gotten to"
         }. Following friends helps too.`}
       />
     );

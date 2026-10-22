@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
-import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
-import { hasLocation, wantLabel } from '../lib/groups';
+import { BookmarkEntry, CATEGORY_GROUP, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
+import { GROUP_COPY, hasLocation, wantLabel } from '../lib/groups';
 import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { PosterThumb } from './PosterThumb';
 import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
@@ -297,7 +297,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              title={item.media ? 'Open in TMDB' : 'Open in Google Maps'}
+              title={`Open in ${link.site}`}
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
@@ -417,14 +417,14 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
         ...(!readOnly
           ? [
               {
-                label: hasLocation(contextMenu.bookmark.category) ? 'I Went, Rank It!' : 'I Watched It, Rank It!',
+                label: `${GROUP_COPY[CATEGORY_GROUP[contextMenu.bookmark.category]].done}, Rank It!`,
                 icon: <Sparkles className="w-4 h-4 text-emerald-500" />,
                 onClick: () => onRankBookmark(contextMenu.bookmark!),
               },
             ]
           : []),
         {
-          label: contextMenu.bookmark.media ? 'Open in TMDB' : 'Open in Google Maps',
+          label: `Open in ${spotLink(contextMenu.bookmark).site}`,
           icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
           onClick: () => window.open(spotLink(contextMenu.bookmark!).href, '_blank'),
         },

@@ -10,6 +10,7 @@ import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from
 import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
 import { cleanQuery, searchTitles } from './tmdb';
+import { searchBooks } from './books';
 
 initializeApp();
 
@@ -105,6 +106,29 @@ export const tmdb = onRequest(
       res.json({ results });
     } catch (err) {
       logger.warn('TMDB search failed', { query, err: String(err) });
+      res.set('Cache-Control', 'no-store');
+      res.status(502).json({ error: 'Search is unavailable right now' });
+    }
+  }
+);
+
+const googleBooksKey = defineSecret('GOOGLE_BOOKS_API_KEY');
+
+/** Book search for the Read lists, served at `/api/books/search?q=` like `tmdb` above. */
+export const books = onRequest(
+  { secrets: [googleBooksKey], memory: '256MiB', maxInstances: 5, timeoutSeconds: 20 },
+  async (req, res) => {
+    const query = cleanQuery(req.query.q);
+    if (req.method !== 'GET' || !req.path.endsWith('/search') || !query) {
+      res.status(400).json({ error: 'Expected GET /api/books/search?q=<title or author>' });
+      return;
+    }
+    try {
+      const results = await searchBooks(query, googleBooksKey.value());
+      res.set('Cache-Control', 'public, max-age=3600, s-maxage=604800');
+      res.json({ results });
+    } catch (err) {
+      logger.warn('Google Books search failed', { query, err: String(err) });
       res.set('Cache-Control', 'no-store');
       res.status(502).json({ error: 'Search is unavailable right now' });
     }

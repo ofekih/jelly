@@ -33,7 +33,7 @@
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
       },
       {
-        "source": "/api/tmdb/**",
+        "source": "/api/@(tmdb|books)/**",
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=604800" }]
       }
     ],
@@ -41,6 +41,10 @@
       {
         "source": "/api/tmdb/**",
         "function": { "functionId": "tmdb", "region": "us-central1" }
+      },
+      {
+        "source": "/api/books/**",
+        "function": { "functionId": "books", "region": "us-central1" }
       },
       {
         "source": "/about",

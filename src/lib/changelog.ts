@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.1.0',
+    date: '2026-10-22',
+    title: 'Books',
+    highlights: [
+      'A new Read group ranks the books you’ve read in two lists, Fiction and Nonfiction',
+      'Search any title or author; covers and authors come along, and every edition of a book counts as the same book',
+      'Save books to Want to Read, see friends’ scores, and pick your next book club read with Read Together',
+    ],
+  },
+  {
     version: '3.0.0',
     date: '2026-10-21',
     title: 'Movies & TV',

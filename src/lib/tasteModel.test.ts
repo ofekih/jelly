@@ -45,6 +45,8 @@ describe('tasteModel', () => {
     expect(isSameSpot(dune2021, { placeId: 'tmdb:movie:438631', name: 'Dune: Part One' })).toBe(true);
     expect(isSameSpot(dune2021, { placeId: 'tmdb:movie:841', name: 'Dune' })).toBe(false);
     expect(isSameSpot(dune2021, { placeId: 'tmdb:tv:438631', name: 'Dune' })).toBe(false);
+    expect(isSameSpot({ placeId: 'book:herbert:dune', name: 'Dune' }, { placeId: 'tmdb:movie:841', name: 'Dune' })).toBe(false);
+    expect(isSameSpot({ placeId: 'book:herbert:dune', name: 'Dune' }, { placeId: 'book:herbert:dune', name: 'DUNE' })).toBe(true);
     const list = [e('tmdb:movie:841', 6, { name: 'Dune', category: 'movies' })];
     expect(bestScoreFor({ ...dune2021, category: 'movies' }, list)).toBeNull();
   });

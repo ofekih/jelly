@@ -18,7 +18,7 @@
 }
 
 /* Per-group accent: the app's emerald accent becomes violet in Explore, sky blue in Travel and
-   popcorn orange in Watch */
+   popcorn orange in Watch and fuchsia in Read */
 html[data-group='explore'] {
   --color-emerald-50: oklch(96.9% 0.016 293.756);
   --color-emerald-100: oklch(94.3% 0.029 294.588);
@@ -59,6 +59,20 @@ html[data-group='watch'] {
   --color-emerald-800: oklch(47% 0.157 37.304);
   --color-emerald-900: oklch(40.8% 0.123 38.172);
   --color-emerald-950: oklch(26.6% 0.079 36.259);
+}
+
+html[data-group='read'] {
+  --color-emerald-50: oklch(97.7% 0.017 320.058);
+  --color-emerald-100: oklch(95.2% 0.037 318.852);
+  --color-emerald-200: oklch(90.3% 0.076 319.62);
+  --color-emerald-300: oklch(83.3% 0.145 321.434);
+  --color-emerald-400: oklch(74% 0.238 322.16);
+  --color-emerald-500: oklch(66.7% 0.295 322.15);
+  --color-emerald-600: oklch(59.1% 0.293 322.896);
+  --color-emerald-700: oklch(51.8% 0.253 323.949);
+  --color-emerald-800: oklch(45.2% 0.211 324.591);
+  --color-emerald-900: oklch(40.1% 0.17 325.612);
+  --color-emerald-950: oklch(29.3% 0.136 325.661);
 }
 
 @layer base {

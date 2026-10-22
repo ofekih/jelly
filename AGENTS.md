@@ -1,12 +1,13 @@
 # jelly — agent guide
 
 jelly (always lowercase, including the app/web-app name) is a personal ranking web app for
-restaurants, places, movies and TV shows. Live at https://eatwithjelly.com.
+restaurants, places, movies, TV shows and books. Live at https://eatwithjelly.com.
 
 - Firebase project: `ofek-beli-ranker` (Hosting, Auth with Google sign-in, Firestore, Analytics)
 - GitHub: `git@github.com:ofekih/jelly.git`, branch `main`
 - Stack: React 19 + TypeScript + Vite 6 + Tailwind v4, `@dnd-kit` for drag-to-rerank,
-  Google Places API (New) + Maps JS API, TMDB (movies & shows, via the `tmdb` function), Vitest for tests.
+  Google Places API (New) + Maps JS API, TMDB (movies & shows, via the `tmdb` function), Google Books
+  (via the `books` function), Vitest for tests.
 - Note: `package.json` name is still `palate-ranker` (legacy name); the product is jelly.
 
 ## Commands
@@ -31,11 +32,11 @@ restaurants, places, movies and TV shows. Live at https://eatwithjelly.com.
 | `src/lib/friendsService.ts` | Friend matching, group blend ("Eat Together"), social metrics (friends avg + all-jelly avg from `placeStats`; prediction from followed friends or the stronger server prediction) |
 | `src/lib/predictions.ts`, `usePredictions.ts` | Parse + one `onSnapshot` of `users/{uid}/private/predictions`, looked up per spot by `placeId__category` |
 | `src/lib/socialService.ts` | Firestore reads/writes for `profiles` (build, prefix search), follower edges, follow counts, `placeStats` fetch; `usePlaceStats.ts` caches stats for components |
-| `src/lib/publicList.ts` | Builds the public `sharedLists` payload under the 500-item / ~1 MiB limits (drops notes before spots) |
+| `src/lib/publicList.ts` | Builds the public `sharedLists` payload under the ~1 MiB doc limit (drops notes before spots) |
 | `src/lib/sync/` | Account sync, kept out of `App.tsx` and tested against the emulator (`sync.emu.test.ts`): `accountLists` (both lists ⇄ cloud + local copy: server-confirmed seeding, stored-score refresh, migrations), `userDoc` (settings + friends merge), `follows` (follow list + follower edges), `publish` (`sharedLists` + `profiles`), `localCache` (local keys + which account the copy mirrors; only signed-out data is ever uploaded) |
-| `functions/` | Cloud Functions: `tmdb` (title search proxy, CDN-cached), `onRestaurantWritten` (recomputes `placeStats`, marks `predictionJobs/{uid}` dirty), `onBookmarkWritten`, `processPredictionJobs` (every minute, debounced), `nightlyPredictions`; one-time `scripts/backfill.ts`; emulator tests (`npm run test:emulator`). Compiles `src/lib/tasteModel.ts` + `src/types.ts` too (rootDir `..`, main `lib/functions/src/index.js`) |
+| `functions/` | Cloud Functions: `tmdb`, `books` (title search proxies, CDN-cached), `onRestaurantWritten` (recomputes `placeStats`, marks `predictionJobs/{uid}` dirty), `onBookmarkWritten`, `processPredictionJobs` (every minute, debounced), `nightlyPredictions`; one-time `scripts/backfill.ts`; emulator tests (`npm run test:emulator`). Compiles `src/lib/tasteModel.ts` + `src/types.ts` too (rootDir `..`, main `lib/functions/src/index.js`) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
-| `src/lib/media.ts` | Watch lists: TMDB title search via `/api/tmdb/search` (Hosting rewrite → `tmdb` function in `functions/src/tmdb.ts`, token in the `TMDB_READ_TOKEN` secret; dev proxies to production), poster URLs, `spotLink` (TMDB vs Maps), `spotPlaceLabel` (year · director vs neighborhood) |
+| `src/lib/media.ts` | Title lists (Watch, Read): search via `/api/tmdb/search` and `/api/books/search` (Hosting rewrites → `tmdb` / `books` functions in `functions/src/tmdb.ts`, `books.ts`; secrets `TMDB_READ_TOKEN`, `GOOGLE_BOOKS_API_KEY`; dev proxies to production), poster URLs, `spotLink` (TMDB / Google Books / Maps), `spotPlaceLabel` (year · director vs neighborhood) |
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
 | `src/lib/geo.ts` | Distances, city fallback coords |
@@ -50,7 +51,7 @@ restaurants, places, movies and TV shows. Live at https://eatwithjelly.com.
 
 ## Data model (Firestore)
 - `users/{uid}` – settings/profile (`customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, …)
-- `users/{uid}/restaurants/{id}` – `RestaurantEntry` (ranked spots: `category`, `initialRating`, `rankIndex`/`magicScore` within its category, cuisines, notes…; ID = `${placeId}__${category}`). Movies & shows use `placeId` `tmdb:movie:<id>` / `tmdb:tv:<id>`, a `media` map (`year`, `poster`, `creator`) and their "year · director" in `formattedAddress`; titles match only by ID (`isMediaPlaceId`)
+- `users/{uid}/restaurants/{id}` – `RestaurantEntry` (ranked spots: `category`, `initialRating`, `rankIndex`/`magicScore` within its category, cuisines, notes…; ID = `${placeId}__${category}`). Movies & shows use `placeId` `tmdb:movie:<id>` / `tmdb:tv:<id>`, books `book:<author surname>:<title>` (Google Books has no work ID, so every edition maps to one book), a `media` map (`year`, `poster`: TMDB path or full cover URL, `creator`) and their "year · director" in `formattedAddress`; titles match only by ID (`isMediaPlaceId`)
 - `users/{uid}/bookmarks/{id}` – `BookmarkEntry` (want-to-try)
 - `sharedLists/{uid}` – public `SharedListPayload` snapshot of a user's list, read one doc at a time (share link, friends' lists). Never list or query the collection. No count limit; `publicList.ts` trims by bytes (1 MiB doc limit).
 - `profiles/{uid}` – small public profile (handle, name, photo, `followingIds`, `rankedCount`) for search and follower lists; rules reject unknown fields and nulls
@@ -61,22 +62,23 @@ restaurants, places, movies and TV shows. Live at https://eatwithjelly.com.
 - Signed-out users persist to `localStorage` (keys defined at top of `App.tsx`); signed-in users sync to Firestore.
 
 ## Conventions & gotchas
-- **Completely separate lists in four groups** (`SpotCategory`, grouped by `SpotGroup` via
+- **Completely separate lists in five groups** (`SpotCategory`, grouped by `SpotGroup` via
   `GROUP_CATEGORIES`/`CATEGORY_GROUP` in `types.ts`): Eat (Restaurants, Brunch, Dessert, Bakeries,
   Coffee & Tea, Bars), Explore (Museums & Galleries, Theme Parks, Zoos & Aquariums, Parks & Nature),
-  Travel (Cities, Getaways, Countries), Watch (Movies, TV Shows; whole shows, not seasons). Every
+  Travel (Cities, Getaways, Countries), Watch (Movies, TV Shows; whole shows, not seasons), Read
+  (Fiction, Nonfiction). Every
   entry belongs to exactly one list; ranks, magic scores, SxS opponents, drag-reorder,
-  friend/community score matching and Eat/Visit/Travel/Watch Together never cross lists. The same place may appear in several lists as separate entries. The header switcher
+  friend/community score matching and Eat/Visit/Travel/Watch/Read Together never cross lists. The same place may appear in several lists as separate entries. The header switcher
   picks the group; the main screen shows one list of it at a time (tabs). Per-group wording, tag
-  options, rating-label tweaks and `hasLocation` (false for Watch: no map, Near Me, cities or Maps
-  links) live in `src/lib/groups.ts`; the emerald accent is remapped per group in `index.css`
+  options, rating-label tweaks, `hasLocation` (false for title groups: no map, Near Me, cities or
+  Maps links) and `notYet`/`done` wording live in `src/lib/groups.ts`; the emerald accent is remapped per group in `index.css`
   (scores use the fixed `jade` copy). `cuisines` holds each group's tags
   (cuisine / museum type / country + continent + vibe).
 - **New categories need a guard period**: docs with an unknown category are skipped untouched
   (`isFromNewerVersion`), but older cached app versions without that guard would migrate them. Make
   sure family devices have updated before adding entries in a brand-new category.
-- **TMDB attribution is required** wherever title data shows up in bulk (`TmdbCredit` under search
-  results, About footer).
+- **Data attribution is required** (TMDB, Google Books) wherever title data shows up in bulk
+  (`TitleCredit` under search results, About footer).
 - **Adding a field to any Firestore doc requires updating `firestore.rules` validators**,
   otherwise writes fail (fire-and-forget writes only log via `logWriteError` in the console). Delegate rules edits to the
   `firestore-rules-author` subagent, then deploy rules.
@@ -89,7 +91,7 @@ restaurants, places, movies and TV shows. Live at https://eatwithjelly.com.
   boundary (~8.2–8.7), and "Flawless · Literally nothing could be improved" is only 9.8–10. The words
   before "·" climb strictly (X → Really X); the text after must never sound weaker than the row
   below, must fit every group (meal, coffee, museum, country) and must not be a near-synonym of a
-  neighbour. Tiers, labels and Travel's and Watch's few overrides live in `src/lib/ratingTiers.ts`. Don't
+  neighbour. Tiers, labels and the few per-group overrides (Travel, Watch, Read) live in `src/lib/ratingTiers.ts`. Don't
   inflate them; the goal is to push users to use the whole scale.
 - **Mobile is first-class**: verify touch drag (dnd-kit sensors), autocomplete scroll position,
   Web Share API (`navigator.share`) and layout on iOS/Android, not just desktop.

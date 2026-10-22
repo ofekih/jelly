@@ -11,7 +11,9 @@ interface GroupCopy {
   notePlaceholder: string;
   noteAddPrompt: string;
   showPrice: boolean;
-  hasLocation: boolean; // Places (map, distances, cities); movies and shows have none
+  hasLocation: boolean; // Places (map, distances, cities); titles have none
+  notYet: string; // Offered next to the rating line: save it instead
+  done: string; // "Been here", "Watched it": ranking a saved spot
 }
 
 export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
@@ -27,6 +29,8 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
     noteAddPrompt: 'Add a note (favorite dishes, thoughts...)',
     showPrice: true,
     hasLocation: true,
+    notYet: 'Haven’t been yet?',
+    done: 'Been here',
   },
   explore: {
     together: 'Visit Together',
@@ -57,6 +61,8 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
     noteAddPrompt: 'Add a note (highlights, tips...)',
     showPrice: true,
     hasLocation: true,
+    notYet: 'Haven’t been yet?',
+    done: 'Been here',
   },
   travel: {
     together: 'Travel Together',
@@ -83,6 +89,8 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
     noteAddPrompt: 'Add a note (highlights, tips...)',
     showPrice: false,
     hasLocation: true,
+    notYet: 'Haven’t been yet?',
+    done: 'Been here',
   },
   watch: {
     together: 'Watch Together',
@@ -117,6 +125,50 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
     noteAddPrompt: 'Add a note (favorite scenes, thoughts...)',
     showPrice: false,
     hasLocation: false,
+    notYet: 'Haven’t watched it yet?',
+    done: 'Watched it',
+  },
+  read: {
+    together: 'Read Together',
+    want: 'Want to Read',
+    togetherHint: 'Blend your list with friends to pick a book to read together',
+    searchPlaceholder: 'Search any book or author...',
+    searchEmptyHint: 'Type a title or author to rate & rank a book, or tap the bookmark icon to save for later.',
+    tagLabel: 'Genre',
+    // Must match the tags `functions/src/books.ts` derives from Google Books categories
+    tagOptions: [
+      'Fantasy',
+      'Sci-Fi',
+      'Mystery',
+      'Thriller',
+      'Romance',
+      'Horror',
+      'Historical',
+      'Literary',
+      'Classics',
+      'Young Adult',
+      'Kids',
+      'Graphic Novel',
+      'Poetry',
+      'Biography',
+      'History',
+      'Science',
+      'Business',
+      'Self-Help',
+      'Psychology',
+      'Philosophy',
+      'Politics',
+      'Religion',
+      'True Crime',
+      'Travel',
+      'Food',
+    ],
+    notePlaceholder: 'What stayed with you? Favorite quotes, characters, who should read it...',
+    noteAddPrompt: 'Add a note (favorite quotes, thoughts...)',
+    showPrice: false,
+    hasLocation: false,
+    notYet: 'Haven’t read it yet?',
+    done: 'Read it',
   },
 };
 

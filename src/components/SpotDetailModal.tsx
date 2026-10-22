@@ -562,7 +562,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       className="py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      <span>{restaurant.media ? 'TMDB' : 'Google Maps'}</span>
+                      <span>{link.site}</span>
                     </a>
                   </div>
                 </div>

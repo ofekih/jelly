@@ -416,4 +416,6 @@ const CATEGORY_FALLBACK_DISPLAY: Record<SpotCategory, string> = {
   countries: 'Country',
   movies: 'Movie',
   tv_shows: 'TV show',
+  fiction: 'Book',
+  nonfiction: 'Book',
 };

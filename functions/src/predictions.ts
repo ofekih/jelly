@@ -77,7 +77,7 @@ function mediaOf(v: unknown): MediaInfo | undefined {
   const media: MediaInfo = {};
   if (typeof m.year === 'number' && Number.isInteger(m.year)) media.year = m.year;
   const poster = str(m.poster);
-  if (poster && poster.length <= 100) media.poster = poster;
+  if (poster && poster.length <= 200) media.poster = poster;
   const creator = str(m.creator);
   if (creator) media.creator = creator.slice(0, MAX_NAME_LENGTH);
   return Object.keys(media).length > 0 ? media : undefined;

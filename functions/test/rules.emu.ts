@@ -178,6 +178,14 @@ describe('users/{uid}/restaurants and bookmarks: movies & shows', () => {
     await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${show.id}`), show));
     const { initialRating: _r, elo: _e, rankIndex: _i, magicScore: _m, comparisonsCount: _c, ...saved } = movie;
     await assertSucceeds(setDoc(doc(as('alice'), 'users/alice/bookmarks/tmdb:movie:438631'), saved));
+    const book = {
+      ...movie,
+      id: 'book:weir:project-hail-mary__fiction',
+      placeId: 'book:weir:project-hail-mary',
+      category: 'fiction',
+      media: { poster: 'https://books.google.com/books/content?id=x&printsec=frontcover&img=1&zoom=1&source=gbs_api', creator: 'Andy Weir' },
+    };
+    await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${book.id}`), book));
   });
 
   it('rejects unknown or malformed media fields', async () => {

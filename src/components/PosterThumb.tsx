@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Film } from 'lucide-react';
+import type { SpotGroup } from '../types';
 
 /** A movie or show poster (2:3), or a film-strip placeholder when there's none or it fails to load */
 export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ src, className = '' }) => {
@@ -24,18 +25,27 @@ export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ sr
   );
 };
 
-/** TMDB's required attribution, shown wherever title search results appear */
-export const TmdbCredit: React.FC = () => (
+const creditLink = 'underline hover:text-zinc-600 dark:hover:text-zinc-400';
+
+/** The data source's required attribution, shown wherever title search results appear */
+export const TitleCredit: React.FC<{ group: SpotGroup }> = ({ group }) => (
   <p className="pt-2 text-center text-[10px] text-zinc-400 dark:text-zinc-600">
-    Movie & TV data from{' '}
-    <a
-      href="https://www.themoviedb.org"
-      target="_blank"
-      rel="noopener noreferrer"
-      className="underline hover:text-zinc-600 dark:hover:text-zinc-400"
-    >
-      TMDB
-    </a>
-    . jelly uses the TMDB API but is not endorsed or certified by TMDB.
+    {group === 'read' ? (
+      <>
+        Book data from{' '}
+        <a href="https://books.google.com" target="_blank" rel="noopener noreferrer" className={creditLink}>
+          Google Books
+        </a>
+        .
+      </>
+    ) : (
+      <>
+        Movie & TV data from{' '}
+        <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer" className={creditLink}>
+          TMDB
+        </a>
+        . jelly uses the TMDB API but is not endorsed or certified by TMDB.
+      </>
+    )}
   </p>
 );

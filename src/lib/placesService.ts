@@ -303,7 +303,8 @@ const AUTOCOMPLETE_TYPES: Record<SpotGroup, string[] | undefined> = {
   eat: ['restaurant', 'cafe', 'bakery', 'bar', 'food'],
   explore: undefined,
   travel: ['(regions)'],
-  watch: undefined, // Titles are searched on TMDB (src/lib/media.ts), never as places
+  watch: undefined, // Titles are searched on TMDB / Google Books (src/lib/media.ts), never as places
+  read: undefined,
 };
 
 export async function searchPlaces(

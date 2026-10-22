@@ -179,11 +179,13 @@ service cloud.firestore {
           // Travel
           'cities', 'getaways', 'countries',
           // Watch
-          'movies', 'tv_shows'
+          'movies', 'tv_shows',
+          // Read
+          'fiction', 'nonfiction'
         ];
     }
 
-    // Validate optional movie / show info (`MediaInfo` in src/types.ts)
+    // Validate optional movie / show / book info (`MediaInfo` in src/types.ts)
     function isValidOptionalMedia(data) {
       return !('media' in data) ||
         data.media == null ||

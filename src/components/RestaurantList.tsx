@@ -289,7 +289,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
             </button>
           </div>
 
-          {/* Right Actions (Swipe Left): Google Maps (TMDB for titles) + Remove */}
+          {/* Right Actions (Swipe Left): Google Maps (TMDB / Google Books for titles) + Remove */}
           <div
             className={`flex items-stretch ml-auto transition-opacity ${
               swipeX < 0 ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -538,7 +538,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
             ]
           : []),
         {
-          label: contextMenu.restaurant.media ? 'Open in TMDB' : 'Open in Google Maps',
+          label: `Open in ${spotLink(contextMenu.restaurant).site}`,
           icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
           onClick: () => window.open(spotLink(contextMenu.restaurant!).href, '_blank'),
         },

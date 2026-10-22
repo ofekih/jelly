@@ -1941,12 +1941,12 @@ export const App: React.FC = () => {
             </span>
           </button>
 
-          {/* Group Switcher: Eat · Explore · Travel · Watch. Its own full-width row on phones; inline (only the
-              active group named) from sm up */}
+          {/* Group Switcher: Eat · Explore · Travel · Watch · Read. Its own full-width row on phones, inline
+              from sm up; only the active group is named */}
           <div
             role="tablist"
             aria-label="Group"
-            className="order-last w-full grid grid-cols-4 sm:order-none sm:w-auto sm:mr-auto sm:inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80"
+            className="order-last w-full flex sm:order-none sm:w-auto sm:mr-auto sm:inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80"
           >
             {ALL_GROUPS.map((group) => {
               const active = group === selectedGroup;
@@ -1959,16 +1959,16 @@ export const App: React.FC = () => {
                   aria-label={GROUP_LABEL[group]}
                   title={GROUP_LABEL[group]}
                   onClick={() => selectGroup(group)}
-                  className={`h-7 rounded-full text-xs font-bold flex items-center justify-center gap-1 transition-all ${
+                  className={`h-7 rounded-full text-xs font-bold flex items-center justify-center gap-1 transition-all sm:flex-none ${
                     active
-                      ? 'px-2.5 bg-emerald-500 text-white dark:text-zinc-950 shadow-2xs'
-                      : 'px-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
+                      ? 'flex-[2] px-2.5 bg-emerald-500 text-white dark:text-zinc-950 shadow-2xs'
+                      : 'flex-1 px-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
                   }`}
                 >
                   <span aria-hidden="true" className="text-sm leading-none">
                     {GROUP_EMOJI[group]}
                   </span>
-                  <span className={active ? '' : 'sm:hidden'}>{GROUP_LABEL[group]}</span>
+                  <span className={active ? '' : 'hidden'}>{GROUP_LABEL[group]}</span>
                 </button>
               );
             })}
@@ -2625,7 +2625,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
-        jelly – rank the restaurants, sights and places you've been, and what you've watched ·{' '}
+        jelly – rank the restaurants, sights and places you've been, and what you've watched and read ·{' '}
         <a href="/about" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
           About
         </a>{' '}

@@ -401,7 +401,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                               target="_blank"
                               rel="noopener noreferrer"
                               className="p-2 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                              title={item.media ? 'Open in TMDB' : 'Open in Google Maps'}
+                              title={`Open in ${spotLink(item).site}`}
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
