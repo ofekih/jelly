@@ -213,11 +213,11 @@ function detectTravelCategories(signals: RawPlaceSignals, allTypes: Set<string>)
     SETTLEMENT_TYPES.some((t) => allTypes.has(t)) || ['city', 'town', 'village', 'hamlet', 'state', 'region'].includes(osmPlace);
   if (!isIsland && !isSettlement) return [];
 
-  if (isIsland && !allTypes.has('locality')) return ['getaways', 'cities'];
+  if (isIsland && !allTypes.has('locality')) return ['getaways'];
   const looksBig =
     osmPlace === 'city' ||
     (typeof signals.viewportDiagonalKm === 'number' && signals.viewportDiagonalKm >= CITY_MIN_VIEWPORT_KM);
-  return looksBig ? ['cities', 'getaways'] : ['getaways', 'cities'];
+  return looksBig ? ['cities'] : ['getaways'];
 }
 
 export function autoCategorizePlace(signals: RawPlaceSignals): {

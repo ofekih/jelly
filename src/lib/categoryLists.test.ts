@@ -151,7 +151,7 @@ describe('autoCategorizePlace for Explore & Travel', () => {
       countryName: 'Italy',
       viewportDiagonalKm: 45,
     });
-    expect(rome.categories).toEqual(['cities', 'getaways']);
+    expect(rome.categories).toEqual(['cities']);
     expect(rome.cuisines).toEqual(['Italy', 'Europe']);
 
     const positano = autoCategorizePlace({
@@ -161,7 +161,7 @@ describe('autoCategorizePlace for Explore & Travel', () => {
       countryName: 'Italy',
       viewportDiagonalKm: 3,
     });
-    expect(positano.categories).toEqual(['getaways', 'cities']);
+    expect(positano.categories).toEqual(['getaways']);
 
     expect(autoCategorizePlace({ name: 'Santorini', types: ['natural_feature'], countryCode: 'GR' }).categories[0]).toBe(
       'getaways'

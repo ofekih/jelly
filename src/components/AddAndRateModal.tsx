@@ -205,7 +205,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   // viewed (TMDB knows for sure whether a title is a movie or a show)
   const getCategoryOptions = (candidate: PlaceCandidate): SpotCategory[] => {
     const detected = (candidate.categories || []).filter((c) => CATEGORY_GROUP[c] === group);
-    if (candidate.source === 'tmdb' && detected.length > 0) return detected;
+    if ((candidate.source === 'tmdb' || group === 'travel') && detected.length > 0) return detected;
     return Array.from(new Set([...detected, defaultCategory]));
   };
 
