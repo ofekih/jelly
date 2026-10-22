@@ -167,6 +167,27 @@ describe('autoCategorizePlace for Explore & Travel', () => {
       'getaways'
     );
   });
+
+  it('puts places to stay in Hotels & Stays, tagged by kind, country & continent', () => {
+    const resort = autoCategorizePlace({
+      name: 'Four Seasons Resort Maui',
+      primaryType: 'resort_hotel',
+      types: ['resort_hotel', 'lodging', 'restaurant', 'spa'],
+      countryCode: 'US',
+      countryName: 'United States',
+    });
+    expect(resort.categories).toEqual(['stays']);
+    expect(resort.cuisines).toEqual(['Resort', 'United States', 'North America']);
+    expect(autoCategorizePlace({ name: 'Hostel One', primaryType: 'hostel', types: ['hostel', 'lodging'] }).cuisines).toEqual([
+      'Hostel',
+    ]);
+    expect(autoCategorizePlace({ name: 'Old Inn', types: ['lodging'] }).categories).toEqual(['stays']);
+    // A hotel's restaurant is a restaurant
+    expect(
+      autoCategorizePlace({ name: 'Hotel Bistro', primaryType: 'french_restaurant', types: ['french_restaurant', 'lodging'] })
+        .categories[0]
+    ).toBe('restaurants');
+  });
 });
 
 describe('fitCandidatesToGroup', () => {

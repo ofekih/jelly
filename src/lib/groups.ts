@@ -84,6 +84,14 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
       'Family',
       'Adventure',
       'Relaxing',
+      // Hotels & Stays
+      'Hotel',
+      'Resort',
+      'B&B',
+      'Inn',
+      'Hostel',
+      'Cabin',
+      'Camping',
     ],
     notePlaceholder: 'Highlights, where you stayed, tips, or notes...',
     noteAddPrompt: 'Add a note (highlights, tips...)',
@@ -225,6 +233,7 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
 export function searchPlaceholder(category: SpotCategory): string {
   if (category === 'board_games') return 'Search any board or card game...';
   if (category === 'video_games') return 'Search any video game...';
+  if (category === 'stays') return 'Search any hotel, resort, or place to stay...';
   return GROUP_COPY[CATEGORY_GROUP[category]].searchPlaceholder;
 }
 

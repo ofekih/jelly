@@ -201,6 +201,26 @@ const SETTLEMENT_TYPES = [
   'colloquial_area',
 ];
 const ISLAND_TYPES = ['island', 'archipelago', 'natural_feature'];
+// Places to stay (Hotels & Stays), with the tag each kind gets
+const LODGING_TAGS: Record<string, string> = {
+  hotel: 'Hotel',
+  extended_stay_hotel: 'Hotel',
+  resort_hotel: 'Resort',
+  motel: 'Motel',
+  inn: 'Inn',
+  japanese_inn: 'Ryokan',
+  budget_japanese_inn: 'Ryokan',
+  bed_and_breakfast: 'B&B',
+  guest_house: 'B&B',
+  private_guest_room: 'B&B',
+  farmstay: 'B&B',
+  hostel: 'Hostel',
+  cottage: 'Cabin',
+  camping_cabin: 'Cabin',
+  campground: 'Camping',
+  rv_park: 'Camping',
+  lodging: 'Hotel',
+};
 // Places whose Google viewport spans at least this many km (corner to corner) lean "city"
 const CITY_MIN_VIEWPORT_KM = 12;
 
@@ -246,6 +266,18 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
       categories: travelCategories,
       cuisines: Array.from(new Set(tags)),
       primaryTypeDisplay: isCountry ? 'Country' : signals.countryName || CATEGORY_FALLBACK_DISPLAY[travelCategories[0]],
+    };
+  }
+
+  // Places to stay: led by the primary type, so a hotel's restaurant or bar stays in Eat
+  const primary = signals.primaryType || '';
+  if (LODGING_TAGS[primary] || (!primary && allTypes.has('lodging'))) {
+    const kind = LODGING_TAGS[primary] || 'Hotel';
+    const tags = [kind, signals.countryName, continentForCountryCode(signals.countryCode)];
+    return {
+      categories: ['stays'],
+      cuisines: Array.from(new Set(tags.filter((t): t is string => Boolean(t)))),
+      primaryTypeDisplay: signals.primaryTypeDisplayName || kind,
     };
   }
 
@@ -320,7 +352,6 @@ export function autoCategorizePlace(signals: RawPlaceSignals): {
   }
 
   // 4. Category detection, led by the venue's primary type
-  const primary = signals.primaryType || '';
   const amenity = signals.osmAmenity || '';
   const hasAnyType = (list: string[]) => list.some((t) => allTypes.has(t));
   const servesBrunchish = Boolean(signals.servesBreakfast || signals.servesBrunch);
@@ -414,6 +445,7 @@ const CATEGORY_FALLBACK_DISPLAY: Record<SpotCategory, string> = {
   cities: 'City',
   getaways: 'Getaway',
   countries: 'Country',
+  stays: 'Hotel',
   movies: 'Movie',
   tv_shows: 'TV show',
   fiction: 'Book',

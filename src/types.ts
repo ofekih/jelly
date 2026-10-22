@@ -20,6 +20,7 @@ export type SpotCategory =
   | 'cities'
   | 'getaways'
   | 'countries'
+  | 'stays'
   // Watch
   | 'movies'
   | 'tv_shows'
@@ -38,7 +39,7 @@ export const ALL_GROUPS: SpotGroup[] = ['eat', 'explore', 'travel', 'watch', 're
 export const GROUP_CATEGORIES: Record<SpotGroup, SpotCategory[]> = {
   eat: ['restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars'],
   explore: ['museums', 'theme_parks', 'zoos', 'nature'],
-  travel: ['cities', 'getaways', 'countries'],
+  travel: ['cities', 'getaways', 'countries', 'stays'],
   watch: ['movies', 'tv_shows'],
   read: ['fiction', 'nonfiction'],
   play: ['board_games', 'video_games'],
@@ -84,6 +85,7 @@ export const CATEGORY_LABEL: Record<SpotCategory, string> = {
   cities: 'Cities',
   getaways: 'Getaways',
   countries: 'Countries',
+  stays: 'Hotels & Stays',
   movies: 'Movies',
   tv_shows: 'TV Shows',
   fiction: 'Fiction',
@@ -106,6 +108,7 @@ export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
   cities: '🏙️',
   getaways: '🏝️',
   countries: '🌍',
+  stays: '🏨',
   movies: '🎬',
   tv_shows: '📺',
   fiction: '🐉',

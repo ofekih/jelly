@@ -579,7 +579,9 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
                     {copy.tagLabel}
                   </label>
-                  <div className={`flex items-center gap-1 ${copy.showPrice ? '' : 'hidden'}`}>
+                  <div
+                    className={`flex items-center gap-1 ${copy.showPrice || restaurant.category === 'stays' ? '' : 'hidden'}`}
+                  >
                     {[1, 2, 3, 4].map((p) => (
                       <button
                         key={p}

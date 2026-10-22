@@ -308,12 +308,18 @@ const AUTOCOMPLETE_TYPES: Record<SpotGroup, string[] | undefined> = {
   play: undefined,
 };
 
+/** Lists whose search looks for something other than their group's usual types */
+const AUTOCOMPLETE_TYPES_BY_LIST: Partial<Record<SpotCategory, string[]>> = {
+  stays: ['hotel', 'resort_hotel', 'lodging', 'bed_and_breakfast', 'hostel'],
+};
+
 export async function searchPlaces(
   query: string,
   customApiKey?: string,
   defaultCity?: string,
   userLocation?: UserCoordinates | null,
-  group: SpotGroup = 'eat'
+  group: SpotGroup = 'eat',
+  category?: SpotCategory // The list being searched from: its places come first
 ): Promise<{ results: PlaceCandidate[]; providerUsed: 'google_places' | 'osm_photon' }> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -347,7 +353,8 @@ export async function searchPlaces(
       : undefined;
 
     const autocompleteBody: Record<string, any> = { input: effectiveQuery };
-    if (AUTOCOMPLETE_TYPES[group]) autocompleteBody.includedPrimaryTypes = AUTOCOMPLETE_TYPES[group];
+    const autocompleteTypes = (category && AUTOCOMPLETE_TYPES_BY_LIST[category]) || AUTOCOMPLETE_TYPES[group];
+    if (autocompleteTypes) autocompleteBody.includedPrimaryTypes = autocompleteTypes;
     if (locationBias) {
       autocompleteBody.locationBias = locationBias;
       autocompleteBody.origin = {
@@ -450,7 +457,11 @@ export async function searchPlaces(
       }
     }
 
-    const allCandidates = fitCandidatesToGroup(Array.from(byId.values()), group);
+    const fitted = fitCandidatesToGroup(Array.from(byId.values()), group);
+    // On the Hotels & Stays list, a hotel beats the city it's in
+    const allCandidates = category
+      ? [...fitted.filter((c) => c.categories.includes(category)), ...fitted.filter((c) => !c.categories.includes(category))]
+      : fitted;
     if (allCandidates.length > 0) {
       // Score each candidate by how well its NAME matches the user's raw query
       const scored = allCandidates.map((cand, originalIdx) => {

@@ -177,7 +177,7 @@ service cloud.firestore {
           // Explore
           'museums', 'theme_parks', 'zoos', 'nature',
           // Travel
-          'cities', 'getaways', 'countries',
+          'cities', 'getaways', 'countries', 'stays',
           // Watch
           'movies', 'tv_shows',
           // Read

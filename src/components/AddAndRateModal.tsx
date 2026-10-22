@@ -162,7 +162,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
               customPlacesApiKey,
               userLocation ? undefined : defaultCity,
               searchLocation,
-              group
+              group,
+              defaultCategory
             )),
             error: undefined,
           };

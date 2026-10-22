@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.3.0',
+    date: '2026-10-21',
+    title: 'Hotels & Stays',
+    highlights: [
+      'Travel has a new Hotels & Stays list for the hotels, resorts, B&Bs and cabins you’ve stayed at',
+      'Search finds places to stay anywhere, tagged by kind (Resort, B&B, Hostel…) and country',
+      'Hotels you search for now land in Hotels & Stays instead of asking which list they belong in',
+    ],
+  },
+  {
     version: '3.2.0',
     date: '2026-10-21',
     title: 'Games',

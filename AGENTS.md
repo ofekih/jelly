@@ -65,7 +65,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 - **Completely separate lists in six groups** (`SpotCategory`, grouped by `SpotGroup` via
   `GROUP_CATEGORIES`/`CATEGORY_GROUP` in `types.ts`): Eat (Restaurants, Brunch, Dessert, Bakeries,
   Coffee & Tea, Bars), Explore (Museums & Galleries, Theme Parks, Zoos & Aquariums, Parks & Nature),
-  Travel (Cities, Getaways, Countries), Watch (Movies, TV Shows; whole shows, not seasons), Read
+  Travel (Cities, Getaways, Countries, Hotels & Stays), Watch (Movies, TV Shows; whole shows, not seasons), Read
   (Fiction, Nonfiction), Play (Board & Card Games, Video Games; base games only, no DLC or
   expansions). Every
   entry belongs to exactly one list; ranks, magic scores, SxS opponents, drag-reorder,

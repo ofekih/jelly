@@ -194,6 +194,8 @@ describe('users/{uid}/restaurants and bookmarks: movies & shows', () => {
       media: { year: 2019, poster: 'https://cf.geekdo-images.com/w.jpg', creator: 'Elizabeth Hargrave', players: [1, 5], best: [3, 3], time: [40, 70], weight: 2.48 },
     };
     await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${game.id}`), game));
+    const hotel = { ...movie, id: 'ChIJhotel__stays', placeId: 'ChIJhotel', category: 'stays', media: null, priceLevel: 4 };
+    await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${hotel.id}`), hotel));
     const videoGame = { ...movie, id: 'igdb:113112__video_games', placeId: 'igdb:113112', category: 'video_games', media: { year: 2020 } };
     await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${videoGame.id}`), videoGame));
   });
