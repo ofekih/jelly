@@ -61,6 +61,18 @@ const BGG = 'https://boardgamegeek.com/xmlapi2';
 /** Search results looked up in detail (BGG allows 20 IDs per `thing` request) */
 const BGG_CANDIDATES = 40;
 
+/** BGG double-escapes text ("Valhalla&#039;s Gate"), so one parser pass leaves entities behind */
+export function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e: string) => {
+    const k = e.toLowerCase();
+    if (k[0] === '#') {
+      const code = k[1] === 'x' ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
+    }
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[k] ?? m;
+  });
+}
+
 const xml = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '',
@@ -107,11 +119,12 @@ const value = (node: any): any => node?.value;
 export function toBoardGame(item: any): (GameResult & { ratings: number }) | null {
   if (item?.type !== 'boardgame') return null;
   const links: any[] = item.link ?? [];
-  const valuesOf = (type: string): string[] => links.filter((l) => l.type === type).map((l) => String(l.value));
+  const valuesOf = (type: string): string[] => links.filter((l) => l.type === type).map((l) => decodeEntities(String(l.value)));
   const categories = valuesOf('boardgamecategory');
   if (categories.includes('Expansion for Base-game')) return null;
-  const title = (item.name ?? []).find((n: any) => n.type === 'primary')?.value;
-  if (!title) return null;
+  const rawTitle = (item.name ?? []).find((n: any) => n.type === 'primary')?.value;
+  if (!rawTitle) return null;
+  const title = decodeEntities(String(rawTitle));
 
   const ratings = item.statistics?.ratings ?? {};
   const families: string[] = (ratings.ranks?.rank ?? []).filter((r: any) => r.type === 'family').map((r: any) => String(r.name));
@@ -146,7 +159,7 @@ export function bggCandidates(searchXml: string, query: string): string[] {
   return items
     .map((item) => ({
       id: String(item.id),
-      score: Math.max(0, ...(item.name ?? []).map((n: any) => nameScore(String(n.value), query))),
+      score: Math.max(0, ...(item.name ?? []).map((n: any) => nameScore(decodeEntities(String(n.value)), query))),
     }))
     .sort((a, b) => b.score - a.score || Number(a.id) - Number(b.id))
     .slice(0, BGG_CANDIDATES)
