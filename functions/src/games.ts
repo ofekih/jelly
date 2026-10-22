@@ -6,9 +6,7 @@
  * Neither ranks results by popularity, so both fetch a wider set and sort it by how many people
  * rated each game, boosted by how closely its name matches the query. IGDB's text search also
  * misses big titles ("zelda" doesn't find Breath of the Wild), so it runs next to a name-contains
- * query sorted by rating count. Ports are left out (one entry per game), but a port may carry the
- * name everyone knows: IGDB files the original Minecraft as "Minecraft: Java Edition" and Bedrock,
- * plain "Minecraft", as its port, so a game takes such a port's shorter name.
+ * query sorted by rating count.
  */
 import { XMLParser } from 'fast-xml-parser';
 import type { GameResult } from '../../src/types';
@@ -245,21 +243,6 @@ export function toVideoGame(raw: any): (GameResult & { ratings: number }) | null
   };
 }
 
-/** IGDB's game type for ports (another platform's version of a game, filed under `parent_game`) */
-const IGDB_PORT = 11;
-
-/**
- * The name a game is known by: the shortest of its ports' names that the game's own name extends
- * with a subtitle ("Minecraft" for "Minecraft: Java Edition"), else its own name.
- */
-export function commonName(name: string, portNames: string[]): string {
-  const shorter = portNames
-    .map((p) => p.trim())
-    .filter((p) => p && [':', ' -', ' –', ' —'].some((sep) => name.toLowerCase().startsWith(p.toLowerCase() + sep)))
-    .sort((a, b) => a.length - b.length);
-  return shorter[0] ?? name;
-}
-
 let twitchToken: { value: string; expiresAt: number } | null = null;
 
 /** An app access token for IGDB, reused until shortly before it expires (about 60 days). */
@@ -313,14 +296,6 @@ export async function searchVideoGames(
   const games = [...byId.values()]
     .map(toVideoGame)
     .filter((g): g is GameResult & { ratings: number } => g !== null);
-  const subtitled = games.filter((g) => /:| [-–—] /.test(g.title)).map((g) => g.placeId.slice('igdb:'.length));
-  if (subtitled.length > 0) {
-    const ports = await run(`fields name,parent_game; where game_type = ${IGDB_PORT} & parent_game = (${subtitled.join(',')}); limit 500;`);
-    for (const game of games) {
-      const id = Number(game.placeId.slice('igdb:'.length));
-      game.title = commonName(game.title, ports.filter((p) => p?.parent_game === id).map((p) => String(p?.name ?? '')));
-    }
-  }
   return games
     .sort((a, b) => relevance(b.title, query, b.ratings) - relevance(a.title, query, a.ratings))
     .slice(0, MAX_RESULTS)
