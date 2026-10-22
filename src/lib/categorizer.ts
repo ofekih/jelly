@@ -418,4 +418,6 @@ const CATEGORY_FALLBACK_DISPLAY: Record<SpotCategory, string> = {
   tv_shows: 'TV show',
   fiction: 'Book',
   nonfiction: 'Book',
+  board_games: 'Board game',
+  video_games: 'Video game',
 };

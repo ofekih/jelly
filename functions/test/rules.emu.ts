@@ -186,6 +186,16 @@ describe('users/{uid}/restaurants and bookmarks: movies & shows', () => {
       media: { poster: 'https://books.google.com/books/content?id=x&printsec=frontcover&img=1&zoom=1&source=gbs_api', creator: 'Andy Weir' },
     };
     await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${book.id}`), book));
+    const game = {
+      ...movie,
+      id: 'bgg:266192__board_games',
+      placeId: 'bgg:266192',
+      category: 'board_games',
+      media: { year: 2019, poster: 'https://cf.geekdo-images.com/w.jpg', creator: 'Elizabeth Hargrave', players: [1, 5], best: [3, 3], time: [40, 70], weight: 2.48 },
+    };
+    await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${game.id}`), game));
+    const videoGame = { ...movie, id: 'igdb:113112__video_games', placeId: 'igdb:113112', category: 'video_games', media: { year: 2020 } };
+    await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${videoGame.id}`), videoGame));
   });
 
   it('rejects unknown or malformed media fields', async () => {
@@ -195,6 +205,10 @@ describe('users/{uid}/restaurants and bookmarks: movies & shows', () => {
     await assertFails(bad({ year: 2021.5 }));
     await assertFails(bad({ poster: 'x'.repeat(201) }));
     await assertFails(bad('2021'));
+    await assertFails(bad({ players: [5, 1] }));
+    await assertFails(bad({ players: [1, 2, 3] }));
+    await assertFails(bad({ time: [0, 30] }));
+    await assertFails(bad({ weight: 6 }));
   });
 });
 

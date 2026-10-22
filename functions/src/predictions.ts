@@ -70,7 +70,7 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v 
 const coord = (v: unknown, max: number): number | undefined =>
   typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? v : undefined;
 
-/** A movie's or show's year, poster and director, trimmed so one odd entry can't bloat the doc. */
+/** A title's year, poster, creator and game details, trimmed so one odd entry can't bloat the doc. */
 function mediaOf(v: unknown): MediaInfo | undefined {
   if (!v || typeof v !== 'object') return undefined;
   const m = v as Record<string, unknown>;
@@ -80,6 +80,11 @@ function mediaOf(v: unknown): MediaInfo | undefined {
   if (poster && poster.length <= 200) media.poster = poster;
   const creator = str(m.creator);
   if (creator) media.creator = creator.slice(0, MAX_NAME_LENGTH);
+  for (const key of ['players', 'best', 'time'] as const) {
+    const r = m[key];
+    if (Array.isArray(r) && r.length === 2 && r.every((n) => Number.isInteger(n) && n > 0)) media[key] = [r[0], r[1]];
+  }
+  if (typeof m.weight === 'number' && m.weight > 0 && m.weight <= 5) media.weight = m.weight;
   return Object.keys(media).length > 0 ? media : undefined;
 }
 

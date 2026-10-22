@@ -5,7 +5,7 @@ import type { SpotGroup } from '../types';
  *
  * Label rules (see AGENTS.md): the head (before "·") climbs strictly; the tail never sounds
  * weaker than the band below, fits every group, and is never a near-synonym of a neighbour.
- * A group's key (`travel`, `watch`, `read`) replaces the tail where it doesn't fit a trip or a title.
+ * A group's key (`travel`, `watch`, `read`, `play`) replaces the tail where it doesn't fit a trip or a title.
  */
 interface VibeBand extends Partial<Record<SpotGroup, string>> {
   from: number;
@@ -44,7 +44,7 @@ export const RATING_TIERS: RatingTier[] = [
     bands: [
       { from: 1.0, head: 'Disaster', tail: 'Avoid at all costs' },
       { from: 1.8, head: 'Terrible', tail: 'Steer clear', travel: 'Regretted the trip' },
-      { from: 2.5, head: 'Bad', tail: 'Not worth going', watch: 'Not worth the time', read: 'Not worth the time' },
+      { from: 2.5, head: 'Bad', tail: 'Not worth going', watch: 'Not worth the time', read: 'Not worth the time', play: 'Not worth the time' },
       { from: 3.3, head: 'Subpar', tail: 'Probably skip it' },
     ],
   },
@@ -60,7 +60,7 @@ export const RATING_TIERS: RatingTier[] = [
     bands: [
       { from: 4.0, head: 'Underwhelming', tail: 'Only if there’s no other option' },
       { from: 4.5, head: 'Meh', tail: 'Only if someone else picks it', travel: 'Only if someone else plans it' },
-      { from: 5.0, head: 'Passable', tail: 'Fine if it’s convenient', travel: 'Fine to pass through', watch: 'Fine as background', read: 'Fine for a long flight' },
+      { from: 5.0, head: 'Passable', tail: 'Fine if it’s convenient', travel: 'Fine to pass through', watch: 'Fine as background', read: 'Fine for a long flight', play: 'Fine to pass the time' },
       { from: 5.5, head: 'Decent', tail: 'Solid for what it is' },
     ],
   },
@@ -74,7 +74,7 @@ export const RATING_TIERS: RatingTier[] = [
       'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800/70',
     zoneClass: 'text-cyan-600 dark:text-cyan-400',
     bands: [
-      { from: 6.0, head: 'Pleasant', tail: 'Glad I went', watch: 'Glad I watched it', read: 'Glad I read it' },
+      { from: 6.0, head: 'Pleasant', tail: 'Glad I went', watch: 'Glad I watched it', read: 'Glad I read it', play: 'Glad I played it' },
       { from: 6.4, head: 'Good', tail: 'Worth checking out' },
       { from: 6.8, head: 'Very good', tail: 'Well worth it' },
       { from: 7.2, head: 'Really liked it', tail: 'Easy to recommend' },
@@ -91,7 +91,7 @@ export const RATING_TIERS: RatingTier[] = [
     zoneClass: 'text-teal-600 dark:text-teal-400',
     bands: [
       { from: 7.5, head: 'Great', tail: 'A real standout' },
-      { from: 7.8, head: 'Really great', tail: 'Worth going out of your way', travel: 'Worth the journey', watch: 'Worth seeking out', read: 'Worth seeking out' },
+      { from: 7.8, head: 'Really great', tail: 'Worth going out of your way', travel: 'Worth the journey', watch: 'Worth seeking out', read: 'Worth seeking out', play: 'Worth seeking out' },
       { from: 8.2, head: 'Loved it', tail: 'Would rave about it' },
       { from: 8.5, head: 'Really loved it', tail: 'Still thinking about it', travel: 'Bucket-list worthy' },
     ],

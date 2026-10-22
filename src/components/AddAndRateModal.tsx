@@ -14,7 +14,7 @@ import {
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
 import { posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
 import { isMediaPlaceId } from '../lib/tasteModel';
-import { GROUP_COPY, wantLabel } from '../lib/groups';
+import { GROUP_COPY, searchPlaceholder, wantLabel } from '../lib/groups';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
@@ -155,7 +155,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
     const timer = setTimeout(async () => {
       const { results, error } = isTitles
-        ? await searchTitles(trimmed, group)
+        ? await searchTitles(trimmed, defaultCategory)
         : {
             ...(await searchPlaces(
               trimmed,
@@ -182,7 +182,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation, isTitles, group]);
+  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation, isTitles, group, defaultCategory]);
 
   // Ensure scroll container always starts at top when query or results change
   useEffect(() => {
@@ -202,10 +202,10 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     );
 
   // Lists to offer for a candidate: its auto-detected categories in this group, plus the list being
-  // viewed (TMDB knows for sure whether a title is a movie or a show)
+  // viewed (TMDB knows for sure whether a title is a movie or a show; BGG and IGDB only find their own list)
   const getCategoryOptions = (candidate: PlaceCandidate): SpotCategory[] => {
     const detected = (candidate.categories || []).filter((c) => CATEGORY_GROUP[c] === group);
-    if ((candidate.source === 'tmdb' || group === 'travel') && detected.length > 0) return detected;
+    if ((['tmdb', 'bgg', 'igdb'].includes(candidate.source) || group === 'travel') && detected.length > 0) return detected;
     return Array.from(new Set([...detected, defaultCategory]));
   };
 
@@ -362,7 +362,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={copy.searchPlaceholder}
+                placeholder={searchPlaceholder(defaultCategory)}
                 autoFocus
                 className="w-full pl-10 pr-9 py-3 bg-zinc-100/80 dark:bg-zinc-800/80 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-700 rounded-2xl text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none transition-all"
               />
@@ -529,7 +529,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 </div>
               )}
 
-              {isTitles && <TitleCredit group={group} />}
+              {isTitles && <TitleCredit category={defaultCategory} />}
             </div>
           )}
 

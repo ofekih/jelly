@@ -42,8 +42,8 @@ type SpotLike = { placeId?: string; name: string; city?: string; formattedAddres
 const isRealPlaceId = (placeId?: string): placeId is string =>
   Boolean(placeId) && !placeId!.startsWith('manual_');
 
-/** A title (`tmdb:movie:<id>`, `tmdb:tv:<id>`, `book:<author>:<title>`) rather than a place. */
-export const isMediaPlaceId = (placeId?: string): boolean => /^(tmdb|book):/.test(placeId ?? '');
+/** A title (`tmdb:movie:<id>`, `tmdb:tv:<id>`, `book:<author>:<title>`, `bgg:<id>`, `igdb:<id>`) rather than a place. */
+export const isMediaPlaceId = (placeId?: string): boolean => /^(tmdb|book|bgg|igdb):/.test(placeId ?? '');
 
 function sameSpotNormalized(a: SpotLike, normA: string, b: SpotLike, normB: string): boolean {
   if (isRealPlaceId(a.placeId) && isRealPlaceId(b.placeId)) {

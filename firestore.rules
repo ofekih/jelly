@@ -181,16 +181,28 @@ service cloud.firestore {
           // Watch
           'movies', 'tv_shows',
           // Read
-          'fiction', 'nonfiction'
+          'fiction', 'nonfiction',
+          // Play
+          'board_games', 'video_games'
         ];
     }
 
-    // Validate optional movie / show / book info (`MediaInfo` in src/types.ts)
+    // Validate a [min, max] pair of small positive whole numbers (players, minutes)
+    function isValidRange(r) {
+      return r is list && r.size() == 2 &&
+        r[0] is int && r[1] is int && r[0] >= 1 && r[0] <= r[1] && r[1] <= 10000;
+    }
+
+    // Validate optional movie / show / book / game info (`MediaInfo` in src/types.ts)
     function isValidOptionalMedia(data) {
       return !('media' in data) ||
         data.media == null ||
         (data.media is map &&
-         data.media.keys().hasOnly(['year', 'poster', 'creator']) &&
+         data.media.keys().hasOnly(['year', 'poster', 'creator', 'players', 'best', 'time', 'weight']) &&
+         (!('players' in data.media) || isValidRange(data.media.players)) &&
+         (!('best' in data.media) || isValidRange(data.media.best)) &&
+         (!('time' in data.media) || isValidRange(data.media.time)) &&
+         (!('weight' in data.media) || (data.media.weight is number && data.media.weight >= 0 && data.media.weight <= 5)) &&
          (!('year' in data.media) || (data.media.year is int && data.media.year >= 1800 && data.media.year <= 3000)) &&
          (!('poster' in data.media) || (data.media.poster is string && data.media.poster.size() <= 200)) &&
          (!('creator' in data.media) || (data.media.creator is string && data.media.creator.size() <= 300)));

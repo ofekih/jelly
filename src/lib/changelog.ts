@@ -17,8 +17,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.2.0',
+    date: '2026-10-21',
+    title: 'Games',
+    highlights: [
+      'A new Play group ranks your Board & Card Games and Video Games, each in its own list',
+      'Board games come with player count, the best number of players, play time and complexity',
+      'Filter board games by how many are playing and how long you have, in your list and in Play Together',
+      'Video games show their developer and tags like Co-op and Multiplayer',
+    ],
+  },
+  {
     version: '3.1.0',
-    date: '2026-10-22',
+    date: '2026-10-21',
     title: 'Books',
     highlights: [
       'A new Read group ranks the books you’ve read in two lists, Fiction and Nonfiction',

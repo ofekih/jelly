@@ -16,7 +16,8 @@ import {
 import { BlendSpotItem, computeGroupBlend } from '../lib/friendsService';
 import { GROUP_COPY } from '../lib/groups';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
-import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { fitsPlayers, fitsTime, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './GameNightSelect';
 import { PosterThumb } from './PosterThumb';
 import { Sheet, SheetHeader } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
@@ -60,6 +61,9 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
   >('shared_favorites');
   // Lists are never mixed: the blend always shows a single category
   const [categoryFilter, setCategoryFilter] = useState<SpotCategory>(initialCategory);
+  // Board games only: who's playing and how long you have
+  const [players, setPlayers] = useState<number | 'ALL'>('ALL');
+  const [maxMinutes, setMaxMinutes] = useState<number | 'ALL'>('ALL');
   const group = CATEGORY_GROUP[categoryFilter];
   const inGroup = (item: BlendSpotItem) => CATEGORY_GROUP[item.category] === group;
 
@@ -129,6 +133,12 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
 
   const filteredList = rawList
     .filter((item) => item.category === categoryFilter)
+    .filter(
+      (item) =>
+        categoryFilter !== 'board_games' ||
+        ((players === 'ALL' || fitsPlayers(item.media, players)) &&
+          (maxMinutes === 'ALL' || fitsTime(item.media, maxMinutes)))
+    )
     .slice()
     .sort((a, b) => {
       if (sortByNearest && userLocation) {
@@ -273,6 +283,26 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                     <span>{CATEGORY_LABEL[c]}</span>
                   </button>
                 ))}
+                {categoryFilter === 'board_games' && (
+                  <>
+                    <GameNightSelect
+                      small
+                      label="Players"
+                      value={players}
+                      options={PLAYER_OPTIONS.map((n) => [n, `${n} player${n === 1 ? '' : 's'}`])}
+                      anyLabel="Any players"
+                      onChange={setPlayers}
+                    />
+                    <GameNightSelect
+                      small
+                      label="Length"
+                      value={maxMinutes}
+                      options={MINUTE_OPTIONS.map((m) => [m, `Under ${m >= 60 ? `${m / 60} hr` : `${m} min`}`])}
+                      anyLabel="Any length"
+                      onChange={setMaxMinutes}
+                    />
+                  </>
+                )}
               </div>
 
               {/* Results List */}
@@ -280,7 +310,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                 <div className="py-10 px-4 text-center rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
                     {activeSection === 'both_want'
-                      ? `No overlapping ${GROUP_COPY[group].want} places yet—try the "Try Next" tab to bookmark your friend’s top picks!`
+                      ? `No overlapping ${GROUP_COPY[group].want} picks yet—try the "Try Next" tab to bookmark your friend’s top picks!`
                       : activeSection === 'shared_favorites'
                       ? 'No overlapping ranked spots for this filter yet.'
                       : 'No unvisited top picks for this filter.'}

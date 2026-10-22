@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { bookToCandidate, mediaSubtitle, parseMedia, posterUrl, spotLink, spotPlaceLabel, titleToCandidate } from './media';
+import {
+  bookToCandidate,
+  fitsPlayers,
+  fitsTime,
+  gameFacts,
+  gameToCandidate,
+  mediaSubtitle,
+  parseMedia,
+  posterUrl,
+  spotLink,
+  spotPlaceLabel,
+  titleToCandidate,
+} from './media';
 
 describe('titleToCandidate', () => {
   it('turns a TMDB movie or show into a candidate for its list', () => {
@@ -47,6 +59,61 @@ describe('bookToCandidate', () => {
   });
 });
 
+describe('games', () => {
+  const wingspan = {
+    placeId: 'bgg:266192',
+    title: 'Wingspan',
+    year: 2019,
+    cover: 'https://cf.geekdo-images.com/w.jpg',
+    creator: 'Elizabeth Hargrave',
+    tags: ['Strategy'],
+    players: [1, 5],
+    best: [3, 3],
+    time: [40, 70],
+    weight: 2.5,
+  };
+
+  it('turns a board game into a candidate with players and time in its subtitle', () => {
+    const c = gameToCandidate(wingspan, 'board_games');
+    expect(c).toMatchObject({
+      placeId: 'bgg:266192',
+      name: 'Wingspan',
+      formattedAddress: '2019 · 1–5 players · 40–70 min',
+      categories: ['board_games'],
+      cuisines: ['Strategy'],
+      source: 'bgg',
+    });
+    expect(gameFacts(c.media)).toBe('Best with 3 · Complexity 2.5/5 · Elizabeth Hargrave');
+  });
+
+  it('turns a video game into a candidate with its developer in the subtitle', () => {
+    const c = gameToCandidate({ placeId: 'igdb:113112', title: 'Hades', year: 2020, creator: 'Supergiant Games', tags: ['RPG'] }, 'video_games');
+    expect(c.formattedAddress).toBe('2020 · Supergiant Games');
+    expect(c.source).toBe('igdb');
+    expect(gameFacts(c.media)).toBe('');
+  });
+
+  it('filters by player count and play time, never hiding things without them', () => {
+    expect(fitsPlayers({ players: [2, 4] }, 4)).toBe(true);
+    expect(fitsPlayers({ players: [2, 4] }, 5)).toBe(false);
+    expect(fitsPlayers(undefined, 5)).toBe(true);
+    expect(fitsTime({ time: [40, 70] }, 45)).toBe(true);
+    expect(fitsTime({ time: [40, 70] }, 30)).toBe(false);
+    expect(fitsTime({ year: 2020 }, 30)).toBe(true);
+    expect(mediaSubtitle({ players: [1, 1], time: [5, 5] })).toBe('1 player · 5 min');
+  });
+
+  it('keeps valid game details when parsing stored media', () => {
+    expect(parseMedia({ players: [1, 5], best: [3, 3], time: [40, 70], weight: 2.5 })).toEqual({
+      players: [1, 5],
+      best: [3, 3],
+      time: [40, 70],
+      weight: 2.5,
+    });
+    expect(parseMedia({ players: [1], time: ['40', 70], weight: 9 })).toBeUndefined();
+  });
+});
+
 describe('spotLink', () => {
   it('links titles to TMDB and places to Google Maps', () => {
     expect(spotLink({ placeId: 'tmdb:tv:1396', name: 'Breaking Bad' })).toEqual({
@@ -60,6 +127,12 @@ describe('spotLink', () => {
       site: 'Google Maps',
     });
     expect(spotLink({ name: 'Zuni', city: 'SF' }).href).toBe('https://www.google.com/maps/search/?api=1&query=Zuni%20SF');
+    expect(spotLink({ placeId: 'bgg:266192', name: 'Wingspan' })).toEqual({
+      href: 'https://boardgamegeek.com/boardgame/266192',
+      label: 'BGG',
+      site: 'BoardGameGeek',
+    });
+    expect(spotLink({ placeId: 'igdb:113112', name: 'Hades' }).href).toBe('https://www.igdb.com/search?q=Hades');
     expect(spotLink({ placeId: 'book:weir:project-hail-mary', name: 'Project Hail Mary', media: { creator: 'Andy Weir' } })).toEqual({
       href: 'https://www.google.com/search?tbm=bks&q=Project%20Hail%20Mary%20Andy%20Weir',
       label: 'Books',

@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Film } from 'lucide-react';
-import type { SpotGroup } from '../types';
+import type { SpotCategory } from '../types';
 
-/** A movie or show poster (2:3), or a film-strip placeholder when there's none or it fails to load */
+/**
+ * A title's poster or cover in a 2:3 frame (fitted, not cropped: board game boxes are square), or a
+ * film-strip placeholder when there's none or it fails to load
+ */
 export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ src, className = '' }) => {
   const [failed, setFailed] = useState(false);
   return (
@@ -16,7 +19,7 @@ export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ sr
           loading="lazy"
           draggable={false}
           onError={() => setFailed(true)}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
         />
       ) : (
         <Film className="w-1/2 h-1/2 max-w-5 max-h-5 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
@@ -27,10 +30,39 @@ export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ sr
 
 const creditLink = 'underline hover:text-zinc-600 dark:hover:text-zinc-400';
 
-/** The data source's required attribution, shown wherever title search results appear */
-export const TitleCredit: React.FC<{ group: SpotGroup }> = ({ group }) => (
+/** BGG's official badge, which public apps using its API must show, linking back to BGG */
+export const PoweredByBgg: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <a
+    href="https://boardgamegeek.com"
+    target="_blank"
+    rel="noopener noreferrer"
+    className={`inline-block ${className}`}
+    title="Board game data from BoardGameGeek"
+  >
+    <img
+      src="https://cf.geekdo-images.com/HZy35cmzmmyV9BarSuk6ug__small/img/gbE7sulIurZE_Tx8EQJXnZSKI6w=/fit-in/200x150/filters:strip_icc()/pic7779581.png"
+      alt="Powered by BGG"
+      width={120}
+      height={35}
+      className="rounded-sm"
+    />
+  </a>
+);
+
+/** The data source's required attribution, shown wherever a list's search results appear */
+export const TitleCredit: React.FC<{ category: SpotCategory }> = ({ category }) => (
   <p className="pt-2 text-center text-[10px] text-zinc-400 dark:text-zinc-600">
-    {group === 'read' ? (
+    {category === 'board_games' ? (
+      <PoweredByBgg />
+    ) : category === 'video_games' ? (
+      <>
+        Video game data from{' '}
+        <a href="https://www.igdb.com" target="_blank" rel="noopener noreferrer" className={creditLink}>
+          IGDB
+        </a>
+        .
+      </>
+    ) : category === 'fiction' || category === 'nonfiction' ? (
       <>
         Book data from{' '}
         <a href="https://books.google.com" target="_blank" rel="noopener noreferrer" className={creditLink}>

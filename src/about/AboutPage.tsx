@@ -8,6 +8,7 @@ import { ScoreDemo } from './demos/ScoreDemo';
 import { SpectrumDemo } from './demos/SpectrumDemo';
 import { SxSDemo } from './demos/SxSDemo';
 import { TasteDemo } from './demos/TasteDemo';
+import { PoweredByBgg } from '../components/PosterThumb';
 import { Callout, Nerd, Section, Tex } from './ui';
 
 const TOC = [
@@ -39,6 +40,7 @@ const GROUPS: Array<{ key: keyof typeof GROUP_CATEGORIES; name: string }> = [
   { key: 'travel', name: 'Travel' },
   { key: 'watch', name: 'Watch' },
   { key: 'read', name: 'Read' },
+  { key: 'play', name: 'Play' },
 ];
 
 const A: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
@@ -64,7 +66,7 @@ export const AboutPage: React.FC = () => (
           <h1 className="font-display text-4xl font-extrabold tracking-tight sm:text-5xl">About jelly</h1>
         </div>
         <p className="mt-5 text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
-          jelly ranks the restaurants, sights and places you've been (and the movies, shows and books you've loved) by
+          jelly ranks the restaurants, sights and places you've been (and the movies, shows, books and games you've loved) by
           having you <b>compare</b> them, not{' '}
           <b>score</b> them. This page explains why, and how the math works, with live demos running jelly's real
           ranking code.
@@ -119,7 +121,7 @@ export const AboutPage: React.FC = () => (
         <h3 className="pt-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">Trap 3: apples vs. espresso</h3>
         <p>
           A great espresso bar and a great steakhouse shouldn't compete for the same spot. jelly keeps a separate,
-          independently ranked list for each kind of place (or title), in five groups:
+          independently ranked list for each kind of place (or title), in six groups:
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {GROUPS.map((g) => (
@@ -482,7 +484,11 @@ export const AboutPage: React.FC = () => (
         <p className="w-full text-xs text-zinc-400 dark:text-zinc-500">
           Movie & TV data and posters from <A href="https://www.themoviedb.org">TMDB</A>. jelly uses the TMDB API
           but is not endorsed or certified by TMDB. Book data and covers from{' '}
-          <A href="https://books.google.com">Google Books</A>.
+          <A href="https://books.google.com">Google Books</A>. Video game data from{' '}
+          <A href="https://www.igdb.com">IGDB</A>. Board game data:
+        </p>
+        <p className="w-full">
+          <PoweredByBgg />
         </p>
       </footer>
     </main>

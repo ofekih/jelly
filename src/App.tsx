@@ -43,6 +43,7 @@ import {
   ALL_CATEGORIES,
   ALL_GROUPS,
   BookmarkEntry,
+  MediaInfo,
   CATEGORY_EMOJI,
   CATEGORY_GROUP,
   CATEGORY_LABEL,
@@ -97,6 +98,8 @@ import {
   sanitizeHandle,
 } from './lib/friendsService';
 import { isMediaPlaceId } from './lib/tasteModel';
+import { fitsPlayers, fitsTime } from './lib/media';
+import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './components/GameNightSelect';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
 import { ForYouList } from './components/ForYouList';
@@ -299,6 +302,13 @@ export const App: React.FC = () => {
   };
   const [selectedCity, setSelectedCity] = useState<string | 'ALL'>('ALL');
   const [selectedCuisine, setSelectedCuisine] = useState<string | 'ALL'>('ALL');
+  // Board games only: who's playing and how long you have
+  const [selectedPlayers, setSelectedPlayers] = useState<number | 'ALL'>('ALL');
+  const [maxMinutes, setMaxMinutes] = useState<number | 'ALL'>('ALL');
+  const fitsGameNight = (media?: MediaInfo) =>
+    selectedCategory !== 'board_games' ||
+    ((selectedPlayers === 'ALL' || fitsPlayers(media, selectedPlayers)) &&
+      (maxMinutes === 'ALL' || fitsTime(media, maxMinutes)));
   const [sortByNearestSetting, setSortByNearest] = useState<boolean>(false);
   // Movies and shows have no location to sort by
   const sortByNearest = sortByNearestSetting && groupCopy.hasLocation;
@@ -1710,6 +1720,7 @@ export const App: React.FC = () => {
     const base = getCategoryList(activeRestaurants, selectedCategory).filter((r) => {
       if (selectedCity !== 'ALL' && r.city !== selectedCity) return false;
       if (selectedCuisine !== 'ALL' && !r.cuisines.includes(selectedCuisine)) return false;
+      if (!fitsGameNight(r.media)) return false;
       if (listSearchQuery.trim()) {
         const q = listSearchQuery.toLowerCase();
         const hay = `${r.name} ${r.formattedAddress} ${r.city || ''} ${r.cuisines.join(' ')}`.toLowerCase();
@@ -1735,6 +1746,8 @@ export const App: React.FC = () => {
     selectedCity,
     selectedCategory,
     selectedCuisine,
+    selectedPlayers,
+    maxMinutes,
     listSearchQuery,
     sortByNearest,
     userLocation,
@@ -1745,6 +1758,7 @@ export const App: React.FC = () => {
       if (selectedCity !== 'ALL' && b.city !== selectedCity) return false;
       if (b.category !== selectedCategory) return false;
       if (selectedCuisine !== 'ALL' && !b.cuisines.includes(selectedCuisine)) return false;
+      if (!fitsGameNight(b.media)) return false;
       if (listSearchQuery.trim()) {
         const q = listSearchQuery.toLowerCase();
         const hay = `${b.name} ${b.formattedAddress} ${b.city || ''} ${b.cuisines.join(' ')}`.toLowerCase();
@@ -1770,6 +1784,8 @@ export const App: React.FC = () => {
     selectedCity,
     selectedCategory,
     selectedCuisine,
+    selectedPlayers,
+    maxMinutes,
     listSearchQuery,
     userLocation,
   ]);
@@ -1780,6 +1796,7 @@ export const App: React.FC = () => {
       if (s.category !== selectedCategory) return false;
       if (selectedCity !== 'ALL' && s.city !== selectedCity) return false;
       if (selectedCuisine !== 'ALL' && !s.cuisines.includes(selectedCuisine)) return false;
+      if (!fitsGameNight(s.media)) return false;
       if (q && !`${s.name} ${s.formattedAddress} ${s.cuisines.join(' ')}`.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -1792,11 +1809,12 @@ export const App: React.FC = () => {
       if (db === null) return -1;
       return da - db;
     });
-  }, [groupForYou, selectedCategory, selectedCity, selectedCuisine, listSearchQuery, sortByNearest, userLocation]);
+  }, [groupForYou, selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, listSearchQuery, sortByNearest, userLocation]);
 
   const isFiltered =
     selectedCity !== 'ALL' ||
     selectedCuisine !== 'ALL' ||
+    (selectedCategory === 'board_games' && (selectedPlayers !== 'ALL' || maxMinutes !== 'ALL')) ||
     listSearchQuery.trim().length > 0;
 
   const saveSettings = (e: React.FormEvent) => {
@@ -2439,6 +2457,32 @@ export const App: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              )}
+
+              {/* Game night: how many players, how much time */}
+              {selectedCategory === 'board_games' && (
+                <>
+                  <GameNightSelect
+                    label="Players"
+                    value={selectedPlayers}
+                    options={PLAYER_OPTIONS.map((n) => [n, `${n} player${n === 1 ? '' : 's'}`])}
+                    anyLabel="Any players"
+                    onChange={(v) => {
+                      setSelectedPlayers(v);
+                      trackEvent('filter_players', { players: v });
+                    }}
+                  />
+                  <GameNightSelect
+                    label="Length"
+                    value={maxMinutes}
+                    options={MINUTE_OPTIONS.map((m) => [m, `Under ${m >= 60 ? `${m / 60} hr` : `${m} min`}`])}
+                    anyLabel="Any length"
+                    onChange={(v) => {
+                      setMaxMinutes(v);
+                      trackEvent('filter_length', { minutes: v });
+                    }}
+                  />
+                </>
               )}
 
             </div>

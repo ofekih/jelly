@@ -23,7 +23,7 @@ import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
 import { PosterThumb } from './PosterThumb';
-import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { gameFacts, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 
 function formatRankedDate(ts: number): string {
   try {
@@ -192,6 +192,9 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   {!restaurant.media && <MapPin className="w-3.5 h-3.5 shrink-0" />}
                   <span className="truncate">{restaurant.formattedAddress}</span>
                 </p>
+              )}
+              {gameFacts(restaurant.media) && (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{gameFacts(restaurant.media)}</p>
               )}
             </div>
 

@@ -305,6 +305,7 @@ const AUTOCOMPLETE_TYPES: Record<SpotGroup, string[] | undefined> = {
   travel: ['(regions)'],
   watch: undefined, // Titles are searched on TMDB / Google Books (src/lib/media.ts), never as places
   read: undefined,
+  play: undefined,
 };
 
 export async function searchPlaces(

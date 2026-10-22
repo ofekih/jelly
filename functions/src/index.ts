@@ -11,6 +11,7 @@ import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
+import { searchBoardGames, searchVideoGames } from './games';
 
 initializeApp();
 
@@ -133,4 +134,40 @@ export const books = onRequest(
       res.status(502).json({ error: 'Search is unavailable right now' });
     }
   }
+);
+
+const bggToken = defineSecret('BGG_API_TOKEN');
+const twitchClientId = defineSecret('TWITCH_CLIENT_ID');
+const twitchClientSecret = defineSecret('TWITCH_CLIENT_SECRET');
+
+/** One title search endpoint: validates `?q=`, caches successes on the CDN, hides upstream errors. */
+function titleSearch(name: string, search: (query: string) => Promise<unknown[]>) {
+  return async (req: { method: string; path: string; query: Record<string, unknown> }, res: any) => {
+    const query = cleanQuery(req.query.q);
+    if (req.method !== 'GET' || !req.path.endsWith('/search') || !query) {
+      res.status(400).json({ error: `Expected GET /api/${name}/search?q=<name>` });
+      return;
+    }
+    try {
+      const results = await search(query);
+      res.set('Cache-Control', 'public, max-age=3600, s-maxage=604800');
+      res.json({ results });
+    } catch (err) {
+      logger.warn(`${name} search failed`, { query, err: String(err) });
+      res.set('Cache-Control', 'no-store');
+      res.status(502).json({ error: 'Search is unavailable right now' });
+    }
+  };
+}
+
+/** Board & card game search for the Play lists, served at `/api/bgg/search?q=` like `tmdb` above. */
+export const bgg = onRequest(
+  { secrets: [bggToken], memory: '256MiB', maxInstances: 5, timeoutSeconds: 30 },
+  titleSearch('bgg', (q) => searchBoardGames(q, bggToken.value()))
+);
+
+/** Video game search for the Play lists, served at `/api/igdb/search?q=`. */
+export const igdb = onRequest(
+  { secrets: [twitchClientId, twitchClientSecret], memory: '256MiB', maxInstances: 5, timeoutSeconds: 20 },
+  titleSearch('igdb', (q) => searchVideoGames(q, twitchClientId.value(), twitchClientSecret.value()))
 );

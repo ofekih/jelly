@@ -25,12 +25,15 @@ export type SpotCategory =
   | 'tv_shows'
   // Read
   | 'fiction'
-  | 'nonfiction';
+  | 'nonfiction'
+  // Play
+  | 'board_games'
+  | 'video_games';
 
-/** Top-level groups of lists (Eat · Explore · Travel · Watch · Read); only one group's lists are shown at a time. */
-export type SpotGroup = 'eat' | 'explore' | 'travel' | 'watch' | 'read';
+/** Top-level groups of lists (Eat · Explore · Travel · Watch · Read · Play); only one group's lists are shown at a time. */
+export type SpotGroup = 'eat' | 'explore' | 'travel' | 'watch' | 'read' | 'play';
 
-export const ALL_GROUPS: SpotGroup[] = ['eat', 'explore', 'travel', 'watch', 'read'];
+export const ALL_GROUPS: SpotGroup[] = ['eat', 'explore', 'travel', 'watch', 'read', 'play'];
 
 export const GROUP_CATEGORIES: Record<SpotGroup, SpotCategory[]> = {
   eat: ['restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars'],
@@ -38,6 +41,7 @@ export const GROUP_CATEGORIES: Record<SpotGroup, SpotCategory[]> = {
   travel: ['cities', 'getaways', 'countries'],
   watch: ['movies', 'tv_shows'],
   read: ['fiction', 'nonfiction'],
+  play: ['board_games', 'video_games'],
 };
 
 export const ALL_CATEGORIES: SpotCategory[] = ALL_GROUPS.flatMap((g) => GROUP_CATEGORIES[g]);
@@ -54,6 +58,7 @@ export const GROUP_LABEL: Record<SpotGroup, string> = {
   travel: 'Travel',
   watch: 'Watch',
   read: 'Read',
+  play: 'Play',
 };
 
 export const GROUP_EMOJI: Record<SpotGroup, string> = {
@@ -62,6 +67,7 @@ export const GROUP_EMOJI: Record<SpotGroup, string> = {
   travel: '✈️',
   watch: '🍿',
   read: '📚',
+  play: '🎲',
 };
 
 export const CATEGORY_LABEL: Record<SpotCategory, string> = {
@@ -82,6 +88,8 @@ export const CATEGORY_LABEL: Record<SpotCategory, string> = {
   tv_shows: 'TV Shows',
   fiction: 'Fiction',
   nonfiction: 'Nonfiction',
+  board_games: 'Board & Card Games',
+  video_games: 'Video Games',
 };
 
 export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
@@ -102,6 +110,8 @@ export const CATEGORY_EMOJI: Record<SpotCategory, string> = {
   tv_shows: '📺',
   fiction: '🐉',
   nonfiction: '🧠',
+  board_games: '♟️',
+  video_games: '🎮',
 };
 
 export function isSpotCategory(raw: unknown): raw is SpotCategory {
@@ -137,14 +147,19 @@ export const COMMON_CUISINES: string[] = [
 ];
 
 /**
- * What a title (movie, show or book) carries instead of an address. Its `placeId` is
- * `tmdb:movie:<id>` / `tmdb:tv:<id>` / `book:<author>:<title>`, and `formattedAddress` holds the
- * "2021 · Director" line.
+ * What a title (movie, show, book or game) carries instead of an address. Its `placeId` is
+ * `tmdb:movie:<id>` / `tmdb:tv:<id>` / `book:<author>:<title>` / `bgg:<id>` / `igdb:<id>`, and
+ * `formattedAddress` holds its short "2021 · Director" line.
  */
 export interface MediaInfo {
   year?: number;
-  poster?: string; // TMDB image path ("/abc.jpg") or a full https cover URL (books)
-  creator?: string; // Director(s) of a movie, creator(s) of a show, author(s) of a book
+  poster?: string; // TMDB image path ("/abc.jpg") or a full https cover URL
+  creator?: string; // Director(s), creator(s), author(s), designer(s) or developer(s)
+  // Board & card games (from BGG)
+  players?: number[]; // [min, max]
+  best?: number[]; // [min, max] player count the community votes best
+  time?: number[]; // [min, max] minutes
+  weight?: number; // Complexity, 1 (light) to 5 (heavy)
 }
 
 /** A movie or show as the `/api/tmdb/search` proxy returns it (see `functions/src/tmdb.ts`). */
@@ -167,6 +182,20 @@ export interface BookResult {
   creator?: string;
   list?: 'fiction' | 'nonfiction';
   tags: string[]; // Read tags (`GROUP_COPY.read.tagOptions`)
+}
+
+/** A game as the `/api/bgg/search` and `/api/igdb/search` proxies return it (`functions/src/games.ts`). */
+export interface GameResult {
+  placeId: string; // `bgg:<id>` or `igdb:<id>`
+  title: string;
+  year?: number;
+  cover?: string;
+  creator?: string;
+  tags: string[]; // Play tags (`GROUP_COPY.play.tagOptions`)
+  players?: number[];
+  best?: number[];
+  time?: number[];
+  weight?: number;
 }
 
 export interface RankedHistoryEvent {
@@ -232,7 +261,7 @@ export interface PlaceCandidate {
   cuisines: string[]; // Auto-detected cuisines
   primaryTypeDisplay?: string;
   media?: MediaInfo;
-  source: 'google_places' | 'osm_photon' | 'manual' | 'tmdb' | 'google_books';
+  source: 'google_places' | 'osm_photon' | 'manual' | 'tmdb' | 'google_books' | 'bgg' | 'igdb';
 }
 
 export interface BookmarkEntry {

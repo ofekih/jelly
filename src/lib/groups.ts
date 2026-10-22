@@ -170,7 +170,63 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
     notYet: 'Haven’t read it yet?',
     done: 'Read it',
   },
+  play: {
+    together: 'Play Together',
+    want: 'Want to Play',
+    togetherHint: 'Blend your list with friends to pick what to play together',
+    searchPlaceholder: 'Search any game...',
+    searchEmptyHint: 'Type a game’s name to rate & rank it, or tap the bookmark icon to save for later.',
+    tagLabel: 'Type',
+    // Must match the tags `functions/src/games.ts` derives from BGG and IGDB
+    tagOptions: [
+      // Board & card games
+      'Strategy',
+      'Family',
+      'Party',
+      'Thematic',
+      'Abstract',
+      'Wargame',
+      'Kids',
+      'Card Game',
+      'Dexterity',
+      'Deduction',
+      'Word',
+      'Co-op',
+      'Solo',
+      'Deck Building',
+      'Worker Placement',
+      'Legacy',
+      // Video games
+      'RPG',
+      'Action',
+      'Adventure',
+      'Shooter',
+      'Platformer',
+      'Puzzle',
+      'Racing',
+      'Sports',
+      'Fighting',
+      'Simulation',
+      'Indie',
+      'Horror',
+      'Open World',
+      'Multiplayer',
+    ],
+    notePlaceholder: 'What made it fun? Who you played with, house rules, favorite moments...',
+    noteAddPrompt: 'Add a note (who you played with, thoughts...)',
+    showPrice: false,
+    hasLocation: false,
+    notYet: 'Haven’t played it yet?',
+    done: 'Played it',
+  },
 };
+
+/** What the search box asks for in a list (Play searches board and video games separately) */
+export function searchPlaceholder(category: SpotCategory): string {
+  if (category === 'board_games') return 'Search any board or card game...';
+  if (category === 'video_games') return 'Search any video game...';
+  return GROUP_COPY[CATEGORY_GROUP[category]].searchPlaceholder;
+}
 
 /** Whether a category's spots are places (with a map, distances and cities) */
 export function hasLocation(category: SpotCategory): boolean {

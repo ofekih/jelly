@@ -26,7 +26,7 @@ describe('ratingTiers', () => {
     expect(getRatingTier(8.8).name).toBe('Incredible');
   });
 
-  it('only Travel, Watch and Read swap tails', () => {
+  it('only Travel, Watch, Read and Play swap tails', () => {
     expect(getVibeLabel(8.5, 'travel')).toBe('Really loved it · Bucket-list worthy');
     expect(getVibeLabel(8.5, 'explore')).toBe('Really loved it · Still thinking about it');
     expect(getVibeLabel(6.0, 'travel')).toBe('Pleasant · Glad I went');
@@ -35,6 +35,8 @@ describe('ratingTiers', () => {
     expect(getVibeLabel(8.5, 'watch')).toBe('Really loved it · Still thinking about it');
     expect(getVibeLabel(6.0, 'read')).toBe('Pleasant · Glad I read it');
     expect(getVibeLabel(5.0, 'read')).toBe('Passable · Fine for a long flight');
+    expect(getVibeLabel(6.0, 'play')).toBe('Pleasant · Glad I played it');
+    expect(getVibeLabel(5.0, 'play')).toBe('Passable · Fine to pass the time');
   });
 
   it('gives each tier its bar share of the non-linear spectrum', () => {

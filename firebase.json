@@ -33,7 +33,7 @@
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
       },
       {
-        "source": "/api/@(tmdb|books)/**",
+        "source": "/api/@(tmdb|books|bgg|igdb)/**",
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=604800" }]
       }
     ],
@@ -45,6 +45,14 @@
       {
         "source": "/api/books/**",
         "function": { "functionId": "books", "region": "us-central1" }
+      },
+      {
+        "source": "/api/bgg/**",
+        "function": { "functionId": "bgg", "region": "us-central1" }
+      },
+      {
+        "source": "/api/igdb/**",
+        "function": { "functionId": "igdb", "region": "us-central1" }
       },
       {
         "source": "/about",
