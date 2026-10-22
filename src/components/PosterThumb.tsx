@@ -3,24 +3,35 @@ import { Film } from 'lucide-react';
 import type { SpotCategory } from '../types';
 
 /**
- * A title's poster or cover in a 2:3 frame (fitted, not cropped: board game boxes are square), or a
+ * A title's poster or cover in a 2:3 frame (fitted, not cropped: board game boxes are square and
+ * some covers are landscape photos), over a blurred copy that fills the rest of the frame, or a
  * film-strip placeholder when there's none or it fails to load
  */
 export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ src, className = '' }) => {
   const [failed, setFailed] = useState(false);
   return (
     <div
-      className={`shrink-0 overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-800 ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center ${className}`}
+      className={`relative shrink-0 overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-800 ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center ${className}`}
     >
       {src && !failed ? (
-        <img
-          src={src}
-          alt=""
-          loading="lazy"
-          draggable={false}
-          onError={() => setFailed(true)}
-          className="w-full h-full object-contain"
-        />
+        <>
+          <img
+            src={src}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            draggable={false}
+            className="absolute inset-0 w-full h-full object-cover scale-125 blur-sm opacity-70"
+          />
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            draggable={false}
+            onError={() => setFailed(true)}
+            className="relative w-full h-full object-contain"
+          />
+        </>
       ) : (
         <Film className="w-1/2 h-1/2 max-w-5 max-h-5 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
       )}
