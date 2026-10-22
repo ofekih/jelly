@@ -39,6 +39,15 @@ describe('ratingTiers', () => {
     expect(getVibeLabel(5.0, 'play')).toBe('Passable · Fine to pass the time');
   });
 
+  it('lets a list override its group: Hotels & Stays', () => {
+    expect(getVibeLabel(2.0, 'travel', 'stays')).toBe('Terrible · Regretted staying');
+    expect(getVibeLabel(4.6, 'travel', 'stays')).toBe('Meh · Only if someone else books it');
+    expect(getVibeLabel(5.0, 'travel', 'stays')).toBe('Passable · Fine for a night');
+    // Where the trip wording fits a stay too, it's kept
+    expect(getVibeLabel(8.5, 'travel', 'stays')).toBe('Really loved it · Bucket-list worthy');
+    expect(getVibeLabel(2.0, 'travel', 'cities')).toBe('Terrible · Regretted the trip');
+  });
+
   it('gives each tier its bar share of the non-linear spectrum', () => {
     expect(RATING_TIERS.reduce((sum, t) => sum + t.barShare, 0)).toBe(100);
     let start = 0;

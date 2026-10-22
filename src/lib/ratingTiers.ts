@@ -1,13 +1,14 @@
-import type { SpotGroup } from '../types';
+import type { SpotCategory, SpotGroup } from '../types';
 
 /**
  * The gut-feeling spectrum: 5 tiers, each split into 4 labelled bands.
  *
  * Label rules (see AGENTS.md): the head (before "·") climbs strictly; the tail never sounds
  * weaker than the band below, fits every group, and is never a near-synonym of a neighbour.
- * A group's key (`travel`, `watch`, `read`, `play`) replaces the tail where it doesn't fit a trip or a title.
+ * A group's key (`travel`, `watch`, `read`, `play`) replaces the tail where it doesn't fit a trip or a title,
+ * and a list's key (`stays`) replaces its group's where that still doesn't fit.
  */
-interface VibeBand extends Partial<Record<SpotGroup, string>> {
+interface VibeBand extends Partial<Record<SpotGroup | SpotCategory, string>> {
   from: number;
   head: string;
   tail: string;
@@ -43,7 +44,7 @@ export const RATING_TIERS: RatingTier[] = [
     zoneClass: 'text-rose-500 dark:text-rose-400',
     bands: [
       { from: 1.0, head: 'Disaster', tail: 'Avoid at all costs' },
-      { from: 1.8, head: 'Terrible', tail: 'Steer clear', travel: 'Regretted the trip' },
+      { from: 1.8, head: 'Terrible', tail: 'Steer clear', travel: 'Regretted the trip', stays: 'Regretted staying' },
       { from: 2.5, head: 'Bad', tail: 'Not worth going', watch: 'Not worth the time', read: 'Not worth the time', play: 'Not worth the time' },
       { from: 3.3, head: 'Subpar', tail: 'Probably skip it' },
     ],
@@ -59,8 +60,8 @@ export const RATING_TIERS: RatingTier[] = [
     zoneClass: 'text-amber-600 dark:text-amber-400',
     bands: [
       { from: 4.0, head: 'Underwhelming', tail: 'Only if there’s no other option' },
-      { from: 4.5, head: 'Meh', tail: 'Only if someone else picks it', travel: 'Only if someone else plans it' },
-      { from: 5.0, head: 'Passable', tail: 'Fine if it’s convenient', travel: 'Fine to pass through', watch: 'Fine as background', read: 'Fine for a long flight', play: 'Fine to pass the time' },
+      { from: 4.5, head: 'Meh', tail: 'Only if someone else picks it', travel: 'Only if someone else plans it', stays: 'Only if someone else books it' },
+      { from: 5.0, head: 'Passable', tail: 'Fine if it’s convenient', travel: 'Fine to pass through', stays: 'Fine for a night', watch: 'Fine as background', read: 'Fine for a long flight', play: 'Fine to pass the time' },
       { from: 5.5, head: 'Decent', tail: 'Solid for what it is' },
     ],
   },
@@ -123,8 +124,8 @@ export function getRatingTier(rating: number): RatingTier {
   return lastFrom(RATING_TIERS, rating);
 }
 
-export function getVibeLabel(rating: number, group: SpotGroup): string {
+export function getVibeLabel(rating: number, group: SpotGroup, category?: SpotCategory): string {
   const band = lastFrom(getRatingTier(rating).bands, rating);
-  const tail = band[group] || band.tail;
+  const tail = (category && band[category]) || band[group] || band.tail;
   return `${band.head} · ${tail}`;
 }

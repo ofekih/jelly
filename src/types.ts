@@ -90,7 +90,7 @@ export const CATEGORY_LABEL: Record<SpotCategory, string> = {
   tv_shows: 'TV Shows',
   fiction: 'Fiction',
   nonfiction: 'Nonfiction',
-  board_games: 'Board & Card Games',
+  board_games: 'Tabletop Games',
   video_games: 'Video Games',
 };
 

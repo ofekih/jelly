@@ -585,7 +585,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   >
                     {previewRating === null
                       ? 'Slide or tap anywhere on the line'
-                      : getVibeLabel(previewRating, group)}
+                      : getVibeLabel(previewRating, group, reRankingEntry?.category ?? candidateCategories[0])}
                   </span>
                 </div>
 

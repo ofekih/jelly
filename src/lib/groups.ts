@@ -231,7 +231,7 @@ export const GROUP_COPY: Record<SpotGroup, GroupCopy> = {
 
 /** What the search box asks for in a list (Play searches board and video games separately) */
 export function searchPlaceholder(category: SpotCategory): string {
-  if (category === 'board_games') return 'Search any board or card game...';
+  if (category === 'board_games') return 'Search any board, card or party game...';
   if (category === 'video_games') return 'Search any video game...';
   if (category === 'stays') return 'Search any hotel, resort, or place to stay...';
   return GROUP_COPY[CATEGORY_GROUP[category]].searchPlaceholder;

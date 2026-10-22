@@ -17,6 +17,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.3.1',
+    date: '2026-10-22',
+    title: 'Small touches',
+    highlights: [
+      'Rating a hotel now uses words that fit a stay, like “Fine for a night”',
+      'Board & Card Games is now called Tabletop Games',
+    ],
+  },
+  {
     version: '3.3.0',
     date: '2026-10-21',
     title: 'Hotels & Stays',

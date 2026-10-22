@@ -66,7 +66,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
   `GROUP_CATEGORIES`/`CATEGORY_GROUP` in `types.ts`): Eat (Restaurants, Brunch, Dessert, Bakeries,
   Coffee & Tea, Bars), Explore (Museums & Galleries, Theme Parks, Zoos & Aquariums, Parks & Nature),
   Travel (Cities, Getaways, Countries, Hotels & Stays), Watch (Movies, TV Shows; whole shows, not seasons), Read
-  (Fiction, Nonfiction), Play (Board & Card Games, Video Games; base games only, no DLC or
+  (Fiction, Nonfiction), Play (Tabletop Games, Video Games; base games only, no DLC or
   expansions). Every
   entry belongs to exactly one list; ranks, magic scores, SxS opponents, drag-reorder,
   friend/community score matching and Eat/Visit/Travel/Watch/Read/Play Together never cross lists. The same place may appear in several lists as separate entries. The header switcher
@@ -93,7 +93,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
   boundary (~8.2–8.7), and "Flawless · Literally nothing could be improved" is only 9.8–10. The words
   before "·" climb strictly (X → Really X); the text after must never sound weaker than the row
   below, must fit every group (meal, coffee, museum, country) and must not be a near-synonym of a
-  neighbour. Tiers, labels and the few per-group overrides (Travel, Watch, Read, Play) live in `src/lib/ratingTiers.ts`. Don't
+  neighbour. Tiers, labels and the few per-group overrides (Travel, Watch, Read, Play; Hotels & Stays overrides Travel's) live in `src/lib/ratingTiers.ts`. Don't
   inflate them; the goal is to push users to use the whole scale.
 - **Mobile is first-class**: verify touch drag (dnd-kit sensors), autocomplete scroll position,
   Web Share API (`navigator.share`) and layout on iOS/Android, not just desktop.
