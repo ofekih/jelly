@@ -5,6 +5,7 @@ import {
   nameScore,
   resetIgdbToken,
   searchBoardGames,
+  commonName,
   searchVideoGames,
   toBoardGame,
   toVideoGame,
@@ -150,7 +151,43 @@ describe('video games (IGDB)', () => {
     expect(games.map((g) => g.placeId)).toEqual(['igdb:2', 'igdb:1']);
     await searchVideoGames('zelda', 'id', 'secret', fetchFn);
     expect(tokens).toBe(1);
-    expect(bodies.every((b) => b.includes('game_type = (0,4,8,9,10)') && b.includes('version_parent = null'))).toBe(true);
+    const searches = bodies.filter((b) => !b.includes('parent_game ='));
+    expect(searches).toHaveLength(4);
+    expect(searches.every((b) => b.includes('game_type = (0,4,8,9,10)') && b.includes('version_parent = null'))).toBe(true);
+  });
+
+  it('names a game after a port that drops its subtitle', () => {
+    const ports = ['Minecraft: Xbox 360 Edition', 'Minecraft', 'Minecraft: Pi Edition'];
+    expect(commonName('Minecraft: Java Edition', ports)).toBe('Minecraft');
+    expect(commonName('Minecraft: Story Mode', ['Minecraft: Story Mode - The Complete Adventure'])).toBe('Minecraft: Story Mode');
+    expect(commonName('Hades', ['Had'])).toBe('Hades');
+  });
+
+  it('finds Minecraft: the original game under the name of its best-known port', async () => {
+    const bodies: string[] = [];
+    const fetchFn = async (url: string, init?: { body?: string }) => {
+      if (url.includes('id.twitch.tv')) {
+        return { ok: true, status: 200, json: async () => ({ access_token: 'tok', expires_in: 5000000 }), text: async () => '' };
+      }
+      const body = init!.body!;
+      bodies.push(body);
+      const results = body.includes('parent_game =')
+        ? [
+            { id: 10, name: 'Minecraft', parent_game: 121 },
+            { id: 11, name: 'Minecraft: PlayStation 4 Edition', parent_game: 121 },
+          ]
+        : [
+            { id: 121, name: 'Minecraft: Java Edition', total_rating_count: 2000 },
+            { id: 8339, name: 'Minecraft: Story Mode', total_rating_count: 300 },
+          ];
+      return { ok: true, status: 200, json: async () => results, text: async () => '' };
+    };
+    const games = await searchVideoGames('minecraft', 'id', 'secret', fetchFn);
+    expect(games.map((g) => [g.placeId, g.title])).toEqual([
+      ['igdb:121', 'Minecraft'],
+      ['igdb:8339', 'Minecraft: Story Mode'],
+    ]);
+    expect(bodies[2]).toContain('game_type = 11 & parent_game = (121,8339)');
   });
 
   it('scores names: exact over prefix over contains', () => {
