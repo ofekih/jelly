@@ -22,6 +22,8 @@ import { SpotSocialMetrics } from '../lib/friendsService';
 import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
+import { PosterThumb } from './PosterThumb';
+import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 
 function formatRankedDate(ts: number): string {
   try {
@@ -89,6 +91,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   if (!restaurant) return null;
 
   const copy = GROUP_COPY[CATEGORY_GROUP[restaurant.category]];
+  const link = spotLink(restaurant);
 
   const toggleCuisine = (c: string) => {
     setCuisines((prev) => (prev.includes(c) ? prev.filter((item) => item !== c) : [...prev, c]));
@@ -119,14 +122,14 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
     const sub = [
       CATEGORY_LABEL[restaurant.category],
       restaurant.cuisines[0] || restaurant.primaryTypeDisplay,
-      restaurant.neighborhood || restaurant.city,
+      spotPlaceLabel(restaurant),
     ]
       .filter(Boolean)
       .join(' · ');
     const shareText = `${restaurant.name} (${restaurant.magicScore.toFixed(1)}/10)${
       sub ? ` — ${sub}` : ''
     }${restaurant.notes ? `\n"${restaurant.notes}"` : ''}`;
-    const shareUrl = restaurant.googleMapsUri || window.location.origin;
+    const shareUrl = restaurant.media ? link.href : restaurant.googleMapsUri || window.location.origin;
 
     if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
@@ -169,6 +172,9 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
       {(scrollContainerRef) => (
         <>
           <div className="px-5 pt-3 sm:pt-5 pb-4 flex items-start justify-between gap-3 touch-none select-none">
+            {restaurant.media && (
+              <PosterThumb src={posterUrl(restaurant.media, 154)} className="w-14 h-[84px] shadow-sm" />
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                 <span>
@@ -183,7 +189,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
               </h2>
               {restaurant.formattedAddress && (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 shrink-0" />
+                  {!restaurant.media && <MapPin className="w-3.5 h-3.5 shrink-0" />}
                   <span className="truncate">{restaurant.formattedAddress}</span>
                 </p>
               )}
@@ -481,18 +487,13 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     </button>
 
                     <a
-                      href={
-                        restaurant.googleMapsUri ||
-                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                          `${restaurant.name} ${restaurant.formattedAddress || restaurant.city || ''}`
-                        )}`
-                      }
+                      href={link.href}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2.5 px-2 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors"
                     >
                       <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                      <span>Maps</span>
+                      <span>{link.label}</span>
                     </a>
 
                     <button
@@ -549,24 +550,19 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       ) : (
                         <>
                           <Share2 className="w-3.5 h-3.5" />
-                          <span>Share Spot</span>
+                          <span>{restaurant.media ? 'Share' : 'Share Spot'}</span>
                         </>
                       )}
                     </button>
 
                     <a
-                      href={
-                        restaurant.googleMapsUri ||
-                        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                          `${restaurant.name} ${restaurant.formattedAddress || restaurant.city || ''}`
-                        )}`
-                      }
+                      href={link.href}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Google Maps</span>
+                      <span>{restaurant.media ? 'TMDB' : 'Google Maps'}</span>
                     </a>
                   </div>
                 </div>

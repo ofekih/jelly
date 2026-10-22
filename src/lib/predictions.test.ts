@@ -90,6 +90,32 @@ describe('buildForYouSpots', () => {
   });
 });
 
+describe('buildForYouSpots for titles', () => {
+  const predictions = parsePredictionsDoc({
+    spots: {
+      'tmdb:movie:438631__movies': p(9.0, {
+        place: { name: 'Dune', cuisines: ['Sci-Fi'], media: { year: 2021, poster: '/d.jpg', creator: 'Denis Villeneuve' } },
+      }),
+      'tmdb:movie:841__movies': p(6.0, { place: { name: 'Dune', media: { year: 1984 } } }),
+    },
+  });
+
+  it('shows the year and director instead of a place, with no Maps link', () => {
+    const [dune] = buildForYouSpots(predictions, 'movies', []);
+    expect(dune).toMatchObject({
+      placeId: 'tmdb:movie:438631',
+      formattedAddress: '2021 · Denis Villeneuve',
+      media: { year: 2021, poster: '/d.jpg', creator: 'Denis Villeneuve' },
+    });
+    expect(dune.googleMapsUri).toBeUndefined();
+  });
+
+  it('treats a same-named title as a different one', () => {
+    const ranked = [{ placeId: 'tmdb:movie:841', name: 'Dune', category: 'movies' as const }];
+    expect(buildForYouSpots(predictions, 'movies', ranked).map((s) => s.placeId)).toEqual(['tmdb:movie:438631']);
+  });
+});
+
 describe('googleMapsLinkFor', () => {
   it('searches by name, pinned to the place ID', () => {
     expect(googleMapsLinkFor('ChIJ1', 'Café & Bar')).toBe(

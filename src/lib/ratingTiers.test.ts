@@ -26,10 +26,13 @@ describe('ratingTiers', () => {
     expect(getRatingTier(8.8).name).toBe('Incredible');
   });
 
-  it('only Travel swaps tails', () => {
+  it('only Travel and Watch swap tails', () => {
     expect(getVibeLabel(8.5, 'travel')).toBe('Really loved it · Bucket-list worthy');
     expect(getVibeLabel(8.5, 'explore')).toBe('Really loved it · Still thinking about it');
     expect(getVibeLabel(6.0, 'travel')).toBe('Pleasant · Glad I went');
+    expect(getVibeLabel(6.0, 'watch')).toBe('Pleasant · Glad I watched it');
+    expect(getVibeLabel(5.0, 'watch')).toBe('Passable · Fine as background');
+    expect(getVibeLabel(8.5, 'watch')).toBe('Really loved it · Still thinking about it');
   });
 
   it('gives each tier its bar share of the non-linear spectrum', () => {

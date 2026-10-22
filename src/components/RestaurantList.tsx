@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
-import { wantLabel } from '../lib/groups';
+import { hasLocation, wantLabel } from '../lib/groups';
 import { CommunityStat, getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
@@ -28,6 +28,8 @@ import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../l
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
+import { PosterThumb } from './PosterThumb';
+import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 
 interface SortableRestaurantRowProps {
   restaurant: RestaurantEntry;
@@ -130,11 +132,12 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
 
   const primaryCuisine = restaurant.cuisines[0] || restaurant.primaryTypeDisplay;
   const want = wantLabel(restaurant.category);
-  const locationLabel =
-    restaurant.neighborhood ||
-    restaurant.city ||
-    restaurant.formattedAddress.split(',')[1]?.trim() ||
-    restaurant.formattedAddress.split(',')[0]?.trim();
+  const locationLabel = restaurant.media
+    ? spotPlaceLabel(restaurant)
+    : restaurant.neighborhood ||
+      restaurant.city ||
+      restaurant.formattedAddress.split(',')[1]?.trim() ||
+      restaurant.formattedAddress.split(',')[0]?.trim();
 
   const rawMiles = getItemDistanceMiles(restaurant, userLocation);
   const distLabel =
@@ -169,11 +172,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
   const myRankedMatch = readOnly ? myRestaurants.find((r) => isSameSpot(r, restaurant)) : null;
   const alreadyRankedByMe = Boolean(myRankedMatch);
 
-  const mapsHref =
-    restaurant.googleMapsUri ||
-    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-      `${restaurant.name} ${restaurant.formattedAddress || restaurant.city || ''}`
-    )}`;
+  const link = spotLink(restaurant);
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     // Always invoke @dnd-kit TouchSensor's onTouchStart first so drag-to-reorder works on iOS & Android
@@ -290,7 +289,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
             </button>
           </div>
 
-          {/* Right Actions (Swipe Left): Google Maps + Remove */}
+          {/* Right Actions (Swipe Left): Google Maps (TMDB for titles) + Remove */}
           <div
             className={`flex items-stretch ml-auto transition-opacity ${
               swipeX < 0 ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -298,7 +297,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
             style={{ width: Math.max(144, Math.abs(swipeX)) }}
           >
             <a
-              href={mapsHref}
+              href={link.href}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
@@ -309,7 +308,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
               className="flex-1 bg-blue-600 hover:bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[11px] font-bold tracking-tight"
             >
               <ExternalLink className="w-4 h-4" />
-              <span>Maps</span>
+              <span>{link.label}</span>
             </a>
             <button
               type="button"
@@ -383,6 +382,8 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
               {sortByNearest ? `#${rankNum}` : rankNum}
             </span>
           </div>
+
+          {restaurant.media && <PosterThumb src={posterUrl(restaurant.media)} className="w-8 h-12 -my-1" />}
 
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-[15px] sm:text-base text-zinc-900 dark:text-zinc-100 truncate leading-snug">
@@ -537,19 +538,11 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
             ]
           : []),
         {
-          label: 'Open in Google Maps',
+          label: contextMenu.restaurant.media ? 'Open in TMDB' : 'Open in Google Maps',
           icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
-          onClick: () => {
-            const r = contextMenu.restaurant!;
-            const url =
-              r.googleMapsUri ||
-              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                `${r.name} ${r.formattedAddress || r.city || ''}`
-              )}`;
-            window.open(url, '_blank');
-          },
+          onClick: () => window.open(spotLink(contextMenu.restaurant!).href, '_blank'),
         },
-        ...(contextMenu.restaurant.formattedAddress
+        ...(contextMenu.restaurant.formattedAddress && !contextMenu.restaurant.media
           ? [
               {
                 label: 'Copy Address',
@@ -619,7 +612,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
           {totalUnfilteredCount === 0
             ? `No ${CATEGORY_LABEL[selectedCategory]} ranked yet.`
-            : 'No places match this filter.'}
+            : `No ${hasLocation(selectedCategory) ? 'places' : 'titles'} match this filter.`}
         </p>
         {totalUnfilteredCount === 0 && !readOnly && (
           <button
@@ -628,7 +621,7 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full bg-zinc-900 dark:bg-emerald-500 text-white dark:text-zinc-950 text-xs font-semibold hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />
-            <span>Add your first place</span>
+            <span>Add your first {hasLocation(selectedCategory) ? 'place' : 'title'}</span>
           </button>
         )}
       </div>

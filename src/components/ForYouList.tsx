@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Bookmark, ExternalLink, LogIn, Sparkles } from 'lucide-react';
 import { CATEGORY_LABEL, SpotCategory } from '../types';
-import { wantLabel } from '../lib/groups';
+import { hasLocation, wantLabel } from '../lib/groups';
+import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { PosterThumb } from './PosterThumb';
 import type { ForYouSpot } from '../lib/predictions';
 import type { PredictionConfidence } from '../lib/tasteModel';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
@@ -45,9 +47,10 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
   const { prediction } = item;
   const subtitleParts = [
     item.cuisines[0],
-    item.neighborhood || item.city,
+    spotPlaceLabel(item),
     formatDistanceMiles(getItemDistanceMiles(item, userLocation)),
   ].filter(Boolean);
+  const link = item.googleMapsUri || item.media ? spotLink(item) : null;
 
   return (
     <div
@@ -65,6 +68,8 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
       <div title="Predicted score for you" className="shrink-0">
         <ScoreBadge score={prediction.score} size="sm" predicted />
       </div>
+
+      {item.media && <PosterThumb src={posterUrl(item.media)} className="w-8 h-12 -my-1" />}
 
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-[15px] truncate leading-snug">
@@ -86,16 +91,16 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
           </span>
           {prediction.basis}
         </p>
-        {expanded && item.googleMapsUri && (
+        {expanded && link && (
           <a
-            href={item.googleMapsUri}
+            href={link.href}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
           >
             <ExternalLink className="w-3 h-3" />
-            <span>Open in Google Maps</span>
+            <span>{item.media ? 'Open in TMDB' : 'Open in Google Maps'}</span>
           </a>
         )}
       </div>
@@ -117,7 +122,7 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
           type="button"
           onClick={() => onRank(item)}
           className="px-3 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-          title="Been here! Rate & rank it now"
+          title={hasLocation(item.category) ? 'Been here! Rate & rank it now' : 'Watched it! Rate & rank it now'}
         >
           <Sparkles className="w-3 h-3" />
           <span>Rank</span>
@@ -210,7 +215,9 @@ export const ForYouList: React.FC<ForYouListProps> = ({
     ) : (
       <EmptyState
         title={`No ${label} picks yet`}
-        body="They show up here as people with your taste rank spots you haven't been to. Following friends helps too."
+        body={`They show up here as people with your taste rank ${
+          hasLocation(selectedCategory) ? "spots you haven't been to" : "titles you haven't watched"
+        }. Following friends helps too.`}
       />
     );
   }

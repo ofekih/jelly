@@ -4,6 +4,7 @@ import {
   computeUserPredictions,
   MAX_PREDICTIONS,
   predictionPlace,
+  toSpotDoc,
   type CorpusUser,
   type RankedDoc,
 } from '../src/predictions';
@@ -102,6 +103,19 @@ describe('computeUserPredictions', () => {
     );
     expect(place).toEqual({ name: 'x'.repeat(80), cuisines: ['A', 'B', 'C'] });
     expect(Object.values(place)).not.toContain(undefined);
+  });
+
+  it('keeps a title’s year, poster and director, trimmed', () => {
+    const spot = toSpotDoc({
+      placeId: 'tmdb:movie:1',
+      name: 'Dune',
+      category: 'movies',
+      cuisines: ['Sci-Fi'],
+      media: { year: 2021, poster: '/d.jpg', creator: 'D'.repeat(200), rating: 9 },
+    })!;
+    expect(spot.media).toEqual({ year: 2021, poster: '/d.jpg', creator: 'D'.repeat(80) });
+    expect(predictionPlace([spot], ['Sci-Fi'])).toEqual({ name: 'Dune', cuisines: ['Sci-Fi'], media: spot.media });
+    expect(toSpotDoc({ name: 'X', category: 'movies', media: { year: 'soon', poster: 7 } })!.media).toBeUndefined();
   });
 
   it('keeps a full doc of long-named spots well under 1 MiB', () => {

@@ -40,7 +40,7 @@ async function loadCorpusUsers(db: Firestore, targets: string[] | 'all'): Promis
 
   const ranked = await db
     .collectionGroup('restaurants')
-    .select('placeId', 'name', 'city', 'neighborhood', 'lat', 'lng', 'category', 'cuisines', 'magicScore')
+    .select('placeId', 'name', 'city', 'neighborhood', 'lat', 'lng', 'category', 'cuisines', 'media', 'magicScore')
     .get();
   for (const d of ranked.docs) {
     // Only `users/{uid}/restaurants/{id}` counts
@@ -52,7 +52,7 @@ async function loadCorpusUsers(db: Firestore, targets: string[] | 'all'): Promis
   const targetUids = targets === 'all' ? [...users.keys()] : targets;
   await Promise.all(
     targetUids.map(async (uid) => {
-      const snap = await db.collection(`users/${uid}/bookmarks`).select('placeId', 'name', 'city', 'neighborhood', 'lat', 'lng', 'category', 'cuisines').get();
+      const snap = await db.collection(`users/${uid}/bookmarks`).select('placeId', 'name', 'city', 'neighborhood', 'lat', 'lng', 'category', 'cuisines', 'media').get();
       userFor(uid).bookmarks = snap.docs.map((d) => toSpotDoc(d.data())).filter((b): b is SpotDoc => b !== null);
     })
   );

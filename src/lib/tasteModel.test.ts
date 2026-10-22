@@ -40,6 +40,15 @@ describe('tasteModel', () => {
     expect(isSameSpot({ name: 'A', city: 'LA' }, { name: 'A', city: 'NY' })).toBe(false);
   });
 
+  it('matches titles only by TMDB ID (remakes share names)', () => {
+    const dune2021 = { placeId: 'tmdb:movie:438631', name: 'Dune' };
+    expect(isSameSpot(dune2021, { placeId: 'tmdb:movie:438631', name: 'Dune: Part One' })).toBe(true);
+    expect(isSameSpot(dune2021, { placeId: 'tmdb:movie:841', name: 'Dune' })).toBe(false);
+    expect(isSameSpot(dune2021, { placeId: 'tmdb:tv:438631', name: 'Dune' })).toBe(false);
+    const list = [e('tmdb:movie:841', 6, { name: 'Dune', category: 'movies' })];
+    expect(bestScoreFor({ ...dune2021, category: 'movies' }, list)).toBeNull();
+  });
+
   it('finds the best score in the requested list only', () => {
     const list = [e('p1', 7), e('p1', 9, { category: 'bars' }), e('p2', 8)];
     expect(bestScoreFor({ placeId: 'p1', name: 'p1', category: 'restaurants' }, list)).toBe(7);

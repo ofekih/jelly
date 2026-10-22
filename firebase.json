@@ -35,6 +35,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/tmdb/**",
+        "function": { "functionId": "tmdb", "region": "us-central1" }
+      },
+      {
         "source": "/about",
         "destination": "/about.html"
       },

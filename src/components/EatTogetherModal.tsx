@@ -16,6 +16,8 @@ import {
 import { BlendSpotItem, computeGroupBlend } from '../lib/friendsService';
 import { GROUP_COPY } from '../lib/groups';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
+import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { PosterThumb } from './PosterThumb';
 import { Sheet, SheetHeader } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
 
@@ -242,7 +244,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
 
               {/* Category & Near Me Filter Bar */}
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                {userLocation && (
+                {userLocation && GROUP_COPY[group].hasLocation && (
                   <button
                     type="button"
                     onClick={() => setSortByNearest((p) => !p)}
@@ -288,7 +290,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                 <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden">
                   {filteredList.map((item) => {
                     const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
-                    const locationShort = item.neighborhood || item.city;
+                    const locationShort = spotPlaceLabel(item);
                     const distLabel = formatDistanceMiles(getItemDistanceMiles(item, userLocation));
                     const subParts = [primaryCuisine, locationShort, distLabel].filter(
                       Boolean
@@ -310,6 +312,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                         key={item.key}
                         className="px-3.5 py-3 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900"
                       >
+                        {item.media && <PosterThumb src={posterUrl(item.media)} className="w-9 h-[54px]" />}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">
                             {item.name}
@@ -363,7 +366,8 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                                     categories: item.categories,
                                     cuisines: item.cuisines,
                                     primaryTypeDisplay: item.primaryTypeDisplay,
-                                    source: 'google_places',
+                                    media: item.media,
+                                    source: item.media ? 'tmdb' : 'google_places',
                                   },
                                   recLabel,
                                   topFriend?.friendUid
@@ -391,13 +395,13 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                             </button>
                           )}
 
-                          {item.googleMapsUri && (
+                          {(item.googleMapsUri || item.media) && (
                             <a
-                              href={item.googleMapsUri}
+                              href={spotLink(item).href}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="p-2 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                              title="Open in Google Maps"
+                              title={item.media ? 'Open in TMDB' : 'Open in Google Maps'}
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>

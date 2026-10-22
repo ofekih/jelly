@@ -12,6 +12,8 @@ import {
   SpotCategory,
 } from '../types';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
+import { posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
+import { isMediaPlaceId } from '../lib/tasteModel';
 import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
@@ -28,6 +30,7 @@ import {
 import { pctToSpectrumRating, spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
 import { RATING_TIERS, getRatingTier, getVibeLabel } from '../lib/ratingTiers';
 import { trackEvent } from '../firebase';
+import { PosterThumb, TmdbCredit } from './PosterThumb';
 
 interface AddAndRateModalProps {
   isOpen: boolean;
@@ -70,6 +73,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   // The add flow always stays within the group (Eat / Explore / Travel) being viewed
   const group = CATEGORY_GROUP[reRankingEntry?.category ?? defaultCategory];
   const copy = GROUP_COPY[group];
+  const isWatch = group === 'watch';
   useBodyScrollLock(isOpen);
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,6 +85,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   );
   const predictionFor = usePredictions();
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const [selectedCandidate, setSelectedCandidate] = useState<PlaceCandidate | null>(null);
   const [selectedRating, setSelectedRating] = useState<number>(8.0);
@@ -108,7 +113,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           : [reRankingEntry.category],
         cuisines: reRankingEntry.cuisines,
         primaryTypeDisplay: reRankingEntry.primaryTypeDisplay,
-        source: 'google_places',
+        media: reRankingEntry.media,
+        source: isMediaPlaceId(reRankingEntry.placeId) ? 'tmdb' : 'google_places',
       });
       const roundedPrev = Math.round(reRankingEntry.initialRating * 10) / 10;
       setSelectedRating(roundedPrev);
@@ -148,15 +154,21 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     setIsSearching(true);
 
     const timer = setTimeout(async () => {
-      const { results } = await searchPlaces(
-        trimmed,
-        customPlacesApiKey,
-        userLocation ? undefined : defaultCity,
-        searchLocation,
-        group
-      );
+      const { results, error } = isWatch
+        ? await searchTitles(trimmed)
+        : {
+            ...(await searchPlaces(
+              trimmed,
+              customPlacesApiKey,
+              userLocation ? undefined : defaultCity,
+              searchLocation,
+              group
+            )),
+            error: undefined,
+          };
       if (!cancelled) {
         setSearchResults(results);
+        setSearchError(error ?? null);
         setIsSearching(false);
         requestAnimationFrame(() => {
           if (resultsScrollRef.current) {
@@ -170,7 +182,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation]);
+  }, [searchQuery, isOpen, step, customPlacesApiKey, defaultCity, userLocation, searchLocation, isWatch]);
 
   // Ensure scroll container always starts at top when query or results change
   useEffect(() => {
@@ -184,18 +196,18 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       (r) =>
         r.category === category &&
         ((r.placeId && candidate.placeId && r.placeId === candidate.placeId) ||
-          (r.name.toLowerCase() === candidate.name.toLowerCase() &&
+          (!isMediaPlaceId(candidate.placeId) &&
+            r.name.toLowerCase() === candidate.name.toLowerCase() &&
             r.formattedAddress === candidate.formattedAddress))
     );
 
-  // Lists to offer for a candidate: its auto-detected categories in this group, plus the list being viewed
-  const getCategoryOptions = (candidate: PlaceCandidate): SpotCategory[] =>
-    Array.from(
-      new Set([
-        ...(candidate.categories || []).filter((c) => CATEGORY_GROUP[c] === group),
-        defaultCategory,
-      ])
-    );
+  // Lists to offer for a candidate: its auto-detected categories in this group, plus the list being
+  // viewed (TMDB knows for sure whether a title is a movie or a show)
+  const getCategoryOptions = (candidate: PlaceCandidate): SpotCategory[] => {
+    const detected = (candidate.categories || []).filter((c) => CATEGORY_GROUP[c] === group);
+    if (candidate.source === 'tmdb' && detected.length > 0) return detected;
+    return Array.from(new Set([...detected, defaultCategory]));
+  };
 
   // Bookmarks go in the candidate's best list within this group
   const addBookmark = (candidate: PlaceCandidate) =>
@@ -319,6 +331,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 ? `${existingRestaurants.some((r) => r.id === reRankingEntry.id) ? 'Re-rank' : 'Rank'} · ${
                     CATEGORY_LABEL[reRankingEntry.category]
                   }`
+                : isWatch
+                ? 'Add a Title'
                 : 'Add a Place'}
             </span>
           )}
@@ -381,9 +395,11 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   {searchResults.map((item) => {
                     const primaryCuisine =
                       item.cuisines[0] || item.primaryTypeDisplay || '';
-                    const locationShort =
-                      [item.neighborhood, item.city].filter(Boolean).join(', ') ||
-                      item.formattedAddress;
+                    const locationShort = item.media
+                      ? spotPlaceLabel(item)
+                      : [item.neighborhood, item.city].filter(Boolean).join(', ') ||
+                        item.formattedAddress;
+                    const poster = posterUrl(item.media);
                     const distLabel = formatDistanceMiles(
                       getItemDistanceMiles(item, userLocation)
                     );
@@ -407,6 +423,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                         key={item.placeId}
                         className="w-full py-2.5 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors flex items-center justify-between gap-2 group"
                       >
+                        {isWatch && <PosterThumb src={poster} className="w-9 h-[54px]" />}
                         <button
                           type="button"
                           onClick={() => handleSelectCandidate(item)}
@@ -495,9 +512,15 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   onClick={handleCreateManual}
                   className="w-full py-2.5 px-3 rounded-xl text-xs font-medium text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left flex items-center justify-between"
                 >
-                  <span>Add &ldquo;{searchQuery.trim()}&rdquo; as a custom spot</span>
+                  <span>
+                    Add &ldquo;{searchQuery.trim()}&rdquo; as a custom {isWatch ? 'title' : 'spot'}
+                  </span>
                   <Plus className="w-3.5 h-3.5" />
                 </button>
+              )}
+
+              {!isSearching && searchError && searchQuery.trim().length >= 2 && (
+                <div className="py-4 text-center text-xs text-rose-500 dark:text-rose-400">{searchError}</div>
               )}
 
               {searchQuery.trim().length < 2 && (
@@ -505,6 +528,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                   {copy.searchEmptyHint}
                 </div>
               )}
+
+              {isWatch && <TmdbCredit />}
             </div>
           )}
 
@@ -512,17 +537,31 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           {step === 'q1_rating' && selectedCandidate && (
             <div className="py-3 space-y-5">
               <div className="text-center space-y-1">
+                {selectedCandidate.media?.poster && (
+                  <PosterThumb
+                    src={posterUrl(selectedCandidate.media, 185)}
+                    className="w-20 h-[120px] mx-auto mb-2 shadow-md"
+                  />
+                )}
                 <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                   {selectedCandidate.name}
                 </h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-center gap-1">
-                  <MapPin className="w-3 h-3 shrink-0" />
-                  <span className="truncate max-w-xs">
-                    {[selectedCandidate.neighborhood, selectedCandidate.city]
-                      .filter(Boolean)
-                      .join(', ') || selectedCandidate.formattedAddress}
-                  </span>
-                </p>
+                {isWatch ? (
+                  spotPlaceLabel(selectedCandidate) && (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                      {spotPlaceLabel(selectedCandidate)}
+                    </p>
+                  )
+                ) : (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-center gap-1">
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span className="truncate max-w-xs">
+                      {[selectedCandidate.neighborhood, selectedCandidate.city]
+                        .filter(Boolean)
+                        .join(', ') || selectedCandidate.formattedAddress}
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="space-y-3.5 pt-1">
@@ -665,7 +704,9 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                     className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                   >
                     <Bookmark className="w-3.5 h-3.5" />
-                    <span>Haven&rsquo;t been yet? Save to {copy.want}</span>
+                    <span>
+                      {isWatch ? 'Haven’t watched it yet?' : 'Haven’t been yet?'} Save to {copy.want}
+                    </span>
                   </button>
                 </div>
               )}

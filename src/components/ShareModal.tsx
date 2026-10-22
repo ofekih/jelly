@@ -3,6 +3,7 @@ import { Check, Copy, Download, Link2, Loader2, Share2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SpotCategory } from '../types';
 import { Sheet, SheetHeader } from './Sheet';
 import { JellyBeanIcon } from './JellyBeanIcon';
+import { spotPlaceLabel } from '../lib/media';
 import { ScoreBadge } from './ScoreBadge';
 
 interface ShareModalProps {
@@ -72,7 +73,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         (r, i) =>
           `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) — ${[
             r.cuisines[0] || r.primaryTypeDisplay,
-            r.neighborhood || r.city,
+            spotPlaceLabel(r),
           ]
             .filter(Boolean)
             .join(' · ')}`
@@ -245,7 +246,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       // Subtitle
       const sub = [
         spot.cuisines[0] || spot.primaryTypeDisplay,
-        spot.neighborhood || spot.city,
+        spotPlaceLabel(spot),
       ]
         .filter(Boolean)
         .join(' · ');
@@ -446,8 +447,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         </div>
                         <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
                           {[
-                                              spot.cuisines[0] || spot.primaryTypeDisplay,
-                            spot.neighborhood || spot.city,
+                            spot.cuisines[0] || spot.primaryTypeDisplay,
+                            spotPlaceLabel(spot),
                           ]
                             .filter(Boolean)
                             .join(' · ')}

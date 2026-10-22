@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BookmarkEntry, RestaurantEntry } from '../types';
-import { buildPublicLists, MAX_PUBLIC_ITEMS } from './publicList';
+import { buildPublicLists } from './publicList';
 
 const spot = (i: number, notes = ''): RestaurantEntry =>
   ({
@@ -55,11 +55,18 @@ describe('buildPublicLists', () => {
     expect(two.restaurants[0].notes).toBeUndefined();
   });
 
-  it('keeps the top-ranked spots when over the count limit', () => {
-    const many = Array.from({ length: MAX_PUBLIC_ITEMS + 5 }, (_, i) => spot(MAX_PUBLIC_ITEMS + 4 - i));
+  it('has no count limit: a long list is shared in full while it fits', () => {
+    const many = Array.from({ length: 1200 }, (_, i) => spot(i));
     const out = buildPublicLists(many, []);
+    expect(out.trimmed).toBe('none');
+    expect(out.restaurants).toHaveLength(1200);
+  });
+
+  it('keeps the top-ranked spots of every list when too big even without notes', () => {
+    const many = Array.from({ length: 40 }, (_, i) => spot(39 - i));
+    const out = buildPublicLists(many, [], 2500);
     expect(out.trimmed).toBe('spots');
-    expect(out.restaurants).toHaveLength(MAX_PUBLIC_ITEMS);
-    expect(out.restaurants[0].rankIndex).toBe(0);
+    expect(out.restaurants.length).toBeLessThan(40);
+    expect(out.restaurants.map((r) => r.rankIndex)).toEqual(out.restaurants.map((_, i) => i));
   });
 });

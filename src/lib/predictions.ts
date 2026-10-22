@@ -1,5 +1,6 @@
 import { isSpotCategory, type BookmarkEntry, type PredictionPlace, type SpotCategory } from '../types';
-import { normalizeName, type PredictionConfidence, type TastePrediction } from './tasteModel';
+import { isMediaPlaceId, normalizeName, type PredictionConfidence, type TastePrediction } from './tasteModel';
+import { mediaFields, parseMedia } from './media';
 
 /**
  * `users/{uid}/private/predictions`: taste predictions from every jelly user (not just the
@@ -31,6 +32,7 @@ function parsePlace(raw: unknown): PredictionPlace | undefined {
     neighborhood: text(p.neighborhood),
     ...(lat !== undefined && lng !== undefined ? { lat, lng } : {}),
     cuisines,
+    media: parseMedia(p.media),
   };
 }
 
@@ -105,6 +107,8 @@ export function buildForYouSpots(
   }
   const isRanked = (placeId: string, name: string, city?: string) => {
     if (myPlaceIds.has(placeId)) return true;
+    // Titles only match by ID (`isSameSpot`)
+    if (isMediaPlaceId(placeId)) return false;
     const cities = myCitiesByName.get(normalizeName(name));
     const c = city?.toLowerCase().trim();
     return Boolean(cities?.some((mine) => !mine || !c || mine === c));
@@ -118,16 +122,21 @@ export function buildForYouSpots(
     // The stored doc can lag behind a spot you just ranked
     if (isRanked(parsed.placeId, place.name, place.city)) continue;
     const { score, confidence, basis, raters } = prediction;
+    const isMedia = isMediaPlaceId(parsed.placeId);
     out.push({
       id: key,
       placeId: parsed.placeId,
       name: place.name,
-      formattedAddress: [place.neighborhood, place.city].filter(Boolean).join(', '),
+      ...(isMedia
+        ? mediaFields(place.media)
+        : {
+            formattedAddress: [place.neighborhood, place.city].filter(Boolean).join(', '),
+            googleMapsUri: googleMapsLinkFor(parsed.placeId, place.name),
+          }),
       neighborhood: place.neighborhood,
       city: place.city,
       lat: place.lat,
       lng: place.lng,
-      googleMapsUri: googleMapsLinkFor(parsed.placeId, place.name),
       category,
       categories: [category],
       cuisines: place.cuisines ?? [],

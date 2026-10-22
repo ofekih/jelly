@@ -14,6 +14,8 @@ import {
   SxSSearchState,
   undoLastSxSStep,
 } from '../lib/rankingEngine';
+import { PosterThumb } from './PosterThumb';
+import { posterUrl, spotPlaceLabel } from '../lib/media';
 import { trackEvent } from '../firebase';
 
 export interface PendingPlacement {
@@ -145,19 +147,24 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
   // How sure jelly already is of the spot (log scale), with a sliver shown from the start
   const progressPct = Math.round(8 + 92 * getSearchProgress(searchState));
 
-  const candidateSub = [
-    pendingPlacement.cuisines[0] || pendingPlacement.candidate.primaryTypeDisplay,
-    pendingPlacement.candidate.neighborhood || pendingPlacement.candidate.city,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // A title's genre is already in the card's label, so its sub is just the year and director
+  const candidateSub = pendingPlacement.candidate.media
+    ? spotPlaceLabel(pendingPlacement.candidate)
+    : [
+        pendingPlacement.cuisines[0] || pendingPlacement.candidate.primaryTypeDisplay,
+        pendingPlacement.candidate.neighborhood || pendingPlacement.candidate.city,
+      ]
+        .filter(Boolean)
+        .join(' · ');
 
-  const opponentSub = [
-    currentMatch.opponent.cuisines[0] || currentMatch.opponent.primaryTypeDisplay,
-    currentMatch.opponent.neighborhood || currentMatch.opponent.city,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const opponentSub = currentMatch.opponent.media
+    ? spotPlaceLabel(currentMatch.opponent)
+    : [
+        currentMatch.opponent.cuisines[0] || currentMatch.opponent.primaryTypeDisplay,
+        currentMatch.opponent.neighborhood || currentMatch.opponent.city,
+      ]
+        .filter(Boolean)
+        .join(' · ');
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop">
@@ -208,18 +215,23 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
               onClick={() => handleChoice('new_wins')}
               className="group text-left p-5 sm:p-6 rounded-2xl border-2 border-zinc-200/90 dark:border-zinc-800 hover:border-emerald-500 dark:hover:border-emerald-400 bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all flex flex-col justify-between min-h-[136px] sm:min-h-[168px] active:scale-[0.99]"
             >
-              <div className="space-y-1.5">
-                <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                  {[CATEGORY_LABEL[pendingPlacement.category], pendingPlacement.cuisines[0]]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-                <h3 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                  {pendingPlacement.candidate.name}
-                </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
-                  {candidateSub || pendingPlacement.candidate.formattedAddress}
-                </p>
+              <div className="flex items-start gap-3">
+                {pendingPlacement.candidate.media && (
+                  <PosterThumb src={posterUrl(pendingPlacement.candidate.media, 154)} className="w-12 h-[72px]" />
+                )}
+                <div className="space-y-1.5 min-w-0">
+                  <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    {[CATEGORY_LABEL[pendingPlacement.category], pendingPlacement.cuisines[0]]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    {pendingPlacement.candidate.name}
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
+                    {candidateSub || pendingPlacement.candidate.formattedAddress}
+                  </p>
+                </div>
               </div>
 
               <div className="pt-4 text-xs font-semibold text-zinc-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
@@ -233,21 +245,26 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
               onClick={() => handleChoice('opponent_wins')}
               className="group text-left p-5 sm:p-6 rounded-2xl border-2 border-zinc-200/90 dark:border-zinc-800 hover:border-emerald-500 dark:hover:border-emerald-400 bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all flex flex-col justify-between min-h-[136px] sm:min-h-[168px] active:scale-[0.99]"
             >
-              <div className="space-y-1.5">
-                <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-                  {[
-                    currentMatch.opponent.cuisines[0],
-                    `#${currentMatch.opponent.rankIndex + 1}`,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </span>
-                <h3 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                  {currentMatch.opponent.name}
-                </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
-                  {opponentSub || currentMatch.opponent.formattedAddress}
-                </p>
+              <div className="flex items-start gap-3">
+                {currentMatch.opponent.media && (
+                  <PosterThumb src={posterUrl(currentMatch.opponent.media, 154)} className="w-12 h-[72px]" />
+                )}
+                <div className="space-y-1.5 min-w-0">
+                  <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    {[
+                      currentMatch.opponent.cuisines[0],
+                      `#${currentMatch.opponent.rankIndex + 1}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-100 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    {currentMatch.opponent.name}
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
+                    {opponentSub || currentMatch.opponent.formattedAddress}
+                  </p>
+                </div>
               </div>
 
               <div className="pt-4 text-xs font-semibold text-zinc-400 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors sm:text-right">

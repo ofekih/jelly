@@ -37,6 +37,7 @@ const GROUPS: Array<{ key: keyof typeof GROUP_CATEGORIES; name: string }> = [
   { key: 'eat', name: 'Eat' },
   { key: 'explore', name: 'Explore' },
   { key: 'travel', name: 'Travel' },
+  { key: 'watch', name: 'Watch' },
 ];
 
 const A: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
@@ -62,7 +63,8 @@ export const AboutPage: React.FC = () => (
           <h1 className="font-display text-4xl font-extrabold tracking-tight sm:text-5xl">About jelly</h1>
         </div>
         <p className="mt-5 text-lg leading-relaxed text-zinc-600 dark:text-zinc-300">
-          jelly ranks the restaurants, sights and places you've been by having you <b>compare</b> them, not{' '}
+          jelly ranks the restaurants, sights and places you've been (and the movies and shows you've watched) by
+          having you <b>compare</b> them, not{' '}
           <b>score</b> them. This page explains why, and how the math works, with live demos running jelly's real
           ranking code.
         </p>
@@ -116,9 +118,9 @@ export const AboutPage: React.FC = () => (
         <h3 className="pt-2 text-lg font-bold text-zinc-900 dark:text-zinc-100">Trap 3: apples vs. espresso</h3>
         <p>
           A great espresso bar and a great steakhouse shouldn't compete for the same spot. jelly keeps a separate,
-          independently ranked list for each kind of place, in three groups:
+          independently ranked list for each kind of place (or title), in four groups:
         </p>
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {GROUPS.map((g) => (
             <div key={g.key} className="rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/70">
               <div className="font-display text-sm font-bold text-zinc-900 dark:text-zinc-100">{g.name}</div>
@@ -476,6 +478,10 @@ export const AboutPage: React.FC = () => (
         <a href="/privacy.html" className="text-zinc-400 underline hover:text-zinc-600 dark:hover:text-zinc-300">
           Privacy
         </a>
+        <p className="w-full text-xs text-zinc-400 dark:text-zinc-500">
+          Movie & TV data and posters from <A href="https://www.themoviedb.org">TMDB</A>. jelly uses the TMDB API
+          but is not endorsed or certified by TMDB.
+        </p>
       </footer>
     </main>
   </div>

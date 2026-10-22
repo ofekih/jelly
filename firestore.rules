@@ -177,8 +177,21 @@ service cloud.firestore {
           // Explore
           'museums', 'theme_parks', 'zoos', 'nature',
           // Travel
-          'cities', 'getaways', 'countries'
+          'cities', 'getaways', 'countries',
+          // Watch
+          'movies', 'tv_shows'
         ];
+    }
+
+    // Validate optional movie / show info (`MediaInfo` in src/types.ts)
+    function isValidOptionalMedia(data) {
+      return !('media' in data) ||
+        data.media == null ||
+        (data.media is map &&
+         data.media.keys().hasOnly(['year', 'poster', 'creator']) &&
+         (!('year' in data.media) || (data.media.year is int && data.media.year >= 1800 && data.media.year <= 3000)) &&
+         (!('poster' in data.media) || (data.media.poster is string && data.media.poster.size() <= 200)) &&
+         (!('creator' in data.media) || (data.media.creator is string && data.media.creator.size() <= 300)));
     }
 
     // ===============================================================
@@ -220,6 +233,7 @@ service cloud.firestore {
         isValidOptionalString('googleMapsUri', 0, 1000) &&
         isValidOptionalString('primaryTypeDisplay', 0, 200) &&
         isValidOptionalCategory(data) &&
+        isValidOptionalMedia(data) &&
         isValidOptionalString('notes', 0, 5000) &&
         isValidOptionalString('favoriteDishes', 0, 2000) &&
         (!('status' in data) || data.status == null || data.status in ['ranked', 'want_to_try']) &&
@@ -249,6 +263,7 @@ service cloud.firestore {
         isValidOptionalString('googleMapsUri', 0, 1000) &&
         isValidOptionalString('primaryTypeDisplay', 0, 200) &&
         isValidOptionalCategory(data) &&
+        isValidOptionalMedia(data) &&
         isValidOptionalString('notes', 0, 5000) &&
         isValidOptionalString('recommendedBy', 0, 120) &&
         isValidOptionalString('recommendedByUid', 0, 150) &&
@@ -289,10 +304,11 @@ service cloud.firestore {
         isValidOptionalString('categoryFilter', 0, 100) &&
         isValidOptionalString('cityFilter', 0, 200) &&
         isValidOptionalString('cuisineFilter', 0, 200) &&
-        (!('restaurants' in data) || isValidList(data.restaurants, 500)) &&
-        (!('entries' in data) || isValidList(data.entries, 500)) &&
-        (!('items' in data) || isValidList(data.items, 500)) &&
-        (!('bookmarks' in data) || isValidList(data.bookmarks, 500)) &&
+        // No count limit: Firestore's 1 MiB doc limit bounds them (see src/lib/publicList.ts)
+        (!('restaurants' in data) || data.restaurants is list) &&
+        (!('entries' in data) || data.entries is list) &&
+        (!('items' in data) || data.items is list) &&
+        (!('bookmarks' in data) || data.bookmarks is list) &&
         (!('followingIds' in data) || data.followingIds == null || isValidList(data.followingIds, 500)) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);

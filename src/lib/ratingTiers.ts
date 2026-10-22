@@ -5,13 +5,12 @@ import type { SpotGroup } from '../types';
  *
  * Label rules (see AGENTS.md): the head (before "·") climbs strictly; the tail never sounds
  * weaker than the band below, fits every group, and is never a near-synonym of a neighbour.
- * `travel` replaces the tail where it doesn't fit a trip.
+ * A group's key (`travel`, `watch`) replaces the tail where it doesn't fit a trip or a title.
  */
-interface VibeBand {
+interface VibeBand extends Partial<Record<SpotGroup, string>> {
   from: number;
   head: string;
   tail: string;
-  travel?: string;
 }
 
 export interface RatingTier {
@@ -45,7 +44,7 @@ export const RATING_TIERS: RatingTier[] = [
     bands: [
       { from: 1.0, head: 'Disaster', tail: 'Avoid at all costs' },
       { from: 1.8, head: 'Terrible', tail: 'Steer clear', travel: 'Regretted the trip' },
-      { from: 2.5, head: 'Bad', tail: 'Not worth going' },
+      { from: 2.5, head: 'Bad', tail: 'Not worth going', watch: 'Not worth the time' },
       { from: 3.3, head: 'Subpar', tail: 'Probably skip it' },
     ],
   },
@@ -61,7 +60,7 @@ export const RATING_TIERS: RatingTier[] = [
     bands: [
       { from: 4.0, head: 'Underwhelming', tail: 'Only if there’s no other option' },
       { from: 4.5, head: 'Meh', tail: 'Only if someone else picks it', travel: 'Only if someone else plans it' },
-      { from: 5.0, head: 'Passable', tail: 'Fine if it’s convenient', travel: 'Fine to pass through' },
+      { from: 5.0, head: 'Passable', tail: 'Fine if it’s convenient', travel: 'Fine to pass through', watch: 'Fine as background' },
       { from: 5.5, head: 'Decent', tail: 'Solid for what it is' },
     ],
   },
@@ -75,7 +74,7 @@ export const RATING_TIERS: RatingTier[] = [
       'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800/70',
     zoneClass: 'text-cyan-600 dark:text-cyan-400',
     bands: [
-      { from: 6.0, head: 'Pleasant', tail: 'Glad I went' },
+      { from: 6.0, head: 'Pleasant', tail: 'Glad I went', watch: 'Glad I watched it' },
       { from: 6.4, head: 'Good', tail: 'Worth checking out' },
       { from: 6.8, head: 'Very good', tail: 'Well worth it' },
       { from: 7.2, head: 'Really liked it', tail: 'Easy to recommend' },
@@ -92,7 +91,7 @@ export const RATING_TIERS: RatingTier[] = [
     zoneClass: 'text-teal-600 dark:text-teal-400',
     bands: [
       { from: 7.5, head: 'Great', tail: 'A real standout' },
-      { from: 7.8, head: 'Really great', tail: 'Worth going out of your way', travel: 'Worth the journey' },
+      { from: 7.8, head: 'Really great', tail: 'Worth going out of your way', travel: 'Worth the journey', watch: 'Worth seeking out' },
       { from: 8.2, head: 'Loved it', tail: 'Would rave about it' },
       { from: 8.5, head: 'Really loved it', tail: 'Still thinking about it', travel: 'Bucket-list worthy' },
     ],
@@ -126,6 +125,6 @@ export function getRatingTier(rating: number): RatingTier {
 
 export function getVibeLabel(rating: number, group: SpotGroup): string {
   const band = lastFrom(getRatingTier(rating).bands, rating);
-  const tail = (group === 'travel' && band.travel) || band.tail;
+  const tail = band[group] || band.tail;
   return `${band.head} · ${tail}`;
 }

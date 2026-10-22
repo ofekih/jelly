@@ -42,8 +42,15 @@ type SpotLike = { placeId?: string; name: string; city?: string; formattedAddres
 const isRealPlaceId = (placeId?: string): placeId is string =>
   Boolean(placeId) && !placeId!.startsWith('manual_');
 
+/** A movie or show (`tmdb:movie:<id>` / `tmdb:tv:<id>`) rather than a place. */
+export const isMediaPlaceId = (placeId?: string): boolean => Boolean(placeId?.startsWith('tmdb:'));
+
 function sameSpotNormalized(a: SpotLike, normA: string, b: SpotLike, normB: string): boolean {
-  if (isRealPlaceId(a.placeId) && isRealPlaceId(b.placeId) && a.placeId === b.placeId) return true;
+  if (isRealPlaceId(a.placeId) && isRealPlaceId(b.placeId)) {
+    if (a.placeId === b.placeId) return true;
+    // Remakes and namesakes share titles, so titles only match by ID
+    if (isMediaPlaceId(a.placeId) || isMediaPlaceId(b.placeId)) return false;
+  }
   if (!normA || normA !== normB) return false;
   if (a.city && b.city) {
     return a.city.toLowerCase().trim() === b.city.toLowerCase().trim();
@@ -51,7 +58,10 @@ function sameSpotNormalized(a: SpotLike, normA: string, b: SpotLike, normB: stri
   return true;
 }
 
-/** Same Google place, or the same normalized name in the same city (or no city on either). */
+/**
+ * Same Google place (or TMDB title), or the same normalized name in the same city (or no city on
+ * either).
+ */
 export function isSameSpot(a: SpotLike, b: SpotLike): boolean {
   return sameSpotNormalized(a, normalizeName(a.name), b, normalizeName(b.name));
 }

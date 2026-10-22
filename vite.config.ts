@@ -38,6 +38,10 @@ function versionJson(): Plugin {
 
 export default defineConfig({
   plugins: [tailwindcss(), versionJson(), aboutRoute()],
+  server: {
+    // Title search runs in a Cloud Function behind Hosting; dev uses the live one
+    proxy: { '/api': { target: 'https://eatwithjelly.com', changeOrigin: true } },
+  },
   build: {
     rollupOptions: {
       input: { main: 'index.html', about: 'about.html' },

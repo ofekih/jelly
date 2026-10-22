@@ -2,6 +2,7 @@ import {
   BookmarkEntry,
   CATEGORY_GROUP,
   FriendSpotMatch,
+  MediaInfo,
   SpotCategory,
   RestaurantEntry,
   SharedListPayload,
@@ -113,6 +114,7 @@ export interface BlendSpotItem {
   categories: SpotCategory[];
   cuisines: string[];
   primaryTypeDisplay?: string;
+  media?: MediaInfo;
   combinedScore?: number;
   myScore?: number;
   myWantToTry?: boolean;
@@ -153,6 +155,7 @@ export function computeGroupBlend(
     categories?: SpotCategory[];
     cuisines?: string[];
     primaryTypeDisplay?: string;
+    media?: MediaInfo;
   }): BlendSpotItem => {
     // Buckets are per (spot, category list): scores from different lists are never mixed
     for (const existing of buckets.values()) {
@@ -181,6 +184,7 @@ export function computeGroupBlend(
       categories: source.categories?.length ? source.categories : [source.category],
       cuisines: source.cuisines || [],
       primaryTypeDisplay: source.primaryTypeDisplay,
+      media: source.media,
       friendBreakdown: [],
     };
     buckets.set(key, created);

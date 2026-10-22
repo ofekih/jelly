@@ -17,7 +17,7 @@ import {
   type TasteRater,
   type TasteSimilarityResult,
 } from '../../src/lib/tasteModel';
-import { CATEGORY_GROUP, type PredictionPlace, type SpotCategory } from '../../src/types';
+import { CATEGORY_GROUP, type MediaInfo, type PredictionPlace, type SpotCategory } from '../../src/types';
 import { placeKeyOf, placeStatId } from './placeStats';
 
 /** A ranked or bookmarked spot as stored at `users/{uid}/restaurants|bookmarks/{id}`. */
@@ -30,6 +30,7 @@ export interface SpotDoc {
   lng?: number;
   category: string;
   cuisines: string[];
+  media?: MediaInfo;
 }
 
 export interface RankedDoc extends SpotDoc {
@@ -69,6 +70,19 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v 
 const coord = (v: unknown, max: number): number | undefined =>
   typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max ? v : undefined;
 
+/** A movie's or show's year, poster and director, trimmed so one odd entry can't bloat the doc. */
+function mediaOf(v: unknown): MediaInfo | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const m = v as Record<string, unknown>;
+  const media: MediaInfo = {};
+  if (typeof m.year === 'number' && Number.isInteger(m.year)) media.year = m.year;
+  const poster = str(m.poster);
+  if (poster && poster.length <= 100) media.poster = poster;
+  const creator = str(m.creator);
+  if (creator) media.creator = creator.slice(0, MAX_NAME_LENGTH);
+  return Object.keys(media).length > 0 ? media : undefined;
+}
+
 /** A spot doc as the model needs it, or null when unusable. */
 export function toSpotDoc(data: Record<string, unknown> | undefined): SpotDoc | null {
   if (!data) return null;
@@ -84,6 +98,7 @@ export function toSpotDoc(data: Record<string, unknown> | undefined): SpotDoc | 
     lng: coord(data.lng, 180),
     category,
     cuisines: Array.isArray(data.cuisines) ? data.cuisines.filter((c): c is string => typeof c === 'string') : [],
+    media: mediaOf(data.media),
   };
 }
 
@@ -151,6 +166,8 @@ export function predictionPlace(sources: SpotDoc[], cuisines: string[]): Predict
   }
   const tags = cuisines.slice(0, MAX_PLACE_CUISINES).map((c) => c.slice(0, MAX_NAME_LENGTH));
   if (tags.length > 0) place.cuisines = tags;
+  const media = sources.find((s) => s.media)?.media;
+  if (media) place.media = media;
   return place;
 }
 

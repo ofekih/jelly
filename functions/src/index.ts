@@ -1,12 +1,15 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { onRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { logger } from 'firebase-functions';
 import { affectedPlaceKeys, placeStatId } from './placeStats';
 import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from './predictionJobs';
 import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
+import { cleanQuery, searchTitles } from './tmdb';
 
 initializeApp();
 
@@ -79,5 +82,31 @@ export const nightlyPredictions = onSchedule(
   async () => {
     const result = await recomputeAllPredictions(getFirestore());
     logger.info('nightly predictions', result);
+  }
+);
+
+const tmdbReadToken = defineSecret('TMDB_READ_TOKEN');
+
+/**
+ * Movie & TV search for the Watch lists, served at `/api/tmdb/search?q=` through a Hosting
+ * rewrite, so the CDN caches repeat searches and the TMDB token never reaches the browser.
+ */
+export const tmdb = onRequest(
+  { secrets: [tmdbReadToken], memory: '256MiB', maxInstances: 5, timeoutSeconds: 20 },
+  async (req, res) => {
+    const query = cleanQuery(req.query.q);
+    if (req.method !== 'GET' || !req.path.endsWith('/search') || !query) {
+      res.status(400).json({ error: 'Expected GET /api/tmdb/search?q=<title>' });
+      return;
+    }
+    try {
+      const results = await searchTitles(query, tmdbReadToken.value());
+      res.set('Cache-Control', 'public, max-age=3600, s-maxage=604800');
+      res.json({ results });
+    } catch (err) {
+      logger.warn('TMDB search failed', { query, err: String(err) });
+      res.set('Cache-Control', 'no-store');
+      res.status(502).json({ error: 'Search is unavailable right now' });
+    }
   }
 );

@@ -148,6 +148,46 @@ describe('sharedLists', () => {
     await assertSucceeds(updateDoc(doc(as('alice'), 'sharedLists/alice'), { title: 'Mine' }));
     await assertFails(updateDoc(doc(as('alice'), 'sharedLists/bob'), { title: 'Hijack' }));
   });
+
+  it('has no count limit on spots', async () => {
+    const restaurants = Array.from({ length: 800 }, (_, i) => ({ name: `Spot ${i}`, rankIndex: i }));
+    await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), { ownerUid: 'alice', restaurants }));
+  });
+});
+
+describe('users/{uid}/restaurants and bookmarks: movies & shows', () => {
+  const movie = {
+    id: 'tmdb:movie:438631__movies',
+    placeId: 'tmdb:movie:438631',
+    name: 'Dune',
+    formattedAddress: '2021 · Denis Villeneuve',
+    category: 'movies',
+    categories: ['movies'],
+    cuisines: ['Sci-Fi', 'Adventure'],
+    media: { year: 2021, poster: '/d5NXSklXo0qyIYkgV94XAgMIckC.jpg', creator: 'Denis Villeneuve' },
+    initialRating: 8.4,
+    elo: 1600,
+    rankIndex: 0,
+    magicScore: 8.4,
+    comparisonsCount: 0,
+  };
+
+  it('accepts a ranked movie, a show and a saved title', async () => {
+    await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${movie.id}`), movie));
+    const show = { ...movie, id: 'tmdb:tv:1396__tv_shows', placeId: 'tmdb:tv:1396', category: 'tv_shows', media: { year: 2008 } };
+    await assertSucceeds(setDoc(doc(as('alice'), `users/alice/restaurants/${show.id}`), show));
+    const { initialRating: _r, elo: _e, rankIndex: _i, magicScore: _m, comparisonsCount: _c, ...saved } = movie;
+    await assertSucceeds(setDoc(doc(as('alice'), 'users/alice/bookmarks/tmdb:movie:438631'), saved));
+  });
+
+  it('rejects unknown or malformed media fields', async () => {
+    const bad = (media: unknown) => setDoc(doc(as('alice'), `users/alice/restaurants/${movie.id}`), { ...movie, media });
+    await assertFails(bad({ year: 2021, rating: 9 }));
+    await assertFails(bad({ year: '2021' }));
+    await assertFails(bad({ year: 2021.5 }));
+    await assertFails(bad({ poster: 'x'.repeat(201) }));
+    await assertFails(bad('2021'));
+  });
 });
 
 describe('users/{uid}/private/predictions', () => {

@@ -17,6 +17,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.0.0',
+    date: '2026-10-21',
+    title: 'Movies & TV',
+    highlights: [
+      'A new Watch group ranks the movies and TV shows you’ve watched, each in its own list, the same way as places: a gut feeling, then a few quick comparisons',
+      'Search any title to rank it, or save it to Want to Watch; posters, years and directors come along',
+      'Friends’ scores, “For you” picks and Watch Together work for movies and shows too',
+      'Shared lists no longer stop at 500 spots',
+    ],
+  },
+  {
     version: '2.5.0',
     date: '2026-10-20',
     title: 'Your order, trusted',

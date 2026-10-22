@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
-import { wantLabel } from '../lib/groups';
+import { hasLocation, wantLabel } from '../lib/groups';
+import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { PosterThumb } from './PosterThumb';
 import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
@@ -65,7 +67,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
 
   const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
   const want = wantLabel(item.category);
-  const locationLabel = item.neighborhood || item.city;
+  const locationLabel = spotPlaceLabel(item);
   const rawMiles = getItemDistanceMiles(item, userLocation);
   const distLabel = formatDistanceMiles(rawMiles);
   const subtitleParts = [
@@ -85,11 +87,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
         })
       : null;
 
-  const mapsHref =
-    item.googleMapsUri ||
-    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-      `${item.name} ${item.formattedAddress || item.city || ''}`
-    )}`;
+  const link = spotLink(item);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (readOnly || e.touches.length !== 1) return;
@@ -199,7 +197,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
             style={{ width: Math.max(144, Math.abs(swipeX)) }}
           >
             <a
-              href={mapsHref}
+              href={link.href}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => {
@@ -210,7 +208,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
               className="flex-1 bg-blue-600 hover:bg-blue-500 text-white flex flex-col items-center justify-center gap-1 text-[11px] font-bold tracking-tight"
             >
               <ExternalLink className="w-4 h-4" />
-              <span>Maps</span>
+              <span>{link.label}</span>
             </a>
             <button
               type="button"
@@ -248,9 +246,13 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
         }}
         className="relative flex items-center gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors touch-pan-y"
       >
-        <div className="w-6 flex items-center justify-center shrink-0">
-          <JellyBeanIcon size={18} />
-        </div>
+        {item.media ? (
+          <PosterThumb src={posterUrl(item.media)} className="w-8 h-12 -my-1" />
+        ) : (
+          <div className="w-6 flex items-center justify-center shrink-0">
+            <JellyBeanIcon size={18} />
+          </div>
+        )}
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -289,13 +291,13 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {item.googleMapsUri && (
+          {(item.googleMapsUri || item.media) && (
             <a
-              href={item.googleMapsUri}
+              href={link.href}
               target="_blank"
               rel="noopener noreferrer"
               className="p-2 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              title="Open in Google Maps"
+              title={item.media ? 'Open in TMDB' : 'Open in Google Maps'}
             >
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
@@ -415,26 +417,18 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
         ...(!readOnly
           ? [
               {
-                label: 'I Went, Rank It!',
+                label: hasLocation(contextMenu.bookmark.category) ? 'I Went, Rank It!' : 'I Watched It, Rank It!',
                 icon: <Sparkles className="w-4 h-4 text-emerald-500" />,
                 onClick: () => onRankBookmark(contextMenu.bookmark!),
               },
             ]
           : []),
         {
-          label: 'Open in Google Maps',
+          label: contextMenu.bookmark.media ? 'Open in TMDB' : 'Open in Google Maps',
           icon: <ExternalLink className="w-4 h-4 text-blue-500" />,
-          onClick: () => {
-            const b = contextMenu.bookmark!;
-            const url =
-              b.googleMapsUri ||
-              `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                `${b.name} ${b.formattedAddress || b.city || ''}`
-              )}`;
-            window.open(url, '_blank');
-          },
+          onClick: () => window.open(spotLink(contextMenu.bookmark!).href, '_blank'),
         },
-        ...(contextMenu.bookmark.formattedAddress
+        ...(contextMenu.bookmark.formattedAddress && !contextMenu.bookmark.media
           ? [
               {
                 label: 'Copy Address',
@@ -485,7 +479,9 @@ export const BookmarkList: React.FC<BookmarkListProps> = ({
             No {CATEGORY_LABEL[selectedCategory]} to try yet
           </h2>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-xs mx-auto">
-            Search any spot and tap the bookmark icon to save places friends recommend before you go.
+            {hasLocation(selectedCategory)
+              ? 'Search any spot and tap the bookmark icon to save places friends recommend before you go.'
+              : 'Search any title and tap the bookmark icon to save what friends recommend for later.'}
           </p>
         </div>
 

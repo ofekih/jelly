@@ -96,6 +96,7 @@ import {
   getSpotSocialMetrics,
   sanitizeHandle,
 } from './lib/friendsService';
+import { isMediaPlaceId } from './lib/tasteModel';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
 import { ForYouList } from './components/ForYouList';
@@ -298,7 +299,9 @@ export const App: React.FC = () => {
   };
   const [selectedCity, setSelectedCity] = useState<string | 'ALL'>('ALL');
   const [selectedCuisine, setSelectedCuisine] = useState<string | 'ALL'>('ALL');
-  const [sortByNearest, setSortByNearest] = useState<boolean>(false);
+  const [sortByNearestSetting, setSortByNearest] = useState<boolean>(false);
+  // Movies and shows have no location to sort by
+  const sortByNearest = sortByNearestSetting && groupCopy.hasLocation;
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState('');
 
@@ -752,6 +755,7 @@ export const App: React.FC = () => {
       categories: candidate.categories?.length ? candidate.categories : [primaryCategory],
       cuisines: candidate.cuisines || [],
       primaryTypeDisplay: candidate.primaryTypeDisplay,
+      media: candidate.media,
       recommendedBy: recommendedBy?.name,
       recommendedByUid: recommendedBy?.uid,
       createdAt: now,
@@ -793,7 +797,7 @@ export const App: React.FC = () => {
     const existingBookmark = bookmarks.find(
       (b) =>
         (spot.placeId && b.placeId === spot.placeId) ||
-        b.name.trim().toLowerCase() === spot.name.trim().toLowerCase()
+        (!isMediaPlaceId(spot.placeId) && b.name.trim().toLowerCase() === spot.name.trim().toLowerCase())
     );
     if (existingBookmark) {
       executeDeleteBookmark(existingBookmark.id);
@@ -815,7 +819,8 @@ export const App: React.FC = () => {
       categories: Array.from(new Set([fallbackCategory, ...(spot.categories || [])])),
       cuisines: spot.cuisines || [],
       primaryTypeDisplay: spot.primaryTypeDisplay,
-      source: 'source' in spot ? spot.source : 'google_places',
+      media: spot.media,
+      source: 'source' in spot ? spot.source : isMediaPlaceId(spot.placeId) ? 'tmdb' : 'google_places',
     };
     handleAddBookmark(candidate, { name: friendName, uid: friendUid });
   };
@@ -1083,6 +1088,7 @@ export const App: React.FC = () => {
       categories: bookmark.categories,
       cuisines: bookmark.cuisines,
       primaryTypeDisplay: bookmark.primaryTypeDisplay,
+      media: bookmark.media,
       initialRating: 8,
       elo: 1500,
       rankIndex: 0,
@@ -1099,7 +1105,7 @@ export const App: React.FC = () => {
     bookmarks.find(
       (b) =>
         (spot.placeId && b.placeId === spot.placeId) ||
-        b.name.trim().toLowerCase() === spot.name.trim().toLowerCase()
+        (!isMediaPlaceId(spot.placeId) && b.name.trim().toLowerCase() === spot.name.trim().toLowerCase())
     );
 
   const handleToggleForYouBookmark = (spot: ForYouSpot) => {
@@ -1120,7 +1126,8 @@ export const App: React.FC = () => {
       googleMapsUri: spot.googleMapsUri,
       categories: [spot.category],
       cuisines: spot.cuisines,
-      source: 'google_places',
+      media: spot.media,
+      source: isMediaPlaceId(spot.placeId) ? 'tmdb' : 'google_places',
     });
   };
 
@@ -1186,7 +1193,7 @@ export const App: React.FC = () => {
       bookmarks.find(
         (b) =>
           (placeId && b.placeId === placeId) ||
-          (name && b.name.toLowerCase() === name.toLowerCase())
+          (name && !isMediaPlaceId(placeId) && b.name.toLowerCase() === name.toLowerCase())
       );
     setRankingBookmark(null);
     if (match) {
@@ -1249,6 +1256,7 @@ export const App: React.FC = () => {
         categories: Array.from(new Set([selectedCategory, ...(candidate.categories || [])])),
         cuisines: candidate.cuisines,
         primaryTypeDisplay: candidate.primaryTypeDisplay,
+        media: candidate.media,
         initialRating,
         elo: ratingToBaseElo(initialRating),
         rankIndex: 0,
@@ -1336,6 +1344,7 @@ export const App: React.FC = () => {
       ),
       cuisines: existingObj?.cuisines?.length ? existingObj.cuisines : placement.cuisines,
       primaryTypeDisplay: placement.candidate.primaryTypeDisplay,
+      media: placement.candidate.media ?? existingObj?.media,
       initialRating: placement.initialRating,
       elo: finalCandidateElo,
       rankIndex: insertIndexInCategory,
@@ -1932,12 +1941,12 @@ export const App: React.FC = () => {
             </span>
           </button>
 
-          {/* Group Switcher: Eat · Explore · Travel. Its own full-width row on phones; inline (only the
+          {/* Group Switcher: Eat · Explore · Travel · Watch. Its own full-width row on phones; inline (only the
               active group named) from sm up */}
           <div
             role="tablist"
             aria-label="Group"
-            className="order-last w-full grid grid-cols-3 sm:order-none sm:w-auto sm:mr-auto sm:inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80"
+            className="order-last w-full grid grid-cols-4 sm:order-none sm:w-auto sm:mr-auto sm:inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80"
           >
             {ALL_GROUPS.map((group) => {
               const active = group === selectedGroup;
@@ -2258,41 +2267,43 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          {/* List <-> Map Toggle */}
-          <div className="inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80">
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('list');
-                trackEvent('switch_view_mode', { mode: 'list' });
-              }}
-              className={`px-2 sm:px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
-                viewMode === 'list'
-                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-              title="List view"
-            >
-              <List className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">List</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('map');
-                trackEvent('switch_view_mode', { mode: 'map' });
-              }}
-              className={`px-2 sm:px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
-                viewMode === 'map'
-                  ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
-                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-              title="Map view"
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Map</span>
-            </button>
-          </div>
+          {/* List <-> Map Toggle (places only) */}
+          {groupCopy.hasLocation && (
+            <div className="inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('list');
+                  trackEvent('switch_view_mode', { mode: 'list' });
+                }}
+                className={`px-2 sm:px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
+                  viewMode === 'list'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+                title="List view"
+              >
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">List</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('map');
+                  trackEvent('switch_view_mode', { mode: 'map' });
+                }}
+                className={`px-2 sm:px-2.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
+                  viewMode === 'map'
+                    ? 'bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+                title="Map view"
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Map</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Expandable Search Input */}
@@ -2367,7 +2378,7 @@ export const App: React.FC = () => {
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
               {/* Near Me / Sort by Nearest Pill */}
-              {viewMode === 'list' && (
+              {viewMode === 'list' && groupCopy.hasLocation && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2490,7 +2501,7 @@ export const App: React.FC = () => {
         {/* Main Content Area: List or Map */}
         {sharedListLoading ? (
           <div className="py-16 text-center text-xs text-zinc-400">Loading shared list...</div>
-        ) : viewMode === 'map' ? (
+        ) : viewMode === 'map' && groupCopy.hasLocation ? (
           <RestaurantMapView
             mode={activeTab === 'for_you' ? 'want_to_try' : activeTab}
             restaurants={filteredRestaurants}
@@ -2614,7 +2625,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
-        jelly – rank the restaurants, sights and places you've been ·{' '}
+        jelly – rank the restaurants, sights and places you've been, and what you've watched ·{' '}
         <a href="/about" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
           About
         </a>{' '}
