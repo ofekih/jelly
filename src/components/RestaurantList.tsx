@@ -29,7 +29,7 @@ import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { ScoreBadge } from './ScoreBadge';
 import { PosterThumb } from './PosterThumb';
-import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 
 interface SortableRestaurantRowProps {
   restaurant: RestaurantEntry;
@@ -383,7 +383,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
             </span>
           </div>
 
-          {restaurant.media && <PosterThumb src={posterUrl(restaurant.media)} className="w-8 h-12 -my-1" />}
+          {restaurant.media && <PosterThumb src={posterUrl(restaurant.media)} square={hasSquareCover(restaurant.placeId)} className="w-8 h-12 -my-1" />}
 
           <div className="min-w-0 flex-1">
             <div className="font-semibold text-[15px] sm:text-base text-zinc-900 dark:text-zinc-100 truncate leading-snug">

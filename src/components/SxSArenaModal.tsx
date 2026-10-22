@@ -15,7 +15,7 @@ import {
   undoLastSxSStep,
 } from '../lib/rankingEngine';
 import { PosterThumb } from './PosterThumb';
-import { posterUrl, spotPlaceLabel } from '../lib/media';
+import { hasSquareCover, posterUrl, spotPlaceLabel } from '../lib/media';
 import { trackEvent } from '../firebase';
 
 export interface PendingPlacement {
@@ -217,7 +217,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
             >
               <div className="flex items-start gap-3">
                 {pendingPlacement.candidate.media && (
-                  <PosterThumb src={posterUrl(pendingPlacement.candidate.media, 154)} className="w-12 h-[72px]" />
+                  <PosterThumb src={posterUrl(pendingPlacement.candidate.media, 154)} square={hasSquareCover(pendingPlacement.candidate.placeId)} className="w-12 h-[72px]" />
                 )}
                 <div className="space-y-1.5 min-w-0">
                   <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
@@ -247,7 +247,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
             >
               <div className="flex items-start gap-3">
                 {currentMatch.opponent.media && (
-                  <PosterThumb src={posterUrl(currentMatch.opponent.media, 154)} className="w-12 h-[72px]" />
+                  <PosterThumb src={posterUrl(currentMatch.opponent.media, 154)} square={hasSquareCover(currentMatch.opponent.placeId)} className="w-12 h-[72px]" />
                 )}
                 <div className="space-y-1.5 min-w-0">
                   <span className="inline-block text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">

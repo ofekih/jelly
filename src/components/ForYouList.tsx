@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bookmark, ExternalLink, LogIn, Sparkles } from 'lucide-react';
 import { CATEGORY_GROUP, CATEGORY_LABEL, SpotCategory } from '../types';
 import { GROUP_COPY, hasLocation, wantLabel } from '../lib/groups';
-import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { PosterThumb } from './PosterThumb';
 import type { ForYouSpot } from '../lib/predictions';
 import type { PredictionConfidence } from '../lib/tasteModel';
@@ -69,7 +69,7 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
         <ScoreBadge score={prediction.score} size="sm" predicted />
       </div>
 
-      {item.media && <PosterThumb src={posterUrl(item.media)} className="w-8 h-12 -my-1" />}
+      {item.media && <PosterThumb src={posterUrl(item.media)} square={hasSquareCover(item.placeId)} className="w-8 h-12 -my-1" />}
 
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm sm:text-[15px] truncate leading-snug">

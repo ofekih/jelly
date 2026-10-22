@@ -3,15 +3,19 @@ import { Film } from 'lucide-react';
 import type { SpotCategory } from '../types';
 
 /**
- * A title's poster or cover in a 2:3 frame (fitted, not cropped: board game boxes are square and
- * some covers are landscape photos), over a blurred copy that fills the rest of the frame, or a
- * film-strip placeholder when there's none or it fails to load
+ * A title's poster or cover in a 2:3 frame (or a square one as tall, for board games), fitted, not
+ * cropped, over a blurred copy that fills the rest of the frame, or a film-strip placeholder when
+ * there's none or it fails to load
  */
-export const PosterThumb: React.FC<{ src?: string; className?: string }> = ({ src, className = '' }) => {
+export const PosterThumb: React.FC<{ src?: string; square?: boolean; className?: string }> = ({
+  src,
+  square = false,
+  className = '',
+}) => {
   const [failed, setFailed] = useState(false);
   return (
     <div
-      className={`relative shrink-0 overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-800 ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center ${className}`}
+      className={`relative shrink-0 overflow-hidden rounded-md bg-zinc-100 dark:bg-zinc-800 ring-1 ring-black/5 dark:ring-white/10 flex items-center justify-center ${className} ${square ? 'w-auto! aspect-square' : ''}`}
     >
       {src && !failed ? (
         <>

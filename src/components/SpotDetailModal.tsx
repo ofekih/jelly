@@ -23,7 +23,7 @@ import { GROUP_COPY, wantLabel } from '../lib/groups';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
 import { PosterThumb } from './PosterThumb';
-import { gameFacts, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { gameFacts, hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 
 function formatRankedDate(ts: number): string {
   try {
@@ -173,7 +173,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
         <>
           <div className="px-5 pt-3 sm:pt-5 pb-4 flex items-start justify-between gap-3 touch-none select-none">
             {restaurant.media && (
-              <PosterThumb src={posterUrl(restaurant.media, 154)} className="w-14 h-[84px] shadow-sm" />
+              <PosterThumb src={posterUrl(restaurant.media, 154)} square={hasSquareCover(restaurant.placeId)} className="w-14 h-[84px] shadow-sm" />
             )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">

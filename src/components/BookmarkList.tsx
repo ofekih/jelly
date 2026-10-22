@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_GROUP, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { GROUP_COPY, hasLocation, wantLabel } from '../lib/groups';
-import { posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { PosterThumb } from './PosterThumb';
 import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
@@ -247,7 +247,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
         className="relative flex items-center gap-3 px-3.5 sm:px-4 py-3.5 bg-white dark:bg-zinc-900 hover:bg-zinc-50/90 dark:hover:bg-zinc-800/50 transition-colors touch-pan-y"
       >
         {item.media ? (
-          <PosterThumb src={posterUrl(item.media)} className="w-8 h-12 -my-1" />
+          <PosterThumb src={posterUrl(item.media)} square={hasSquareCover(item.placeId)} className="w-8 h-12 -my-1" />
         ) : (
           <div className="w-6 flex items-center justify-center shrink-0">
             <JellyBeanIcon size={18} />

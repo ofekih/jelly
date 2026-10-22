@@ -12,7 +12,7 @@ import {
   SpotCategory,
 } from '../types';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
-import { posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
+import { hasSquareCover, posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
 import { isMediaPlaceId } from '../lib/tasteModel';
 import { GROUP_COPY, searchPlaceholder, wantLabel } from '../lib/groups';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
@@ -424,7 +424,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                         key={item.placeId}
                         className="w-full py-2.5 px-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors flex items-center justify-between gap-2 group"
                       >
-                        {isTitles && <PosterThumb src={poster} className="w-9 h-[54px]" />}
+                        {isTitles && <PosterThumb src={poster} square={hasSquareCover(item.placeId)} className="w-9 h-[54px]" />}
                         <button
                           type="button"
                           onClick={() => handleSelectCandidate(item)}
@@ -541,6 +541,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                 {selectedCandidate.media?.poster && (
                   <PosterThumb
                     src={posterUrl(selectedCandidate.media, 185)}
+                    square={hasSquareCover(selectedCandidate.placeId)}
                     className="w-20 h-[120px] mx-auto mb-2 shadow-md"
                   />
                 )}

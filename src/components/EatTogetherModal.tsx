@@ -16,7 +16,7 @@ import {
 import { BlendSpotItem, computeGroupBlend } from '../lib/friendsService';
 import { GROUP_COPY } from '../lib/groups';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
-import { fitsPlayers, fitsTime, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
+import { fitsPlayers, fitsTime, hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './GameNightSelect';
 import { PosterThumb } from './PosterThumb';
 import { Sheet, SheetHeader } from './Sheet';
@@ -342,7 +342,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                         key={item.key}
                         className="px-3.5 py-3 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900"
                       >
-                        {item.media && <PosterThumb src={posterUrl(item.media)} className="w-9 h-[54px]" />}
+                        {item.media && <PosterThumb src={posterUrl(item.media)} square={hasSquareCover(item.placeId)} className="w-9 h-[54px]" />}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">
                             {item.name}

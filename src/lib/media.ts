@@ -9,6 +9,9 @@ import { isMediaPlaceId } from './tasteModel';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
+/** Board game boxes are mostly square (and some BGG images are landscape photos), so their frame is too */
+export const hasSquareCover = (placeId?: string): boolean => Boolean(placeId?.startsWith('bgg:'));
+
 /** A TMDB poster at `width`, or a book cover (stored as a full URL, one size only) */
 export function posterUrl(media: MediaInfo | undefined, width: 92 | 154 | 185 | 342 = 92): string | undefined {
   if (!media?.poster) return undefined;
