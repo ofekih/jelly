@@ -203,7 +203,7 @@ service cloud.firestore {
          (!('best' in data.media) || isValidRange(data.media.best)) &&
          (!('time' in data.media) || isValidRange(data.media.time)) &&
          (!('weight' in data.media) || (data.media.weight is number && data.media.weight >= 0 && data.media.weight <= 5)) &&
-         (!('year' in data.media) || (data.media.year is int && data.media.year >= 1800 && data.media.year <= 3000)) &&
+         (!('year' in data.media) || (data.media.year is int && data.media.year >= 1 && data.media.year <= 3000)) &&
          (!('poster' in data.media) || (data.media.poster is string && data.media.poster.size() <= 200)) &&
          (!('creator' in data.media) || (data.media.creator is string && data.media.creator.size() <= 300)));
     }

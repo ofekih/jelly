@@ -186,6 +186,21 @@ describe('account lists', () => {
       );
     });
   });
+
+  it('saves titles published long ago (BGG dates Chess to 1475)', async () => {
+    const phone = createDevice('alice');
+    const chess = {
+      ...spot(1),
+      id: 'bgg:171__board_games',
+      placeId: 'bgg:171',
+      name: 'Chess',
+      category: 'board_games',
+      categories: ['board_games'],
+      media: { year: 1475, players: [2, 2], best: [2, 2], weight: 3.6 },
+    } as RestaurantEntry;
+    await setDoc(doc(phone.db, 'users/alice/restaurants/bgg:171__board_games'), chess);
+    expect(await cloudIds(phone, 'restaurants')).toEqual(['bgg:171__board_games']);
+  });
 });
 
 describe('follows', () => {
