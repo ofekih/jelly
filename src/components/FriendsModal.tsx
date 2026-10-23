@@ -472,25 +472,33 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                       myRestaurants.length > 0 && listData?.restaurants?.length
                         ? computeUserTasteSimilarity(myRestaurants, listData.restaurants)
                         : null;
+                    const viewList = () => {
+                      onViewFriendList(friend.uid);
+                      onClose();
+                    };
 
                     return (
                       <div
                         key={friend.uid}
                         className="px-3.5 py-3 flex items-center justify-between gap-2.5 bg-white dark:bg-zinc-900"
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onViewFriendList(friend.uid);
-                            onClose();
-                          }}
-                          className="flex items-center gap-2.5 min-w-0 flex-1 text-left group"
-                        >
-                          <div className="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0">
+                        {/* The follow counts are buttons of their own, so only the avatar and name open the list */}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1 text-left group">
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            aria-hidden="true"
+                            onClick={viewList}
+                            className="w-8 h-8 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-bold text-xs flex items-center justify-center shrink-0"
+                          >
                             {friend.name.slice(0, 1).toUpperCase()}
-                          </div>
+                          </button>
                           <div className="min-w-0 flex-1">
-                            <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={viewList}
+                              className="w-full text-left font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors flex items-center gap-1.5"
+                            >
                               <span className="truncate">
                                 {friend.name}
                                 {friend.handle && (
@@ -507,7 +515,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                                   {sim.tasteMatchPct}% match
                                 </span>
                               )}
-                            </div>
+                            </button>
                             <div className="text-[11px] text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 flex-wrap">
                               <span>{rankedCount} ranked</span>
                               <span>·</span>
@@ -520,7 +528,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                               />
                             </div>
                           </div>
-                        </button>
+                        </div>
 
                         <div className="flex items-center gap-1 shrink-0">
                           <button
