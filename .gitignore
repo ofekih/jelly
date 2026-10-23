@@ -8,3 +8,5 @@ firestore-debug.log
 
 .claude/settings.local.json
 *.tsbuildinfo
+test-results/
+playwright-report/

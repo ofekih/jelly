@@ -1,0 +1,9 @@
+{
+  // Node-side tooling outside src: emulator seeding, Playwright tests and config
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["scripts", "e2e", "playwright.config.ts"]
+}

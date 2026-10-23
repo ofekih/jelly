@@ -54,7 +54,7 @@ export default defineConfig({
     jsx: 'automatic',
   },
   test: {
-    // Emulator tests run via `npm run test:emulator`; functions/ and worktrees have their own
-    exclude: [...configDefaults.exclude, '**/*.emu.test.ts', 'functions/**', '.claude/**'],
+    // Emulator tests run via `npm run test:emulator`, click-throughs via `npm run test:e2e`; functions/ and worktrees have their own
+    exclude: [...configDefaults.exclude, '**/*.emu.test.ts', 'functions/**', '.claude/**', 'e2e/**'],
   },
 });

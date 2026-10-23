@@ -6,8 +6,9 @@ import {
   logEvent,
   setUserId,
 } from 'firebase/analytics';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { connectAuthEmulator, getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
+  connectFirestoreEmulator,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
@@ -25,7 +26,14 @@ const firebaseConfig = {
 
 export const DEFAULT_PLACES_API_KEY = 'AIzaSyAi7dipjBO3RrtEaFc9tBHmOjG0v4RxQqY';
 
-const app = initializeApp(firebaseConfig);
+/**
+ * `npm run dev:emu`: the app talks to local Auth + Firestore emulators (real rules) holding seeded
+ * test accounts, under a `demo-` project that only exists locally. Nothing reaches production.
+ */
+export const IS_EMULATOR = import.meta.env.MODE === 'emulator';
+export const EMULATOR_PROJECT_ID = 'demo-jelly-dev';
+
+const app = initializeApp(IS_EMULATOR ? { ...firebaseConfig, projectId: EMULATOR_PROJECT_ID } : firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -35,9 +43,15 @@ export const db = initializeFirestore(app, {
   }),
 });
 
+if (IS_EMULATOR) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  void import('./dev/emulator').then((m) => m.startEmulatorSession(auth));
+}
+
 let analyticsInstance: Analytics | null = null;
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && !IS_EMULATOR) {
   isSupported()
     .then((supported) => {
       if (supported) {

@@ -12,6 +12,8 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 
 ## Commands
 - `npm run dev` – local dev server
+- `npm run dev:emu` – the app on :5180 against local Auth + Firestore emulators (real rules, `demo-jelly-dev`), seeded with a test account, two friends and their lists (`scripts/emulator/seed.ts`) and signed in automatically. **Use this, not `npm run dev`, for any flow that saves** (ranking, side-by-side, drag, delete, settings): `npm run dev` is signed in to real accounts. Reseed a running one with `npm run seed:emu`
+- `npm run test:e2e` – Playwright click-throughs at phone size (`e2e/`) against `dev:emu`, reseeded before each test; also run in CI. `npm run typecheck:tools` covers `scripts/`, `e2e/`
 - `npm test` – Vitest (`src/**/*.test.ts`)
 - `npm run test:emulator` – sync tests (`src/**/*.emu.test.ts`) against the Firestore emulator with the real `firestore.rules`; run after touching `src/lib/sync/` or the rules. Functions have their own: `cd functions && npm run test:emulator`
 - `npm run build` – `tsc -b && vite build` (must pass with zero TS errors)
@@ -50,6 +52,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/components/RestaurantList.tsx` | Ranked list, drag-to-rerank, swipe actions |
 | `src/components/RestaurantMapView.tsx` | Google Map with custom score pins (light/dark styles) |
 | `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx`, `SettingsModal.tsx` | Feature modals; `Toast.tsx` (`useToast`) is the one-at-a-time toast |
+| `src/dev/emulator.ts`, `scripts/emulator/seed.ts`, `e2e/` | Emulator mode (`IS_EMULATOR` in `firebase.ts`, compiled out of production): test-user sign-in + "Emulator" badge; the seed data; Playwright flows |
 | `firestore.rules` | Security rules with per-field validators (`isValidUserDoc`, `isValidSharedList`, …) |
 | `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (original artwork), `favicon.png` (crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`) |
 
