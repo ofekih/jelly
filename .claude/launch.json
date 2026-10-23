@@ -28,6 +28,58 @@
       ],
       "port": 5174,
       "autoPort": false
+    },
+    {
+      "name": "jelly-dev-3",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5175",
+        "--strictPort"
+      ],
+      "port": 5175,
+      "autoPort": false
+    },
+    {
+      "name": "jelly-dev-4",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5176",
+        "--strictPort"
+      ],
+      "port": 5176,
+      "autoPort": false
+    },
+    {
+      "name": "jelly-dev-5",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5177",
+        "--strictPort"
+      ],
+      "port": 5177,
+      "autoPort": false
+    },
+    {
+      "name": "jelly-emu",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:emu"
+      ],
+      "port": 5180,
+      "autoPort": false
     }
   ]
 }
