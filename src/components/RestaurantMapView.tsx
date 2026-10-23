@@ -361,6 +361,8 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
       overlaysRef.current = [];
       mapRef.current = null;
     };
+    // Creates the map once; later theme and position changes are applied by the effects below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Update dark/light map style dynamically

@@ -6,11 +6,9 @@ import {
   User,
 } from 'firebase/auth';
 import {
-  collection,
   deleteDoc,
   doc,
   getDoc,
-  onSnapshot,
   setDoc,
   WriteBatch,
 } from 'firebase/firestore';
@@ -19,11 +17,8 @@ import {
   ArrowUpDown,
   Bookmark,
   Check,
-  ChevronRight,
-  Download,
   List,
   LogIn,
-  LogOut,
   Map as MapIcon,
   MapPin,
   Moon,
@@ -43,7 +38,6 @@ import {
   ALL_CATEGORIES,
   ALL_GROUPS,
   BookmarkEntry,
-  MediaInfo,
   CATEGORY_EMOJI,
   CATEGORY_GROUP,
   CATEGORY_LABEL,
@@ -66,12 +60,10 @@ import {
   onWriteError,
   stripUndefined,
 } from './lib/firestoreDoc';
-import { getItemDistanceMiles, UserCoordinates } from './lib/geo';
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
-import { CURRENT_VERSION, displayVersion, hasUnseenRelease } from './lib/changelog';
+import { CURRENT_VERSION, hasUnseenRelease } from './lib/changelog';
 import { GROUP_COPY, wantLabel } from './lib/groups';
-import { ratingToBaseElo, spectrumGradient, spectrumRatingToPct } from './lib/rankingEngine';
-import { RATING_TIERS } from './lib/ratingTiers';
+import { ratingToBaseElo } from './lib/rankingEngine';
 import {
   buildEntryId,
   getCategoryList,
@@ -98,7 +90,7 @@ import {
   sanitizeHandle,
 } from './lib/friendsService';
 import { isMediaPlaceId } from './lib/tasteModel';
-import { fitsPlayers, fitsTime } from './lib/media';
+import { isFilterActive, matchesSpotFilters, sortByDistance, SpotFilters } from './lib/spotFilters';
 import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './components/GameNightSelect';
 import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
@@ -114,9 +106,11 @@ import { RestaurantMapView } from './components/RestaurantMapView';
 import { ShareModal } from './components/ShareModal';
 import { SpotDetailModal } from './components/SpotDetailModal';
 import { WhatsNewModal } from './components/WhatsNewModal';
+import { SettingsModal } from './components/SettingsModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
-import { useBodyScrollLock } from './lib/useBodyScrollLock';
+import { Toast, useToast } from './components/Toast';
+import { useUserLocation } from './lib/useUserLocation';
 import { subscribeAccountLists } from './lib/sync/accountLists';
 import { reconcileFollowEdges, saveFollowChange } from './lib/sync/follows';
 import { mergeCloudFriends, subscribeUserDoc } from './lib/sync/userDoc';
@@ -130,9 +124,11 @@ import {
   LOCAL_SEEN_FOLLOWERS_KEY,
   LOCAL_STORAGE_KEY,
   readCacheOwner,
+  readStoredArray,
+  writeStoredArray,
 } from './lib/sync/localCache';
 import {
-  fetchProfiles,
+  parseSharedListDoc,
   placeStatKey,
   searchProfiles,
 } from './lib/socialService';
@@ -141,6 +137,7 @@ import { usePredictionMap, usePredictions, watchPredictions } from './lib/usePre
 import { buildForYouSpots, ForYouSpot } from './lib/predictions';
 import { FollowCounts } from './components/FollowCounts';
 import { PublicListTrim } from './lib/publicList';
+import { useFollowers, useFriendListSubscriptions } from './lib/useSocialFeeds';
 
 const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
   bookmarkNotes: 'Your list is too big to share in full – friends won’t see your bookmark notes',
@@ -149,33 +146,17 @@ const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
   spots: 'Your list is too big to share in full – friends only see your top spots',
 };
 
-const SESSION_COORDS_KEY = 'jelly_user_coords_v1';
+const NO_BOOKMARKS: BookmarkEntry[] = [];
 
-function parseSharedListDoc(id: string, data: any): SharedListPayload {
-  const loadedRestaurants: RestaurantEntry[] = loadRestaurants(
-    Array.isArray(data.restaurants) ? data.restaurants : []
-  );
-  const loadedBookmarks: BookmarkEntry[] = Array.isArray(data.bookmarks)
-    ? loadBookmarks(data.bookmarks)
-    : [];
-  const followingIds: string[] | undefined = Array.isArray(data.followingIds)
-    ? data.followingIds.filter((uid: any) => typeof uid === 'string')
-    : undefined;
-  return {
-    id,
-    ownerUid: data.ownerUid || id,
-    ownerName: data.ownerName || 'Friend',
-    displayName: data.displayName || data.ownerName || 'Friend',
-    handle: data.handle || undefined,
-    photoURL: data.photoURL || undefined,
-    title: data.title,
-    restaurants: loadedRestaurants,
-    bookmarks: loadedBookmarks,
-    followingIds,
-    createdAt: data.createdAt || Date.now(),
-    updatedAt: data.updatedAt || Date.now(),
-  };
+/** A local copy that fails to load (corrupt or hand-edited) starts the list empty instead of crashing. */
+function loadStored<T>(load: () => T[]): T[] {
+  try {
+    return load();
+  } catch {
+    return [];
+  }
 }
+
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -192,63 +173,29 @@ export const App: React.FC = () => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
-  const [restaurants, setRestaurants] = useState<RestaurantEntry[]>(() => {
-    try {
-      const raw =
-        localStorage.getItem(LOCAL_STORAGE_KEY) ||
-        localStorage.getItem(LEGACY_LOCAL_STORAGE_KEY);
-      if (raw) {
-        return loadRestaurants(JSON.parse(raw) as any[]);
-      }
-    } catch {
-      // Ignore
-    }
-    return [];
-  });
+  const [restaurants, setRestaurants] = useState<RestaurantEntry[]>(() =>
+    loadStored(() =>
+      loadRestaurants(readStoredArray(LOCAL_STORAGE_KEY) ?? readStoredArray(LEGACY_LOCAL_STORAGE_KEY) ?? [])
+    )
+  );
   // Latest list for diffing writes; callbacks like toast Undo would otherwise see a stale closure
   const restaurantsRef = useRef(restaurants);
   restaurantsRef.current = restaurants;
 
-  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_BOOKMARKS_KEY);
-      if (raw) {
-        const parsed = loadBookmarks(JSON.parse(raw) as any[]);
-        parsed.sort((a, b) => b.createdAt - a.createdAt);
-        return parsed;
-      }
-    } catch {
-      // Ignore
-    }
-    return [];
-  });
+  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() =>
+    loadStored(() =>
+      loadBookmarks(readStoredArray(LOCAL_BOOKMARKS_KEY) ?? []).sort((a, b) => b.createdAt - a.createdAt)
+    )
+  );
 
   // Friends State (localStorage + Firestore sync)
-  const [friends, setFriends] = useState<FriendProfile[]>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_FRIENDS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // Ignore
-    }
-    return [];
-  });
+  const [friends, setFriends] = useState<FriendProfile[]>(
+    () => (readStoredArray(LOCAL_FRIENDS_KEY) as FriendProfile[] | null) ?? []
+  );
 
-  const [seenFollowerIds, setSeenFollowerIds] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem(LOCAL_SEEN_FOLLOWERS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return new Set(parsed.filter((x) => typeof x === 'string'));
-      }
-    } catch {
-      // Ignore
-    }
-    return new Set();
-  });
+  const [seenFollowerIds, setSeenFollowerIds] = useState<Set<string>>(
+    () => new Set((readStoredArray(LOCAL_SEEN_FOLLOWERS_KEY) ?? []).filter((x): x is string => typeof x === 'string'))
+  );
   const notifiedFollowersRef = useRef<Set<string>>(new Set());
 
   const [userHandle, setUserHandle] = useState<string>(() => readLocalSettings().handle || '');
@@ -305,31 +252,11 @@ export const App: React.FC = () => {
   // Board games only: who's playing and how long you have
   const [selectedPlayers, setSelectedPlayers] = useState<number | 'ALL'>('ALL');
   const [maxMinutes, setMaxMinutes] = useState<number | 'ALL'>('ALL');
-  const fitsGameNight = (media?: MediaInfo) =>
-    selectedCategory !== 'board_games' ||
-    ((selectedPlayers === 'ALL' || fitsPlayers(media, selectedPlayers)) &&
-      (maxMinutes === 'ALL' || fitsTime(media, maxMinutes)));
   const [sortByNearestSetting, setSortByNearest] = useState<boolean>(false);
   // Movies and shows have no location to sort by
   const sortByNearest = sortByNearestSetting && groupCopy.hasLocation;
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState('');
-
-  // User Geolocation State
-  const [userLocation, setUserLocation] = useState<UserCoordinates | null>(() => {
-    try {
-      const cached = sessionStorage.getItem(SESSION_COORDS_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
-          return parsed;
-        }
-      }
-    } catch {
-      // Ignore
-    }
-    return null;
-  });
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -345,7 +272,6 @@ export const App: React.FC = () => {
   const [isEatTogetherOpen, setIsEatTogetherOpen] = useState(false);
   const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  useBodyScrollLock(isSettingsOpen);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
   // Dot on Settings after a new major/minor release; brand-new visitors start caught up.
   const [hasUnseenChangelog, setHasUnseenChangelog] = useState(() => {
@@ -368,28 +294,7 @@ export const App: React.FC = () => {
     title: string;
     users: SharedListPayload[];
   }>({ isOpen: false, title: '', users: [] });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [toastAction, setToastAction] = useState<{ label: string; onClick: () => void } | null>(
-    null
-  );
-
-  const showToast = (
-    msg: string,
-    action?: { label: string; onClick: () => void },
-    durationMs = 3200
-  ) => {
-    setToastMessage(msg);
-    setToastAction(action || null);
-    setTimeout(() => {
-      setToastMessage((prev) => {
-        if (prev === msg) {
-          setToastAction(null);
-          return null;
-        }
-        return prev;
-      });
-    }, durationMs);
-  };
+  const { toast, showToast } = useToast();
 
   // A rejected save (usually an outdated app hitting newer rules) would otherwise only reach the
   // console and quietly undo itself on the next load
@@ -405,48 +310,15 @@ export const App: React.FC = () => {
           onClick: () => window.location.reload(),
         }, 8000);
       }),
-    []
+    [showToast]
   );
 
-  const requestUserLocation = (opts?: { enableSortByNearest?: boolean; silent?: boolean }) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      if (!opts?.silent) showToast('Location access is not supported by your browser');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const coords: UserCoordinates = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        setUserLocation(coords);
-        try {
-          sessionStorage.setItem(SESSION_COORDS_KEY, JSON.stringify(coords));
-        } catch {
-          // Ignore
-        }
-        if (opts?.enableSortByNearest) {
-          setSortByNearest(true);
-        }
-      },
-      () => {
-        if (!opts?.silent) {
-          showToast('Enable location permissions in your browser to sort by nearest');
-        }
-      },
-      {
-        enableHighAccuracy: false,
-        timeout: 8000,
-        maximumAge: 300000,
-      }
-    );
-  };
+  const { userLocation, requestUserLocation } = useUserLocation(showToast);
 
   // Automatically request location access on initial load
   useEffect(() => {
     requestUserLocation({ silent: true });
-  }, []);
+  }, [requestUserLocation]);
 
   // Check URL for shared list parameter (?list=<shareId>)
   useEffect(() => {
@@ -484,7 +356,7 @@ export const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showToast]);
 
   const exitSharedListView = () => {
     const url = new URL(window.location.href);
@@ -558,7 +430,7 @@ export const App: React.FC = () => {
           const seen = cloud.seenFollowerIds;
           setSeenFollowerIds((prev) => {
             const next = new Set([...prev, ...seen]);
-            localStorage.setItem(LOCAL_SEEN_FOLLOWERS_KEY, JSON.stringify(Array.from(next)));
+            writeStoredArray(LOCAL_SEEN_FOLLOWERS_KEY, Array.from(next));
             return next;
           });
         }
@@ -566,7 +438,7 @@ export const App: React.FC = () => {
           const cloudFriends = cloud.friends;
           setFriends((prev) => {
             const next = mergeCloudFriends(prev, cloudFriends, keepLocalFriends);
-            localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(next));
+            writeStoredArray(LOCAL_FRIENDS_KEY, next);
             return next;
           });
         }
@@ -587,7 +459,7 @@ export const App: React.FC = () => {
       }
       if (!changed) return prev;
       const arr = Array.from(next);
-      localStorage.setItem(LOCAL_SEEN_FOLLOWERS_KEY, JSON.stringify(arr));
+      writeStoredArray(LOCAL_SEEN_FOLLOWERS_KEY, arr);
       if (user) {
         setDoc(
           doc(db, 'users', user.uid),
@@ -599,53 +471,8 @@ export const App: React.FC = () => {
     });
   };
 
-  // Live subscription to each followed friend's list (one doc each, only re-sent when it changes)
-  const friendDocKey = friends
-    .map((f) => `${f.uid}=${f.shareId || f.uid}`)
-    .sort()
-    .join('|');
-  useEffect(() => {
-    if (!friendDocKey) return;
-    const unsubs = friendDocKey.split('|').map((pair) => {
-      const [friendUid, shareDocId] = pair.split('=');
-      return onSnapshot(
-        doc(db, 'sharedLists', shareDocId),
-        (snap) => {
-          if (!snap.exists()) return;
-          const parsed = parseSharedListDoc(snap.id, snap.data());
-          setFriendListsMap((prev) => ({ ...prev, [friendUid]: parsed }));
-        },
-        () => {}
-      );
-    });
-    return () => unsubs.forEach((unsub) => unsub());
-  }, [friendDocKey]);
-
-  // People following me: edges in profiles/{me}/followers, shown with their public profiles
-  const [followers, setFollowers] = useState<SharedListPayload[]>([]);
-  useEffect(() => {
-    if (!user) {
-      setFollowers([]);
-      return;
-    }
-    let cancelled = false;
-    const unsub = onSnapshot(
-      collection(db, 'profiles', user.uid, 'followers'),
-      (snapshot) => {
-        const uids = snapshot.docs.map((d) => d.id);
-        fetchProfiles(db, uids)
-          .then((profiles) => {
-            if (!cancelled) setFollowers(profiles);
-          })
-          .catch(() => {});
-      },
-      () => {}
-    );
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, [user]);
+  useFriendListSubscriptions(friends, setFriendListsMap);
+  const followers = useFollowers(user?.uid);
 
   // Follows made before follower edges existed (or on an older app version) get their edge once
   useEffect(() => {
@@ -709,6 +536,8 @@ export const App: React.FC = () => {
     }, 900);
 
     return () => clearTimeout(timer);
+    // Republish only when the published data changes, not on every render's new function
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, restaurants, bookmarks, userHandle, friends]);
 
   // `ordered` may contain every category; each category list is re-scored independently
@@ -719,7 +548,7 @@ export const App: React.FC = () => {
     const deleted = deletedId ? restaurantsRef.current.find((r) => r.id === deletedId) : undefined;
     restaurantsRef.current = recomputed;
     setRestaurants(recomputed);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(recomputed));
+    writeStoredArray(LOCAL_STORAGE_KEY, recomputed);
 
     if (user) {
       try {
@@ -777,7 +606,7 @@ export const App: React.FC = () => {
       ...bookmarks.filter((b) => b.id !== bookmarkId && b.placeId !== candidate.placeId),
     ];
     setBookmarks(nextBookmarks);
-    localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(nextBookmarks));
+    writeStoredArray(LOCAL_BOOKMARKS_KEY, nextBookmarks);
 
     if (user) {
       setDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId), stripUndefined(newBookmark)).catch(
@@ -859,7 +688,7 @@ export const App: React.FC = () => {
     };
     const nextFriends = [newFriend, ...friends.filter((f) => f.uid !== friendUid)];
     setFriends(nextFriends);
-    localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(nextFriends));
+    writeStoredArray(LOCAL_FRIENDS_KEY, nextFriends);
     // A profile-only result has no spots yet; the friend's list subscription fills it in
     if (!listPayload.profileOnly) {
       setFriendListsMap((prev) => ({
@@ -898,7 +727,7 @@ export const App: React.FC = () => {
     const removed = friends.find((f) => f.uid === friendUid);
     const nextFriends = friends.filter((f) => f.uid !== friendUid);
     setFriends(nextFriends);
-    localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(nextFriends));
+    writeStoredArray(LOCAL_FRIENDS_KEY, nextFriends);
 
     commitFollowChange(nextFriends, friendUid, false, 'unfollow friend');
 
@@ -910,7 +739,7 @@ export const App: React.FC = () => {
           label: 'Undo',
           onClick: () => {
             setFriends(prevFriends);
-            localStorage.setItem(LOCAL_FRIENDS_KEY, JSON.stringify(prevFriends));
+            writeStoredArray(LOCAL_FRIENDS_KEY, prevFriends);
             commitFollowChange(prevFriends, friendUid, true, 'undo unfollow');
           },
         },
@@ -1045,7 +874,7 @@ export const App: React.FC = () => {
     const target = bookmarks.find((b) => b.id === bookmarkId);
     const nextBookmarks = bookmarks.filter((b) => b.id !== bookmarkId);
     setBookmarks(nextBookmarks);
-    localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(nextBookmarks));
+    writeStoredArray(LOCAL_BOOKMARKS_KEY, nextBookmarks);
 
     if (user) {
       deleteDoc(doc(db, 'users', user.uid, 'bookmarks', bookmarkId)).catch(logWriteError('delete bookmark'));
@@ -1058,7 +887,7 @@ export const App: React.FC = () => {
           label: 'Undo',
           onClick: () => {
             setBookmarks(prevBookmarks);
-            localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(prevBookmarks));
+            writeStoredArray(LOCAL_BOOKMARKS_KEY, prevBookmarks);
             if (user) {
               setDoc(doc(db, 'users', user.uid, 'bookmarks', target.id), stripUndefined(target)).catch(
                 logWriteError('undo delete bookmark')
@@ -1209,7 +1038,7 @@ export const App: React.FC = () => {
     if (match) {
       const next = bookmarks.filter((b) => b.id !== match.id);
       setBookmarks(next);
-      localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(next));
+      writeStoredArray(LOCAL_BOOKMARKS_KEY, next);
       if (user) {
         deleteDoc(doc(db, 'users', user.uid, 'bookmarks', match.id)).catch(logWriteError('remove ranked bookmark'));
       }
@@ -1514,7 +1343,7 @@ export const App: React.FC = () => {
 
   const isReadOnly = Boolean(sharedList);
   const activeRestaurants = sharedList ? sharedList.restaurants : restaurants;
-  const activeBookmarks = sharedList ? sharedList.bookmarks || [] : bookmarks;
+  const activeBookmarks = sharedList ? sharedList.bookmarks ?? NO_BOOKMARKS : bookmarks;
 
   const myBookmarkedPlaceIds = useMemo(() => {
     const set = new Set<string>();
@@ -1594,7 +1423,9 @@ export const App: React.FC = () => {
         break;
       }
     }
-  }, [user, followers, newFollowerIds, friends]);
+    // The toast's handlers run later with the state of that render; they don't retrigger it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, followers, newFollowerIds, friends, showToast]);
 
   const isViewingSharedOwnerFollowed = useMemo(() => {
     if (!sharedList) return false;
@@ -1716,106 +1547,38 @@ export const App: React.FC = () => {
     !orderCheckSnoozed.has(selectedCategory) &&
     (orderConflicts[0]?.margin ?? 0) >= PROMPT_MARGIN;
 
+  const filters = useMemo<SpotFilters>(
+    () => ({
+      category: selectedCategory,
+      city: selectedCity,
+      cuisine: selectedCuisine,
+      players: selectedPlayers,
+      maxMinutes,
+      query: listSearchQuery,
+    }),
+    [selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, listSearchQuery]
+  );
+
   const filteredRestaurants = useMemo(() => {
-    const base = getCategoryList(activeRestaurants, selectedCategory).filter((r) => {
-      if (selectedCity !== 'ALL' && r.city !== selectedCity) return false;
-      if (selectedCuisine !== 'ALL' && !r.cuisines.includes(selectedCuisine)) return false;
-      if (!fitsGameNight(r.media)) return false;
-      if (listSearchQuery.trim()) {
-        const q = listSearchQuery.toLowerCase();
-        const hay = `${r.name} ${r.formattedAddress} ${r.city || ''} ${r.cuisines.join(' ')}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-
-    if (sortByNearest && userLocation) {
-      return [...base].sort((a, b) => {
-        const da = getItemDistanceMiles(a, userLocation);
-        const db = getItemDistanceMiles(b, userLocation);
-        if (da === null && db === null) return a.rankIndex - b.rankIndex;
-        if (da === null) return 1;
-        if (db === null) return -1;
-        return da - db;
-      });
-    }
-
-    return base;
-  }, [
-    activeRestaurants,
-    selectedCity,
-    selectedCategory,
-    selectedCuisine,
-    selectedPlayers,
-    maxMinutes,
-    listSearchQuery,
-    sortByNearest,
-    userLocation,
-  ]);
+    const base = getCategoryList(activeRestaurants, selectedCategory).filter((r) =>
+      matchesSpotFilters(r, filters)
+    );
+    return sortByNearest && userLocation
+      ? sortByDistance(base, userLocation, (a, b) => a.rankIndex - b.rankIndex)
+      : base;
+  }, [activeRestaurants, selectedCategory, filters, sortByNearest, userLocation]);
 
   const filteredBookmarks = useMemo(() => {
-    const base = activeBookmarks.filter((b) => {
-      if (selectedCity !== 'ALL' && b.city !== selectedCity) return false;
-      if (b.category !== selectedCategory) return false;
-      if (selectedCuisine !== 'ALL' && !b.cuisines.includes(selectedCuisine)) return false;
-      if (!fitsGameNight(b.media)) return false;
-      if (listSearchQuery.trim()) {
-        const q = listSearchQuery.toLowerCase();
-        const hay = `${b.name} ${b.formattedAddress} ${b.city || ''} ${b.cuisines.join(' ')}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-
-    if (userLocation) {
-      return [...base].sort((a, b) => {
-        const da = getItemDistanceMiles(a, userLocation);
-        const db = getItemDistanceMiles(b, userLocation);
-        if (da === null && db === null) return b.createdAt - a.createdAt;
-        if (da === null) return 1;
-        if (db === null) return -1;
-        return da - db;
-      });
-    }
-
-    return base;
-  }, [
-    activeBookmarks,
-    selectedCity,
-    selectedCategory,
-    selectedCuisine,
-    selectedPlayers,
-    maxMinutes,
-    listSearchQuery,
-    userLocation,
-  ]);
+    const base = activeBookmarks.filter((b) => matchesSpotFilters(b, filters));
+    return userLocation ? sortByDistance(base, userLocation, (a, b) => b.createdAt - a.createdAt) : base;
+  }, [activeBookmarks, filters, userLocation]);
 
   const filteredForYou = useMemo(() => {
-    const q = listSearchQuery.trim().toLowerCase();
-    const base = groupForYou.filter((s) => {
-      if (s.category !== selectedCategory) return false;
-      if (selectedCity !== 'ALL' && s.city !== selectedCity) return false;
-      if (selectedCuisine !== 'ALL' && !s.cuisines.includes(selectedCuisine)) return false;
-      if (!fitsGameNight(s.media)) return false;
-      if (q && !`${s.name} ${s.formattedAddress} ${s.cuisines.join(' ')}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-    if (!sortByNearest || !userLocation) return base;
-    return [...base].sort((a, b) => {
-      const da = getItemDistanceMiles(a, userLocation);
-      const db = getItemDistanceMiles(b, userLocation);
-      if (da === null && db === null) return 0;
-      if (da === null) return 1;
-      if (db === null) return -1;
-      return da - db;
-    });
-  }, [groupForYou, selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, listSearchQuery, sortByNearest, userLocation]);
+    const base = groupForYou.filter((s) => matchesSpotFilters(s, filters));
+    return sortByNearest && userLocation ? sortByDistance(base, userLocation) : base;
+  }, [groupForYou, filters, sortByNearest, userLocation]);
 
-  const isFiltered =
-    selectedCity !== 'ALL' ||
-    selectedCuisine !== 'ALL' ||
-    (selectedCategory === 'board_games' && (selectedPlayers !== 'ALL' || maxMinutes !== 'ALL')) ||
-    listSearchQuery.trim().length > 0;
+  const isFiltered = isFilterActive(filters);
 
   const saveSettings = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2401,7 +2164,7 @@ export const App: React.FC = () => {
                   type="button"
                   onClick={() => {
                     if (!userLocation) {
-                      requestUserLocation({ enableSortByNearest: true });
+                      requestUserLocation({ onDone: (located) => located && setSortByNearest(true) });
                       return;
                     }
                     if (activeTab !== 'want_to_try') {
@@ -2554,7 +2317,7 @@ export const App: React.FC = () => {
             userLocation={userLocation}
             selectedCity={selectedCity}
             worldScale={selectedGroup === 'travel'}
-            onRequestLocation={() => requestUserLocation({ silent: false })}
+            onRequestLocation={() => requestUserLocation()}
             onSelectSpot={(spot) => {
               trackEvent('view_spot_detail', {
                 restaurant_name: spot.name,
@@ -2868,245 +2631,37 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Minimal Settings Modal */}
-      {isSettingsOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-jelly-backdrop"
-          onClick={() => setIsSettingsOpen(false)}
-        >
-          <div
-            className="w-full max-w-sm bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden animate-jelly-dialog"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 pt-4 pb-3 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
-              <h2 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">Settings</h2>
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(false)}
-                className="p-1 rounded-full text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={saveSettings} className="p-5 space-y-4">
-              {/* Location Bias Card */}
-              <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-800 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                      <Navigation className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                        <span>Search Nearby First</span>
-                        {useCurrentLocation && userLocation && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md text-[9px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            GPS
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                        {useCurrentLocation
-                          ? userLocation
-                            ? 'Using your device location'
-                            : 'Will use device location when allowed'
-                          : 'Off · searching by city name only'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!useCurrentLocation) {
-                        if (typeof navigator === 'undefined' || !navigator.geolocation) {
-                          showToast('Location is not supported by your browser');
-                          return;
-                        }
-                        navigator.geolocation.getCurrentPosition(
-                          (pos) => {
-                            const coords: UserCoordinates = {
-                              lat: pos.coords.latitude,
-                              lng: pos.coords.longitude,
-                            };
-                            setUserLocation(coords);
-                            setUseCurrentLocation(true);
-                            try {
-                              sessionStorage.setItem(SESSION_COORDS_KEY, JSON.stringify(coords));
-                            } catch {
-                              // Ignore
-                            }
-                          },
-                          () => {
-                            showToast('Enable location permissions in your browser to use current location');
-                            setUseCurrentLocation(true);
-                          }
-                        );
-                      } else {
-                        setUseCurrentLocation(false);
-                      }
-                    }}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      useCurrentLocation ? 'bg-emerald-600' : 'bg-zinc-200 dark:bg-zinc-700'
-                    }`}
-                    role="switch"
-                    aria-checked={useCurrentLocation}
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                        useCurrentLocation ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="pt-1 space-y-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                    {useCurrentLocation ? 'Fallback Search City' : 'Default Search City'}
-                  </label>
-                  <div className="relative flex items-center">
-                    <MapPin className="w-3.5 h-3.5 text-zinc-400 absolute left-3 pointer-events-none" />
-                    <input
-                      type="text"
-                      value={defaultCity}
-                      onChange={(e) => setDefaultCity(e.target.value)}
-                      placeholder={useCurrentLocation ? 'e.g. San Francisco (used if GPS off)' : 'e.g. San Francisco'}
-                      className="w-full text-xs pl-8 pr-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">
-                    {useCurrentLocation
-                      ? 'Searches prioritize nearby spots. If GPS is off or unavailable, jelly searches around this city.'
-                      : 'All restaurant searches will be biased toward this city.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
-                <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 block">
-                  Gut-Feeling Spectrum Scale
-                </label>
-                <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800">
-                  <button
-                    type="button"
-                    onClick={() => setLinearRatingScale(false)}
-                    className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all ${
-                      !linearRatingScale
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xs'
-                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    Tiered
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLinearRatingScale(true)}
-                    className={`py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all ${
-                      linearRatingScale
-                        ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xs'
-                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
-                    }`}
-                  >
-                    Linear
-                  </button>
-                </div>
-                <div className="pt-1">
-                  <div
-                    className="relative h-8 w-full rounded-xl ring-1 ring-inset ring-black/10 dark:ring-white/15"
-                    style={{ backgroundImage: spectrumGradient(linearRatingScale), backgroundOrigin: 'border-box' }}
-                  >
-                    {RATING_TIERS.slice(1).map((tier) => (
-                      <div
-                        key={tier.name}
-                        className="absolute top-1.5 bottom-1.5 w-px bg-white/35 dark:bg-black/25"
-                        style={{ left: `${spectrumRatingToPct(tier.from, linearRatingScale)}%` }}
-                      />
-                    ))}
-                  </div>
-                  <div className="relative h-5 mt-1.5 text-[10px] font-semibold select-none">
-                    {RATING_TIERS.map((zone) => (
-                      <span
-                        key={zone.name}
-                        className={`absolute -translate-x-1/2 ${zone.zoneClass}`}
-                        style={{ left: `${spectrumRatingToPct(zone.zoneRating, linearRatingScale)}%` }}
-                      >
-                        {zone.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 leading-snug min-h-[2.75em]">
-                  {linearRatingScale
-                    ? 'Uniform spacing across the entire spectrum.'
-                    : 'Each vibe tier gets room by how often people feel it, so the common middle is easier to tell apart.'}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                <button
-                  type="button"
-                  onClick={handleExportJson}
-                  className="px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-medium flex items-center gap-1.5"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export JSON</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
-                  setIsWhatsNewOpen(true);
-                  setHasUnseenChangelog(false);
-                  updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
-                }}
-                className="w-full pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2 text-xs text-left group"
-              >
-                <span className="flex items-center gap-2 font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  What’s new
-                  {hasUnseenChangelog && (
-                    <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                      New
-                    </span>
-                  )}
-                </span>
-                <span className="flex items-center gap-1 text-zinc-400 dark:text-zinc-500 tabular-nums">
-                  v{displayVersion(CURRENT_VERSION)}
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </span>
-              </button>
-
-              {user && (
-                <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs text-zinc-500">
-                  <span className="truncate">{user.email}</span>
-                  <button
-                    type="button"
-                    onClick={requestSignOut}
-                    className="text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1 shrink-0"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Sign out</span>
-                  </button>
-                </div>
-              )}
-
-              <div className="flex justify-end pt-1">
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-zinc-900 dark:bg-emerald-500 text-white dark:text-zinc-950 text-xs font-semibold"
-                >
-                  Done
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSubmit={saveSettings}
+        useCurrentLocation={useCurrentLocation}
+        onToggleCurrentLocation={() => {
+          if (!useCurrentLocation) {
+            requestUserLocation({
+              deniedMessage: 'Enable location permissions in your browser to use current location',
+              onDone: () => setUseCurrentLocation(true),
+            });
+          } else {
+            setUseCurrentLocation(false);
+          }
+        }}
+        hasLocation={Boolean(userLocation)}
+        defaultCity={defaultCity}
+        onDefaultCityChange={setDefaultCity}
+        linearRatingScale={linearRatingScale}
+        onLinearRatingScaleChange={setLinearRatingScale}
+        onExport={handleExportJson}
+        hasUnseenChangelog={hasUnseenChangelog}
+        onOpenWhatsNew={() => {
+          trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
+          setIsWhatsNewOpen(true);
+          setHasUnseenChangelog(false);
+          updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
+        }}
+        email={user ? user.email : undefined}
+        onSignOut={requestSignOut}
+      />
 
       <WhatsNewModal isOpen={isWhatsNewOpen} onClose={() => setIsWhatsNewOpen(false)} />
 
@@ -3116,21 +2671,7 @@ export const App: React.FC = () => {
       {/* New deploy detected → one-tap reload */}
       <UpdateAvailableBanner />
 
-      {/* Subtle Toast (with optional Undo action) */}
-      {toastMessage && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-xl flex items-center gap-3 whitespace-nowrap">
-          <span>{toastMessage}</span>
-          {toastAction && (
-            <button
-              type="button"
-              onClick={toastAction.onClick}
-              className="px-2.5 py-0.5 -mr-1 rounded-full bg-emerald-500 text-zinc-950 font-bold hover:bg-emerald-400 transition-colors"
-            >
-              {toastAction.label}
-            </button>
-          )}
-        </div>
-      )}
+      <Toast toast={toast} />
     </div>
   );
 };

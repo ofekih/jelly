@@ -96,6 +96,8 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
     if (pool.length === 0) {
       finishWithState(searchState);
     }
+    // finishWithState is rebuilt every render; this only reacts to the search itself
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, pendingPlacement, searchState, pool.length]);
 
   const handleChoice = (outcome: SxSOutcome) => {

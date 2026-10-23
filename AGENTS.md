@@ -15,6 +15,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 - `npm test` – Vitest (`src/**/*.test.ts`)
 - `npm run test:emulator` – sync tests (`src/**/*.emu.test.ts`) against the Firestore emulator with the real `firestore.rules`; run after touching `src/lib/sync/` or the rules. Functions have their own: `cd functions && npm run test:emulator`
 - `npm run build` – `tsc -b && vite build` (must pass with zero TS errors)
+- `npm run lint` – ESLint with `react-hooks/exhaustive-deps` (must pass clean; justify any `eslint-disable` for a deliberate dependency list)
 - Deploy: `npx -y firebase-tools@latest deploy --only hosting --project ofek-beli-ranker`
 - Firestore rules deploy: `npx -y firebase-tools@latest deploy --only firestore:rules --project ofek-beli-ranker`
 - Commit: `git -c commit.gpgsign=false commit -m "..."` (global gpgsign is on and will hang/fail)
@@ -40,12 +41,14 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
 | `src/lib/categoryLists.ts` | Per-category list helpers (`getCategoryList`, `replaceCategoryList`, `recomputeAllCategoryScores`), entry IDs, one-time legacy meal → category migration (`loadRestaurants`) |
 | `src/lib/geo.ts` | Distances, city fallback coords |
-| `src/lib/changelog.ts` | User-facing release notes (newest first = app version, synced with `package.json`); shown in Settings → What's new (`WhatsNewModal`), dot on Settings for unseen major/minor releases |
+| `src/lib/spotFilters.ts` | The list filters (city, tag, game night, search) and nearest-first sort shared by Ranked, Want to try and For you |
+| `src/lib/useUserLocation.ts`, `useSocialFeeds.ts` | Device location (session-cached); live friends' lists and followers subscriptions |
+| `src/lib/changelog.ts` | User-facing release notes (newest first = app version, synced with `package.json`); shown in Settings → What's new (`WhatsNewModal`, opened from `SettingsModal`), dot on Settings for unseen major/minor releases |
 | `src/components/AddAndRateModal.tsx` | Search → gut-feeling spectrum bar (labels from `ratingTiers`) → SxS |
 | `src/components/SxSArenaModal.tsx` | Pairwise comparisons; prefers same-cuisine opponents |
 | `src/components/RestaurantList.tsx` | Ranked list, drag-to-rerank, swipe actions |
 | `src/components/RestaurantMapView.tsx` | Google Map with custom score pins (light/dark styles) |
-| `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx` | Feature modals |
+| `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx`, `SettingsModal.tsx` | Feature modals; `Toast.tsx` (`useToast`) is the one-at-a-time toast |
 | `firestore.rules` | Security rules with per-field validators (`isValidUserDoc`, `isValidSharedList`, …) |
 | `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (original artwork), `favicon.png` (crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`) |
 

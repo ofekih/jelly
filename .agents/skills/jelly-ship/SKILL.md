@@ -16,7 +16,7 @@ Run from the repo root.
    (`2.1.0`) for features, a new major (`3.0.0`) for big shifts; these show a dot on Settings
    until users open "What's new". Patch (`2.0.1`) for small tweaks worth noting quietly.
    Skip for fixes and internal work. Write plain user-facing bullets, no internal names.
-2. **Verify**: `npm test && npm run build`. Fix every TS error or failing test before going on.
+2. **Verify**: `npm test && npm run lint && npm run build`. Fix every TS error, lint error or failing test before going on.
 3. **Firestore rules (only if `firestore.rules` changed)**:
    `npx -y firebase-tools@latest deploy --only firestore:rules --project ofek-beli-ranker`
 4. **Deploy hosting**:

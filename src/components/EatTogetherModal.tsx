@@ -84,6 +84,8 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
     } else if (friends.length > 0 && selectedFriendIds.length === 0) {
       setSelectedFriendIds([friends[0].uid]);
     }
+    // Seeds the selection on open; clearing it later must not re-seed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialSelectedFriendUid, friends]);
 
   const activeFriendLists = useMemo(() => {

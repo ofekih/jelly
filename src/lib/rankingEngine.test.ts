@@ -178,7 +178,7 @@ describe('rankingEngine (ELO-based)', () => {
       makeDummySpot('5', 'Trattoria', 7.8, 4, 'restaurants', ['Italian']),
     ]);
 
-    let state = initSxSSearch(existing, 8.6, ['Japanese']);
+    const state = initSxSSearch(existing, 8.6, ['Japanese']);
     const firstPick = pickNextOpponent(state, existing);
     expect(firstPick).not.toBeNull();
     // Even though index 2 (Steakhouse) is the exact midpoint, index 3 (Ramen Bar) or index 0 (Top Sushi) is Japanese and should be picked first!

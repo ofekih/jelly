@@ -13,7 +13,8 @@ import {
   setDoc,
   where,
 } from 'firebase/firestore';
-import { SharedListPayload, SpotCategory } from '../types';
+import { BookmarkEntry, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
+import { loadBookmarks, loadRestaurants } from './categoryLists';
 import { CommunityStat, sanitizeHandle } from './friendsService';
 
 /**
@@ -74,6 +75,33 @@ export function buildProfileDoc(input: {
  * A profile shown where the app expects a list (search results, follower lists). It carries no
  * spots (`profileOnly`); load `sharedLists/{uid}` before showing the list itself.
  */
+/** A `sharedLists/{id}` doc as the app reads it (lists sanitized like local copies). */
+export function parseSharedListDoc(id: string, data: any): SharedListPayload {
+  const loadedRestaurants: RestaurantEntry[] = loadRestaurants(
+    Array.isArray(data.restaurants) ? data.restaurants : []
+  );
+  const loadedBookmarks: BookmarkEntry[] = Array.isArray(data.bookmarks)
+    ? loadBookmarks(data.bookmarks)
+    : [];
+  const followingIds: string[] | undefined = Array.isArray(data.followingIds)
+    ? data.followingIds.filter((uid: any) => typeof uid === 'string')
+    : undefined;
+  return {
+    id,
+    ownerUid: data.ownerUid || id,
+    ownerName: data.ownerName || 'Friend',
+    displayName: data.displayName || data.ownerName || 'Friend',
+    handle: data.handle || undefined,
+    photoURL: data.photoURL || undefined,
+    title: data.title,
+    restaurants: loadedRestaurants,
+    bookmarks: loadedBookmarks,
+    followingIds,
+    createdAt: data.createdAt || Date.now(),
+    updatedAt: data.updatedAt || Date.now(),
+  };
+}
+
 export function profileToPayload(uid: string, data: any): SharedListPayload {
   const displayName =
     typeof data?.displayName === 'string' && data.displayName.trim() ? data.displayName.trim() : 'Friend';
