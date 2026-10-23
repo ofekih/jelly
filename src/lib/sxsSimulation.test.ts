@@ -3,7 +3,6 @@ import {
   getBestInsertionIndex,
   initSxSSearch,
   pickNextOpponent,
-  ratingToBaseElo,
   recordSxSComparison,
 } from './rankingEngine';
 import { RestaurantEntry } from '../types';
@@ -43,7 +42,6 @@ function simulate(n: number, trials: number, seed: number) {
       categories: ['restaurants'],
       cuisines: [],
       initialRating: scores[i],
-      elo: ratingToBaseElo(scores[i]),
       rankIndex: i,
       magicScore: scores[i],
       comparisonsCount: 0,

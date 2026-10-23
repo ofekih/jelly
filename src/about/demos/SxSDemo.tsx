@@ -121,7 +121,7 @@ export const SxSDemo: React.FC = () => {
         )}
         <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-400">
           <span>
-            Best guess #{insertIndex + 1} · {confidence}% sure · Elo {state.candidateElo}
+            Best guess #{insertIndex + 1} · {confidence}% sure
           </span>
           <span className="flex gap-1">
             <button

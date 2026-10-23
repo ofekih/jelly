@@ -127,7 +127,7 @@ describe('parsePredictionsDoc', () => {
 
 describe('getSpotSocialMetrics with a server prediction', () => {
   const asEntries = (list: TasteEntry[]) =>
-    list.map((x, i) => ({ ...x, id: `${x.placeId}-${i}`, formattedAddress: '', categories: [], initialRating: 7, elo: 0, rankIndex: i, comparisonsCount: 0, createdAt: 0, updatedAt: 0 })) as RestaurantEntry[];
+    list.map((x, i) => ({ ...x, id: `${x.placeId}-${i}`, formattedAddress: '', categories: [], initialRating: 7, rankIndex: i, comparisonsCount: 0, createdAt: 0, updatedAt: 0 })) as RestaurantEntry[];
   const myRestaurants = asEntries(mine);
   const spot = { placeId: 'new', name: 'new', category: 'restaurants' as const, cuisines: ['Thai'] };
   const server = { score: 9.4, confidence: 'high' as const, basis: 'Based on 4 taste-matched jelly users', raters: 4 };

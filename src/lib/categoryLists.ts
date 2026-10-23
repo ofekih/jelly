@@ -6,7 +6,7 @@ import {
   RestaurantEntry,
   SpotCategory,
 } from '../types';
-import { ratingToBaseElo, recomputeMagicScores } from './rankingEngine';
+import { recomputeMagicScores } from './rankingEngine';
 
 /**
  * Each category is a completely separate ranked list. All entries live in one flat array,
@@ -126,10 +126,9 @@ function stripLegacyFields<T extends Record<string, any>>(obj: T): T {
 function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
   const category = resolveCategory(raw);
   const initialRating = typeof raw.initialRating === 'number' ? raw.initialRating : 8;
-  const elo =
-    typeof raw.elo === 'number' && !Number.isNaN(raw.elo) ? raw.elo : ratingToBaseElo(initialRating);
   const legacy = isLegacyDoc(raw);
-  const base = legacy ? stripLegacyFields(raw) : raw;
+  // Elo no longer exists; older docs still carry it until they're next saved
+  const { elo: _elo, ...base } = legacy ? stripLegacyFields(raw) : raw;
   const idBase =
     base.placeId || (typeof base.id === 'string' ? base.id.split('__')[0] : '') || `spot_${Date.now()}`;
 
@@ -141,7 +140,6 @@ function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
     categories: resolveCategories(raw, category),
     cuisines: Array.isArray(raw.cuisines) ? raw.cuisines : [],
     initialRating,
-    elo,
     rankIndex: typeof raw.rankIndex === 'number' ? raw.rankIndex : Number.MAX_SAFE_INTEGER,
     comparisons: Array.isArray(raw.comparisons)
       ? raw.comparisons.filter(
@@ -196,7 +194,7 @@ export function loadBookmarks(raws: any[]): BookmarkEntry[] {
 }
 
 /** Fields `recomputeAllCategoryScores` derives from the order and gut ratings. */
-export type DerivedScoreFields = Pick<RestaurantEntry, 'magicScore' | 'elo' | 'rankIndex'>;
+export type DerivedScoreFields = Pick<RestaurantEntry, 'magicScore' | 'rankIndex'>;
 
 /**
  * Loaded entries whose recomputed scores differ from the stored doc (e.g. after the scoring
@@ -210,15 +208,8 @@ export function staleDerivedScores(
   for (const entry of loaded) {
     const stored = storedById.get(entry.id);
     if (!stored) continue;
-    if (
-      stored.magicScore !== entry.magicScore ||
-      stored.elo !== entry.elo ||
-      stored.rankIndex !== entry.rankIndex
-    ) {
-      stale.push({
-        id: entry.id,
-        fields: { magicScore: entry.magicScore, elo: entry.elo, rankIndex: entry.rankIndex },
-      });
+    if (stored.magicScore !== entry.magicScore || stored.rankIndex !== entry.rankIndex) {
+      stale.push({ id: entry.id, fields: { magicScore: entry.magicScore, rankIndex: entry.rankIndex } });
     }
   }
   return stale;

@@ -222,7 +222,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   </span>
                 ))}
                 <span className="px-2.5 py-1 rounded-lg bg-zinc-100/70 dark:bg-zinc-800/60 text-zinc-400 dark:text-zinc-500">
-                  {restaurant.elo} ELO · Gut {Number(restaurant.initialRating).toFixed(1)}/10
+                  Gut {Number(restaurant.initialRating).toFixed(1)}/10
                 </span>
               </div>
 

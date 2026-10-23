@@ -45,7 +45,6 @@ const spot = (n: number, rankIndex = n, initialRating = 8): RestaurantEntry =>
     initialRating,
     rankIndex,
     magicScore: initialRating,
-    elo: 1500,
     comparisonsCount: 0,
     createdAt: 1,
     updatedAt: 1,

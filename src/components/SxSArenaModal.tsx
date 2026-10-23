@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
-import { CATEGORY_LABEL, PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
-import { getCategoryList } from '../lib/categoryLists';
+import { CATEGORY_LABEL, RestaurantEntry } from '../types';
+import { PendingPlacement, placementPool, PlacementResult } from '../lib/rankingActions';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import {
   getBestInsertionIndex,
-  getPlacementElo,
   getSearchProgress,
   initSxSSearch,
   pickNextOpponent,
@@ -19,27 +18,12 @@ import { PosterThumb } from './PosterThumb';
 import { hasSquareCover, posterUrl, spotPlaceLabel } from '../lib/media';
 import { trackEvent } from '../firebase';
 
-export interface PendingPlacement {
-  candidate: PlaceCandidate;
-  initialRating: number;
-  category: SpotCategory; // The candidate is only ever compared within this list
-  cuisines: string[];
-  existingIdToReplace?: string;
-}
-
 interface SxSArenaModalProps {
   isOpen: boolean;
   onClose: () => void;
   existingRestaurants: RestaurantEntry[]; // All lists; filtered to the candidate's category
   pendingPlacement: PendingPlacement | null;
-  onFinishPlacement: (
-    placement: PendingPlacement,
-    insertIndexInCategory: number,
-    comparisonsDone: number,
-    finalCandidateElo: number,
-    opponentEloAdjustments: Record<string, number>,
-    answers: Array<{ opponentId: string; result: 0 | 0.5 | 1 }>
-  ) => void;
+  onFinishPlacement: (placement: PendingPlacement, result: PlacementResult) => void;
 }
 
 export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
@@ -54,10 +38,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
   const [searchState, setSearchState] = useState<SxSSearchState | null>(null);
 
   const pool = useMemo(() => {
-    if (!pendingPlacement) return [];
-    return getCategoryList(existingRestaurants, pendingPlacement.category).filter(
-      (r) => r.id !== pendingPlacement.existingIdToReplace
-    );
+    return pendingPlacement ? placementPool(existingRestaurants, pendingPlacement) : [];
   }, [existingRestaurants, pendingPlacement]);
 
   useEffect(() => {
@@ -78,18 +59,15 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
   const finishWithState = (state: SxSSearchState) => {
     if (!pendingPlacement) return;
     const { insertIndex } = getBestInsertionIndex(state);
-    onFinishPlacement(
-      pendingPlacement,
+    onFinishPlacement(pendingPlacement, {
       insertIndex,
-      state.completedComparisons,
-      getPlacementElo(state, pool, insertIndex),
-      state.opponentEloAdjustments,
-      state.history.flatMap((h) =>
+      comparisonsDone: state.completedComparisons,
+      answers: state.history.flatMap((h) =>
         h.outcome === 'skip'
           ? []
           : [{ opponentId: h.opponentId, result: h.outcome === 'new_wins' ? 1 : h.outcome === 'tie' ? 0.5 : 0 }]
-      )
-    );
+      ),
+    });
   };
 
   // Auto-finish if pool is empty or no opponent needed

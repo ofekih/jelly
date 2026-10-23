@@ -22,7 +22,6 @@ function makeRestaurant(overrides: Partial<RestaurantEntry> & { name: string }):
     categories: overrides.categories || ['restaurants'],
     cuisines: overrides.cuisines || ['Japanese'],
     initialRating: overrides.initialRating ?? 8.5,
-    elo: overrides.elo ?? 1600,
     rankIndex: overrides.rankIndex ?? 0,
     magicScore: overrides.magicScore ?? 8.8,
     comparisonsCount: overrides.comparisonsCount ?? 3,

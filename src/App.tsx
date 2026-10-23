@@ -12,7 +12,6 @@ import {
   setDoc,
   WriteBatch,
 } from 'firebase/firestore';
-import { arrayMove } from '@dnd-kit/sortable';
 import {
   ArrowUpDown,
   Bookmark,
@@ -63,7 +62,6 @@ import {
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
 import { CURRENT_VERSION, hasUnseenRelease } from './lib/changelog';
 import { GROUP_COPY, wantLabel } from './lib/groups';
-import { ratingToBaseElo } from './lib/rankingEngine';
 import {
   buildEntryId,
   getCategoryList,
@@ -73,11 +71,9 @@ import {
   replaceCategoryList,
 } from './lib/categoryLists';
 import {
-  appendComparisons,
   applyCheckAnswer,
   CheckOutcome,
   countSpotsToCheck,
-  dragComparisons,
   findOrderConflicts,
   OrderConflict,
   PROMPT_MARGIN,
@@ -95,7 +91,16 @@ import { BookmarkList } from './components/BookmarkList';
 import { ForYouList } from './components/ForYouList';
 import { ConfirmModal } from './components/ConfirmModal';
 import { JellyBeanIcon } from './components/JellyBeanIcon';
-import type { PendingPlacement } from './components/SxSArenaModal';
+import {
+  existingEntryFor,
+  FIRST_IN_LIST,
+  PendingPlacement,
+  placementPool,
+  PlacementResult,
+  placeSpot,
+  reorderSpot,
+  restoreSpot,
+} from './lib/rankingActions';
 import { RestaurantList } from './components/RestaurantList';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
@@ -936,7 +941,6 @@ export const App: React.FC = () => {
       primaryTypeDisplay: bookmark.primaryTypeDisplay,
       media: bookmark.media,
       initialRating: 8,
-      elo: 1500,
       rankIndex: 0,
       magicScore: 8,
       comparisonsCount: 0,
@@ -1062,218 +1066,70 @@ export const App: React.FC = () => {
     setIsAddModalOpen(false);
     setReRankingEntry(null);
 
-    // Check if existingIdToReplace is actually in restaurants (vs. a bookmark conversion)
-    const actualExisting = restaurants.find((r) => r.id === existingIdToReplace);
-    const effectiveReplaceId = actualExisting ? existingIdToReplace : undefined;
+    const placement: PendingPlacement = {
+      candidate,
+      initialRating,
+      category: selectedCategory,
+      cuisines: candidate.cuisines,
+      // A bookmark being ranked isn't in the list yet, so there's nothing to replace
+      existingIdToReplace: existingEntryFor(restaurants, { existingIdToReplace })?.id,
+    };
 
     trackEvent('complete_initial_questions', {
       restaurant_name: candidate.name,
       category: selectedCategory,
       initial_rating: initialRating,
-      is_rerank: Boolean(effectiveReplaceId),
+      is_rerank: Boolean(placement.existingIdToReplace),
     });
 
-    // Re-ranking into a different list replaces the old entry too
-    const pool = getCategoryList(restaurants, selectedCategory).filter(
-      (r) => r.id !== effectiveReplaceId
-    );
-
-    // If this is the very first spot in this category list, save immediately without needing SxS
-    if (pool.length === 0) {
-      const now = Date.now();
-      const prevHistory = actualExisting?.rankedHistory?.length
-        ? actualExisting.rankedHistory
-        : actualExisting
-        ? [{ timestamp: actualExisting.createdAt, initialRating: actualExisting.initialRating }]
-        : [];
-      const entryId = buildEntryId(candidate.placeId, selectedCategory);
-      const newEntry: RestaurantEntry = {
-        id: entryId,
-        placeId: candidate.placeId,
-        name: candidate.name,
-        formattedAddress: candidate.formattedAddress,
-        neighborhood: candidate.neighborhood,
-        city: candidate.city,
-        lat: candidate.lat,
-        lng: candidate.lng,
-        googleMapsUri: candidate.googleMapsUri,
-        priceLevel: candidate.priceLevel,
-        category: selectedCategory,
-        categories: Array.from(new Set([selectedCategory, ...(candidate.categories || [])])),
-        cuisines: candidate.cuisines,
-        primaryTypeDisplay: candidate.primaryTypeDisplay,
-        media: candidate.media,
-        initialRating,
-        elo: ratingToBaseElo(initialRating),
-        rankIndex: 0,
-        magicScore: initialRating,
-        comparisonsCount: 0,
-        rankedHistory: [...prevHistory, { timestamp: now, initialRating }],
-        createdAt: actualExisting?.createdAt || now,
-        updatedAt: now,
-      };
-      await persistOrderedRestaurants(
-        [...restaurants.filter((r) => r.id !== effectiveReplaceId && r.id !== entryId), newEntry],
-        effectiveReplaceId && effectiveReplaceId !== entryId ? effectiveReplaceId : undefined
-      );
-      setSelectedCategory(selectedCategory);
-      await cleanupBookmarkIfRanked(candidate.placeId, candidate.name);
-      setActiveTab('ranked');
-      trackEvent('complete_ranking', {
-        restaurant_name: candidate.name,
-        category: selectedCategory,
-        initial_rating: initialRating,
-        magic_score: initialRating,
-        rank_position: 1,
-        comparisons_count: 0,
-        is_rerank: Boolean(effectiveReplaceId),
-      });
-      showToast(`Added ${candidate.name} (#1 in ${CATEGORY_LABEL[selectedCategory]})`);
+    // The first spot in a list has nothing to compare against: it goes straight to #1
+    if (placementPool(restaurants, placement).length === 0) {
+      await finishPlacement(placement, FIRST_IN_LIST);
       return;
     }
 
     // Otherwise launch Q3+ (SxS comparisons)
-    setPendingPlacement({
-      candidate,
-      initialRating,
-      category: selectedCategory,
-      cuisines: candidate.cuisines,
-      existingIdToReplace: effectiveReplaceId,
-    });
+    setPendingPlacement(placement);
     setIsSxSOpen(true);
   };
 
-  // Finish Q3+ SxS Placement
-  const handleFinishPlacement = async (
-    placement: PendingPlacement,
-    insertIndexInCategory: number,
-    comparisonsDone: number,
-    finalCandidateElo: number,
-    opponentEloAdjustments: Record<string, number>,
-    answers: Array<{ opponentId: string; result: 0 | 0.5 | 1 }>
-  ) => {
+  const handleFinishPlacement = (placement: PendingPlacement, result: PlacementResult) => {
     setIsSxSOpen(false);
     setPendingPlacement(null);
+    return finishPlacement(placement, result);
+  };
 
-    const now = Date.now();
-    const existingObj = restaurants.find((r) => r.id === placement.existingIdToReplace);
-    const prevHistory = existingObj?.rankedHistory?.length
-      ? existingObj.rankedHistory
-      : existingObj
-      ? [{ timestamp: existingObj.createdAt, initialRating: existingObj.initialRating }]
-      : [];
-
-    const entryId = buildEntryId(placement.candidate.placeId, placement.category);
-
-    // Apply opponent ELO adjustments from the head-to-head matches (same category list only)
-    const basePool = getCategoryList(restaurants, placement.category)
-      .filter((r) => r.id !== placement.existingIdToReplace && r.id !== entryId)
-      .map((r) => {
-        const delta = opponentEloAdjustments[r.id];
-        return delta ? { ...r, elo: (r.elo || ratingToBaseElo(r.initialRating)) + delta } : r;
-      });
-
-    const newEntry: RestaurantEntry = {
-      id: entryId,
-      placeId: placement.candidate.placeId,
-      name: placement.candidate.name,
-      formattedAddress: placement.candidate.formattedAddress,
-      neighborhood: placement.candidate.neighborhood,
-      city: placement.candidate.city,
-      lat: placement.candidate.lat,
-      lng: placement.candidate.lng,
-      googleMapsUri: placement.candidate.googleMapsUri,
-      priceLevel: existingObj?.priceLevel ?? placement.candidate.priceLevel,
-      category: placement.category,
-      categories: Array.from(
-        new Set([placement.category, ...(placement.candidate.categories || [])])
-      ),
-      cuisines: existingObj?.cuisines?.length ? existingObj.cuisines : placement.cuisines,
-      primaryTypeDisplay: placement.candidate.primaryTypeDisplay,
-      media: placement.candidate.media ?? existingObj?.media,
-      initialRating: placement.initialRating,
-      elo: finalCandidateElo,
-      rankIndex: insertIndexInCategory,
-      magicScore: placement.initialRating,
-      comparisonsCount: (existingObj?.comparisonsCount || 0) + comparisonsDone,
-      notes: existingObj?.notes,
-      favoriteDishes: existingObj?.favoriteDishes,
-      rankedHistory: [...prevHistory, { timestamp: now, initialRating: placement.initialRating }],
-      // A (re-)rank starts its answer history fresh: older answers about it no longer count
-      comparisons: answers.map((a) => ({ ...a, at: now })),
-      createdAt: existingObj?.createdAt || now,
-      updatedAt: now,
-    };
-
-    const clampedIdx = Math.max(0, Math.min(basePool.length, insertIndexInCategory));
-    const nextList = [...basePool];
-    nextList.splice(clampedIdx, 0, newEntry);
-    // The old entry may have lived in another list (re-ranked into a new category)
-    const withoutOld = restaurants.filter((r) => r.id !== placement.existingIdToReplace);
-    const recomputed = replaceCategoryList(withoutOld, placement.category, nextList);
-    const placedItem = recomputed.find((r) => r.id === entryId);
-
-    await persistOrderedRestaurants(
-      recomputed,
-      placement.existingIdToReplace && placement.existingIdToReplace !== entryId
-        ? placement.existingIdToReplace
-        : undefined
-    );
+  const finishPlacement = async (placement: PendingPlacement, result: PlacementResult) => {
+    const placed = placeSpot(restaurants, placement, result, Date.now());
+    await persistOrderedRestaurants(placed.restaurants, placed.removedId);
     setSelectedCategory(placement.category);
     await cleanupBookmarkIfRanked(placement.candidate.placeId, placement.candidate.name);
     setActiveTab('ranked');
     trackEvent('complete_ranking', {
-      restaurant_name: newEntry.name,
-      category: newEntry.category,
-      initial_rating: newEntry.initialRating,
-      magic_score: placedItem ? placedItem.magicScore : newEntry.initialRating,
-      rank_position: clampedIdx + 1,
-      comparisons_count: comparisonsDone,
+      restaurant_name: placed.entry.name,
+      category: placed.entry.category,
+      initial_rating: placed.entry.initialRating,
+      magic_score: placed.entry.magicScore,
+      rank_position: placed.position,
+      comparisons_count: result.comparisonsDone,
       is_rerank: Boolean(placement.existingIdToReplace),
     });
     showToast(
-      `Ranked ${newEntry.name} #${clampedIdx + 1} in ${CATEGORY_LABEL[newEntry.category]} · ${
-        placedItem ? placedItem.magicScore.toFixed(1) : newEntry.initialRating.toFixed(1)
-      }`
+      `Ranked ${placed.entry.name} #${placed.position} in ${CATEGORY_LABEL[placed.entry.category]} · ${placed.entry.magicScore.toFixed(1)}`
     );
   };
 
   // Drag-and-drop reorder
   const handleReorderDragEnd = async (activeId: string, overId: string) => {
     if (sharedList) return;
-    const activeItem = restaurants.find((r) => r.id === activeId);
-    if (!activeItem) return;
-    // Drag only ever reorders within a single category list
-    const list = getCategoryList(restaurants, activeItem.category);
-    const oldIndex = list.findIndex((r) => r.id === activeId);
-    const newIndex = list.findIndex((r) => r.id === overId);
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-
-    const moved = arrayMove(list, oldIndex, newIndex);
-    // Interpolate ELO of the moved item to sit cleanly between its new neighbors, and remember the
-    // drag as answers so earlier ones it overrides never get flagged as conflicts
-    const targetItem = appendComparisons(
-      moved[newIndex],
-      dragComparisons(list, oldIndex, newIndex, Date.now())
-    );
-    const above = newIndex > 0 ? moved[newIndex - 1] : null;
-    const below = newIndex < moved.length - 1 ? moved[newIndex + 1] : null;
-
-    if (above && below) {
-      targetItem.elo = Math.round(0.5 * (above.elo + below.elo));
-    } else if (above) {
-      targetItem.elo = above.elo - 30;
-    } else if (below) {
-      targetItem.elo = below.elo + 30;
-    }
-    moved[newIndex] = targetItem;
-
+    const moved = reorderSpot(restaurants, activeId, overId, Date.now());
+    if (!moved) return;
     trackEvent('manual_reorder', {
-      restaurant_name: targetItem.name,
-      from_rank: oldIndex + 1,
-      to_rank: newIndex + 1,
+      restaurant_name: moved.entry.name,
+      from_rank: moved.from + 1,
+      to_rank: moved.to + 1,
     });
-    await persistOrderedRestaurants(replaceCategoryList(restaurants, activeItem.category, moved));
+    await persistOrderedRestaurants(moved.restaurants);
   };
 
   // Order check: fix pairs whose order disagrees with the stored side-by-side answers
@@ -1312,7 +1168,6 @@ export const App: React.FC = () => {
   };
 
   const executeDeleteRestaurant = async (id: string) => {
-    const prevRestaurants = [...restaurants];
     const target = restaurants.find((r) => r.id === id);
     if (!target) return;
     if (activeDetailSpot?.id === id) {
@@ -1329,7 +1184,7 @@ export const App: React.FC = () => {
       {
         label: 'Undo',
         onClick: () => {
-          persistOrderedRestaurants(prevRestaurants);
+          persistOrderedRestaurants(restoreSpot(restaurantsRef.current, target));
           showToast(`Restored ${target.name}`);
         },
       },

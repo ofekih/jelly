@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   getBestInsertionIndex,
-  getPlacementElo,
   initSxSSearch,
   pctToSpectrumRating,
   pickNextOpponent,
-  ratingToBaseElo,
   recomputeMagicScores,
   recordSxSComparison,
   spectrumRatingToPct,
@@ -28,7 +26,6 @@ function makeDummySpot(
     categories: [category],
     cuisines,
     initialRating,
-    elo: ratingToBaseElo(initialRating),
     rankIndex,
     magicScore: initialRating,
     comparisonsCount: 3,
@@ -112,18 +109,10 @@ describe('recomputeMagicScores (expected true score given gut ratings and order)
     });
     expect(after[5]).toBeGreaterThan(8.5);
   });
-
-  it('keeps Elo strictly decreasing down the list, even through equal scores', () => {
-    const scored = recomputeMagicScores(
-      [9, 9, 9, 8, 8.5].map((g, i) => makeDummySpot(`${i}`, `Spot ${i}`, g, i))
-    );
-    for (let k = 1; k < scored.length; k++) expect(scored[k].elo).toBeLessThan(scored[k - 1].elo);
-    expect(scored.map((r) => r.rankIndex)).toEqual([0, 1, 2, 3, 4]);
-  });
 });
 
-describe('rankingEngine (ELO-based)', () => {
-  it('enforces monotonic ELO and 1-10 magic scores even when gut ratings have inversions', () => {
+describe('rankingEngine', () => {
+  it('keeps 1-10 magic scores monotonic even when gut ratings have inversions', () => {
     const list: RestaurantEntry[] = [
       makeDummySpot('1', 'Spot One (Preferred in SxS)', 8, 0),
       makeDummySpot('2', 'Spot Two (Higher gut rating, lost SxS)', 9, 1),
@@ -133,16 +122,12 @@ describe('rankingEngine (ELO-based)', () => {
 
     const scored = recomputeMagicScores(list);
     expect(scored.length).toBe(4);
-    expect(scored[0].elo).toBeGreaterThan(scored[1].elo);
-    expect(scored[1].elo).toBeGreaterThan(scored[2].elo);
-    expect(scored[2].elo).toBeGreaterThan(scored[3].elo);
-
     expect(scored[0].magicScore).toBeGreaterThanOrEqual(scored[1].magicScore);
     expect(scored[1].magicScore).toBeGreaterThanOrEqual(scored[2].magicScore);
     expect(scored[2].magicScore).toBeGreaterThanOrEqual(scored[3].magicScore);
   });
 
-  it('updates ELO and converges to #1 slot when winning SxS comparisons', () => {
+  it('converges to the #1 slot when winning SxS comparisons', () => {
     const existing = recomputeMagicScores([
       makeDummySpot('1', 'Best Place', 9, 0),
       makeDummySpot('2', 'Great Place', 8, 1),
@@ -152,7 +137,6 @@ describe('rankingEngine (ELO-based)', () => {
     ]);
 
     let state = initSxSSearch(existing, 9, ['Italian']);
-    const initialElo = state.candidateElo;
 
     const firstPick = pickNextOpponent(state, existing);
     expect(firstPick).not.toBeNull();
@@ -166,7 +150,6 @@ describe('rankingEngine (ELO-based)', () => {
 
     const { insertIndex } = getBestInsertionIndex(state);
     expect(insertIndex).toBe(0);
-    expect(state.candidateElo).toBeGreaterThan(initialElo);
   });
 
   it('prioritizes same-cuisine tags (e.g. Japanese) during SxS comparisons', () => {
@@ -221,18 +204,6 @@ describe('rankingEngine (ELO-based)', () => {
     expect(state.completedComparisons).toBeGreaterThan(5);
     expect(state.completedComparisons).toBeLessThanOrEqual(12);
     expect(Math.abs(getBestInsertionIndex(state).insertIndex - trueGap)).toBeLessThanOrEqual(3);
-  });
-
-  it('squeezes the Elo of an overruled answer between its new neighbours', () => {
-    const existing = recomputeMagicScores([
-      makeDummySpot('1', 'Best', 9, 0),
-      makeDummySpot('2', 'Good', 7, 1),
-      makeDummySpot('3', 'Meh', 5, 2),
-    ]);
-    const state = { ...initSxSSearch(existing, 7), candidateElo: 5000 };
-    const elo = getPlacementElo(state, existing, 2);
-    expect(elo).toBeLessThan(existing[1].elo);
-    expect(elo).toBeGreaterThan(existing[2].elo);
   });
 
   it('maps tier boundaries to their bar shares with 5.0 in the middle of Mid, and supports linear fallback', () => {

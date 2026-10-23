@@ -23,6 +23,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     highlights: [
       'On your phone, drag any card down from its top edge to close it—now including rating, side-by-side picks and Settings',
       'Settings save as soon as you close them, so there’s no Done button to remember',
+      'Re-ranking the only spot in a list now keeps its notes and favorite dishes',
     ],
   },
   {

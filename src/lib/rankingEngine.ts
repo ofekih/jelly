@@ -9,10 +9,6 @@ interface SxSHistoryStep {
   opponentIndex: number;
   outcome: SxSOutcome;
   weightsBefore: number[];
-  candidateEloBefore: number;
-  eloFloorBefore: number;
-  eloCeilingBefore: number;
-  opponentEloAdjustmentsBefore: Record<string, number>;
 }
 
 export interface SxSSearchState {
@@ -26,10 +22,6 @@ export interface SxSSearchState {
   completedComparisons: number;
   maxComparisons: number; // Safety cap; the search normally stops well before it
   initialRating: number;
-  candidateElo: number;
-  eloFloor: number;
-  eloCeiling: number;
-  opponentEloAdjustments: Record<string, number>; // id -> delta Elo from matches
   candidateCuisines: string[];
   history: SxSHistoryStep[];
 }
@@ -40,10 +32,6 @@ function clamp(val: number, min: number, max: number): number {
 
 function round1(val: number): number {
   return Math.round(val * 10) / 10;
-}
-
-export function ratingToBaseElo(initialRating: number): number {
-  return Math.round(950 + clamp(initialRating, 1, 10) * 100);
 }
 
 /**
@@ -110,10 +98,6 @@ export function spectrumRatingToPct(rating: number, linear = false): number {
   return 100;
 }
 
-function expectedEloWinProbability(eloA: number, eloB: number): number {
-  return 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
-}
-
 function normalizeWeights(weights: number[]): number[] {
   const sum = weights.reduce((acc, w) => acc + w, 0);
   if (sum <= 0) {
@@ -146,7 +130,6 @@ const GUT_NOISE_OPTIONS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 0.9, 1.1, 1.3, 1.6];
 const SPREAD_OPTIONS = [0.3, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 const GRID_STEP = 0.1;
 const SCORE_GRID: number[] = Array.from({ length: Math.round(9 / GRID_STEP) + 1 }, (_, k) => 1 + k * GRID_STEP);
-const ELO_STEP = 2; // Fixed Elo gap kept between neighbours (Elo no longer feeds the scores)
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -280,7 +263,6 @@ function withPrior(likelihood: Float64Array, prior: Float64Array, n: number): Fl
  * Turns an ordered category list into 1.0–10.0 scores: the expected true score of each spot given
  * its position and everyone's gut ratings, so scores stay on the gut-label scale and never rise
  * down the list.
- * Elo is kept only for compatibility: it tracks the score and steps down by at least ELO_STEP.
  */
 export function recomputeMagicScores(orderedList: RestaurantEntry[]): RestaurantEntry[] {
   const n = orderedList.length;
@@ -292,44 +274,11 @@ export function recomputeMagicScores(orderedList: RestaurantEntry[]): Restaurant
   });
   const scores = fitScoresToOrder(guts).map((s) => round1(clamp(s, 1.0, 10.0)));
 
-  const elos = new Array<number>(n);
-  for (let k = 0; k < n; k++) {
-    const base = ratingToBaseElo(scores[k]);
-    elos[k] = clamp(k === 0 ? base : Math.min(base, elos[k - 1] - ELO_STEP), 0, 5000);
-  }
-
   return orderedList.map((item, idx) => ({
     ...item,
-    elo: elos[idx],
     rankIndex: idx,
     magicScore: scores[idx],
   }));
-}
-
-/**
- * Seeds a starting ELO for a restaurant given its 1–10 gut rating and existing ranked spots.
- */
-function seedEloFromRating(
-  existingRanked: RestaurantEntry[],
-  initialRating: number
-): number {
-  const baseElo = ratingToBaseElo(initialRating);
-  if (existingRanked.length === 0) return baseElo;
-
-  // Find existing slot where magicScore / initialRating is closest to initialRating
-  let closestIdx = 0;
-  let minDiff = Infinity;
-  for (let i = 0; i < existingRanked.length; i++) {
-    const refScore = 0.7 * existingRanked[i].magicScore + 0.3 * existingRanked[i].initialRating;
-    const diff = Math.abs(initialRating - refScore);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closestIdx = i;
-    }
-  }
-
-  const empiricalElo = existingRanked[closestIdx].elo || ratingToBaseElo(existingRanked[closestIdx].initialRating);
-  return Math.round(0.5 * baseElo + 0.5 * empiricalElo);
 }
 
 /*
@@ -451,7 +400,6 @@ export function initSxSSearch(
   candidateCuisines: string[] = []
 ): SxSSearchState {
   const n = existingRanked.length;
-  const candidateElo = seedEloFromRating(existingRanked, initialRating);
   const { spotPositions, gapPositions } = listPositions(existingRanked);
 
   const rawWeights = new Array<number>(n + 1);
@@ -469,10 +417,6 @@ export function initSxSSearch(
   }
   const slotWeights = n === 0 ? [1] : normalizeWeights(rawWeights);
 
-  const topElo = n > 0 ? existingRanked[0].elo || ratingToBaseElo(existingRanked[0].initialRating) : 950;
-  const bottomElo =
-    n > 0 ? existingRanked[n - 1].elo || ratingToBaseElo(existingRanked[n - 1].initialRating) : 950;
-
   return {
     slotWeights,
     gapPositions,
@@ -484,10 +428,6 @@ export function initSxSSearch(
     completedComparisons: 0,
     maxComparisons: Math.min(n, MAX_QUESTIONS),
     initialRating,
-    candidateElo,
-    eloFloor: n > 0 ? bottomElo - 150 : 800,
-    eloCeiling: n > 0 ? topElo + 150 : 2400,
-    opponentEloAdjustments: {},
     candidateCuisines,
     history: [],
   };
@@ -517,28 +457,6 @@ export function getSearchProgress(state: SxSSearchState): number {
   const start = state.initialExpectedError;
   if (start <= TARGET_EXPECTED_ERROR || error <= 0) return 1;
   return clamp(Math.log(start / error) / Math.log(start / TARGET_EXPECTED_ERROR), 0, 1);
-}
-
-/**
- * The candidate's Elo for its final slot: its tracked Elo if that already sits between its new
- * neighbours (with this search's adjustments), otherwise squeezed in between them, so a slip the
- * search overruled can't drag the neighbours' scores along.
- */
-export function getPlacementElo(
-  state: SxSSearchState,
-  existingRanked: RestaurantEntry[],
-  insertIndex: number
-): number {
-  const eloOf = (r: RestaurantEntry) =>
-    (r.elo || ratingToBaseElo(r.initialRating)) + (state.opponentEloAdjustments[r.id] || 0);
-  const above = insertIndex > 0 ? existingRanked[insertIndex - 1] : undefined;
-  const below = insertIndex < existingRanked.length ? existingRanked[insertIndex] : undefined;
-  const hi = above ? eloOf(above) : Infinity;
-  const lo = below ? eloOf(below) : -Infinity;
-  const elo = state.candidateElo;
-  if (elo < hi && elo > lo) return elo;
-  if (above && below) return Math.round(0.5 * (hi + lo));
-  return above ? hi - 16 : below ? lo + 16 : elo;
 }
 
 function sharesTagWithCandidate(
@@ -631,7 +549,7 @@ export function pickNextOpponent(
 }
 
 /**
- * Updates both the ELO rating and the search belief after a comparison answer.
+ * Updates the search belief after a comparison answer.
  */
 export function recordSxSComparison(
   state: SxSSearchState,
@@ -645,10 +563,6 @@ export function recordSxSComparison(
     opponentIndex,
     outcome,
     weightsBefore: state.slotWeights,
-    candidateEloBefore: state.candidateElo,
-    eloFloorBefore: state.eloFloor,
-    eloCeilingBefore: state.eloCeiling,
-    opponentEloAdjustmentsBefore: state.opponentEloAdjustments,
   };
 
   if (outcome === 'skip') {
@@ -657,34 +571,6 @@ export function recordSxSComparison(
       skippedIndices: [...state.skippedIndices, opponentIndex],
       history: [...state.history, historyStep],
     };
-  }
-
-  const oppElo =
-    (opponent.elo || ratingToBaseElo(opponent.initialRating)) +
-    (state.opponentEloAdjustments[opponent.id] || 0);
-  const pWin = expectedEloWinProbability(state.candidateElo, oppElo);
-  const actualScore = outcome === 'new_wins' ? 1.0 : outcome === 'opponent_wins' ? 0.0 : 0.5;
-
-  // Placement K-factor = 64 for the candidate, gentle K = 14 for established opponent
-  const kCandidate = 64;
-  const kOpponent = 14;
-
-  let nextCandidateElo = Math.round(state.candidateElo + kCandidate * (actualScore - pWin));
-  const oppDelta = Math.round(kOpponent * (1 - actualScore - (1 - pWin)));
-
-  let nextFloor = state.eloFloor;
-  let nextCeiling = state.eloCeiling;
-
-  if (outcome === 'new_wins') {
-    nextFloor = Math.max(nextFloor, oppElo + oppDelta + 10);
-    if (nextCeiling < nextFloor) nextCeiling = nextFloor + 24;
-    nextCandidateElo = clamp(Math.max(nextCandidateElo, oppElo + 16), nextFloor, nextCeiling);
-  } else if (outcome === 'opponent_wins') {
-    nextCeiling = Math.min(nextCeiling, oppElo + oppDelta - 10);
-    if (nextFloor > nextCeiling) nextFloor = nextCeiling - 24;
-    nextCandidateElo = clamp(Math.min(nextCandidateElo, oppElo - 16), nextFloor, nextCeiling);
-  } else {
-    nextCandidateElo = Math.round(0.5 * (state.candidateElo + oppElo));
   }
 
   const nextWeights = state.slotWeights.map(
@@ -696,13 +582,6 @@ export function recordSxSComparison(
     slotWeights: normalizeWeights(nextWeights),
     comparedIndices: [...state.comparedIndices, opponentIndex],
     completedComparisons: state.completedComparisons + 1,
-    candidateElo: nextCandidateElo,
-    eloFloor: nextFloor,
-    eloCeiling: nextCeiling,
-    opponentEloAdjustments: {
-      ...state.opponentEloAdjustments,
-      [opponent.id]: (state.opponentEloAdjustments[opponent.id] || 0) + oppDelta,
-    },
     history: [...state.history, historyStep],
   };
 }
@@ -728,10 +607,6 @@ export function undoLastSxSStep(state: SxSSearchState): SxSSearchState {
     slotWeights: lastStep.weightsBefore,
     comparedIndices: state.comparedIndices.filter((i) => i !== lastStep.opponentIndex),
     completedComparisons: Math.max(0, state.completedComparisons - 1),
-    candidateElo: lastStep.candidateEloBefore,
-    eloFloor: lastStep.eloFloorBefore,
-    eloCeiling: lastStep.eloCeilingBefore,
-    opponentEloAdjustments: lastStep.opponentEloAdjustmentsBefore,
     history: nextHistory,
   };
 }

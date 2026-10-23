@@ -234,11 +234,10 @@ export interface RestaurantEntry {
   primaryTypeDisplay?: string;
   media?: MediaInfo;
 
-  // ELO + Rating & Ranking
+  // Rating & Ranking
   initialRating: number; // Integer 1 to 10 gut rating from Q1
-  elo: number; // Canonical ELO rating driving the ranking order
   rankIndex: number; // 0 = #1 ranked spot within its category list
-  magicScore: number; // 1.0 to 10.0 displayed score derived from ELO + loosely calibrated by 1-10 ratings
+  magicScore: number; // 1.0 to 10.0 displayed score: the gut ratings fitted to the order (recomputeMagicScores)
   comparisonsCount: number;
 
   // Optional hidden metadata (only shown if user opens the detail/edit drawer)

@@ -22,7 +22,6 @@ function legacySpot(id: string, name: string, meal: string, rankIndex: number, e
     meals: [meal],
     cuisines: [],
     initialRating: 8,
-    elo: 1700 - rankIndex * 20,
     rankIndex,
     magicScore: 8,
     comparisonsCount: 0,
@@ -100,7 +99,6 @@ describe('docs from a newer version of jelly', () => {
     category: 'space_stations',
     cuisines: [],
     initialRating: 9,
-    elo: 1800,
     rankIndex: 0,
     magicScore: 9,
     comparisonsCount: 0,
@@ -234,7 +232,6 @@ describe('staleDerivedScores', () => {
     expect(stale.map((s) => s.id)).toEqual(['a__restaurants', 'b__restaurants']);
     expect(stale[0].fields).toEqual({
       magicScore: loaded[0].magicScore,
-      elo: loaded[0].elo,
       rankIndex: 0,
     });
 

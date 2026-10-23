@@ -10,10 +10,8 @@ import {
 import { toSharedEntry } from './categoryLists';
 import {
   getBestInsertionIndex,
-  getPlacementElo,
   initSxSSearch,
   pickNextOpponent,
-  ratingToBaseElo,
   recomputeMagicScores,
   recordSxSComparison,
 } from './rankingEngine';
@@ -28,7 +26,6 @@ function spot(id: string, score: number, rankIndex: number, comparisons?: Stored
     categories: ['restaurants'],
     cuisines: [],
     initialRating: score,
-    elo: ratingToBaseElo(score),
     rankIndex,
     magicScore: score,
     comparisonsCount: 0,
@@ -156,7 +153,6 @@ describe('order checks with simulated noisy users', () => {
           result: h.outcome === 'new_wins' ? 1 : 0,
           at: 1000 + t,
         })));
-        entry.elo = list.length ? getPlacementElo(state, list, idx) : entry.elo;
         entry.rankedHistory = [{ timestamp: 1000 + t, initialRating: gut }];
         list.splice(idx, 0, entry);
         list = recomputeMagicScores(list);

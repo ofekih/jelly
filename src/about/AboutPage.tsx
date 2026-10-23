@@ -300,23 +300,6 @@ export const AboutPage: React.FC = () => (
             0.005, or after 12 questions.
           </p>
           <p>
-            <b>Elo.</b> Alongside the belief, jelly tracks an Elo rating, the system chess uses. The expected chance that
-            the new place <Tex>c</Tex> beats opponent <Tex>o</Tex>, and the update after the real result{' '}
-            <Tex>{String.raw`S \in \{1, \tfrac12, 0\}`}</Tex>:
-          </p>
-          <Tex block>{String.raw`E = \frac{1}{1 + 10^{(R_o - R_c)/400}}`}</Tex>
-          <Tex block>{String.raw`R_c \leftarrow R_c + \underbrace{64}_{K_c}\,(S - E)`}</Tex>
-          <Tex block>{String.raw`R_o \leftarrow R_o - \underbrace{14}_{K_o}\,(S - E)`}</Tex>
-          <p>
-            The newcomer moves fast (<Tex>K = 64</Tex>) while established places only get a gentle nudge{' '}
-            <span className="whitespace-nowrap">
-              (<Tex>K = 14</Tex>).
-            </span> A starting Elo comes from the gut rating, <Tex>R = 950 + 100g</Tex>, averaged with the
-            Elo of the place whose score is closest. Once placed, its Elo is squeezed in between its new
-            neighbours' if needed, so it always agrees with the final order. Elo only guides the search; the score
-            itself comes from Step 3.
-          </p>
-          <p>
             <b>Order checks.</b> jelly fits a Bradley-Terry model to every stored answer (the latest per pair, with
             the same <Tex>\lambda</Tex> and <Tex>\nu</Tex> as above), anchoring each spot near its current position
             with a Gaussian prior of spread 0.5 points. If the fit puts a lower spot more than 0.25 points above a
@@ -394,8 +377,8 @@ export const AboutPage: React.FC = () => (
             <b>Why not Elo?</b> Earlier versions spread the Elo ratings from Step 2 over your scale. But you answer
             “this or that?” almost deterministically and each place only meets a few others, so the size of an Elo gap
             says next to nothing. Worse, giving every rank a minimum Elo gap stretched long lists: 150 places you rated
-            9.5 down to 8.0 came out as 10.0 down to 5.0. Elo is still kept in step with the order (a couple of
-            points per rank) so older versions of the app keep working, but it no longer decides any score.
+            9.5 down to 8.0 came out as 10.0 down to 5.0. So jelly dropped Elo entirely: the order comes from your
+            answers, and the scores from fitting your gut ratings to that order.
           </p>
         </Nerd>
       </Section>

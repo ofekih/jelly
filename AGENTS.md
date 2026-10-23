@@ -28,7 +28,8 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/types.ts` | Core types: `RestaurantEntry`, `BookmarkEntry`, `PlaceCandidate`, `SharedListPayload`, `FriendProfile`, `SpotCategory` (+ `CATEGORY_LABEL`/`CATEGORY_EMOJI`) |
 | `src/firebase.ts` | Firebase init, `trackEvent` (Analytics), `DEFAULT_PLACES_API_KEY` |
 | `src/lib/ratingTiers.ts` | Rating tiers (Skip…Incredible) and their gut-feeling labels; source of the spectrum's tier boundaries |
-| `src/lib/rankingEngine.ts` | Rating ⇄ Elo, non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` |
+| `src/lib/rankingEngine.ts` | Non-linear spectrum mapping (`pctToSpectrumRating` / `spectrumRatingToPct`), side-by-side (SxS) binary-insertion search, `recomputeMagicScores` (scores = gut ratings fitted to the order; there is no Elo) |
+| `src/lib/rankingActions.ts` | The list edits behind ranking: `placeSpot` (new spot or re-rank, keeps notes/history), `reorderSpot` (drag), `restoreSpot` (undo delete); pure and tested, App only persists the result |
 | `src/lib/tasteModel.ts` | Pure, dependency-free taste model shared with `functions/`: `isSameSpot`, similarity (Pearson+Kendall+z), `predictTaste` with the privacy guard (non-followed raters only when ≥3 are positively correlated; never named) |
 | `src/lib/friendsService.ts` | Friend matching, group blend ("Eat Together"), social metrics (friends avg + all-jelly avg from `placeStats`; prediction from followed friends or the stronger server prediction) |
 | `src/lib/predictions.ts`, `usePredictions.ts` | Parse + one `onSnapshot` of `users/{uid}/private/predictions`, looked up per spot by `placeId__category` |

@@ -205,15 +205,11 @@ export function countSpotsToCheck(conflicts: OrderConflict[]): number {
   return count;
 }
 
-/** Moves `list[from]` to `to`, giving it an Elo between its new neighbours (as a drag does) */
-export function moveWithElo(list: RestaurantEntry[], from: number, to: number): RestaurantEntry[] {
+/** Moves `list[from]` to `to` (as a drag does) */
+export function moveSpot<T>(list: T[], from: number, to: number): T[] {
   const next = [...list];
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
-  const above = to > 0 ? next[to - 1] : null;
-  const below = to < next.length - 1 ? next[to + 1] : null;
-  const elo = above && below ? Math.round(0.5 * (above.elo + below.elo)) : above ? above.elo - 30 : below ? below.elo + 30 : item.elo;
-  next[to] = { ...item, elo };
   return next;
 }
 
@@ -254,8 +250,8 @@ export function applyCheckAnswer(
 
   const theta = fitStrengths(withAnswer, collectJudgments(withAnswer));
   const strength = new Map(withAnswer.map((e, i) => [e.id, theta[i]]));
-  const raiseLower = moveWithElo(withAnswer, from, target);
-  const dropHigher = moveWithElo(withAnswer, target, from);
+  const raiseLower = moveSpot(withAnswer, from, target);
+  const dropHigher = moveSpot(withAnswer, target, from);
   return disagreement(dropHigher, strength) < disagreement(raiseLower, strength) ? dropHigher : raiseLower;
 }
 
