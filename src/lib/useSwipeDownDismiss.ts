@@ -48,10 +48,8 @@ export function useSwipeDownDismiss({
   const [isDragging, setIsDragging] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
 
-  const sheetNodeRef = useRef<HTMLElement | null>(null);
-  const sheetRef = (node: HTMLElement | null) => {
-    sheetNodeRef.current = node;
-  };
+  // State, not a ref: sheets that stay mounted while closed get their node (and listener) back on reopen
+  const [sheetEl, sheetRef] = useState<HTMLElement | null>(null);
 
   const scrollContainerNodeRef = useRef<HTMLElement | null>(null);
   const scrollContainerRef = (node: HTMLElement | null) => {
@@ -61,7 +59,6 @@ export function useSwipeDownDismiss({
 
   // Attach non-passive touchmove listener to the sheet to physically prevent Android pull-to-refresh
   useEffect(() => {
-    const sheetEl = sheetNodeRef.current;
     if (!sheetEl) return;
 
     const onNativeTouchMove = (e: TouchEvent) => {
@@ -82,7 +79,7 @@ export function useSwipeDownDismiss({
     return () => {
       sheetEl.removeEventListener('touchmove', onNativeTouchMove);
     };
-  }, [isDismissing]);
+  }, [sheetEl, isDismissing]);
 
   const touchStartRef = useRef<{
     startY: number;

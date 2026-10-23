@@ -17,6 +17,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.3.2',
+    date: '2026-10-23',
+    title: 'Swipe to close',
+    highlights: [
+      'On your phone, drag any card down from its top edge to close it—now including rating, side-by-side picks and Settings',
+      'Settings save as soon as you close them, so there’s no Done button to remember',
+    ],
+  },
+  {
     version: '3.3.1',
     date: '2026-10-22',
     title: 'Small touches',

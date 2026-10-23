@@ -1587,30 +1587,24 @@ export const App: React.FC = () => {
 
   const isFiltered = isFilterActive(filters);
 
-  const saveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    updateLocalSettings({
-      defaultCity: defaultCity.trim(),
-      darkMode,
-      handle: userHandle,
-      linearRatingScale,
-      useCurrentLocation,
-    });
-    if (user) {
-      setDoc(
-        doc(db, 'users', user.uid),
-        {
-          defaultCity: defaultCity.trim(),
-          darkMode,
-          handle: userHandle,
-          linearRatingScale,
-          useCurrentLocation,
-          updatedAt: Date.now(),
-        },
-        { merge: true }
-      ).catch(logWriteError('settings'));
-    }
+  // Settings has no Save button: closing it saves whatever changed since it opened
+  const settingsAtOpenRef = useRef('');
+  const currentSettings = () => ({ defaultCity: defaultCity.trim(), linearRatingScale, useCurrentLocation });
+  const openSettings = () => {
+    settingsAtOpenRef.current = JSON.stringify(currentSettings());
+    setIsSettingsOpen(true);
+  };
+  const closeSettings = () => {
     setIsSettingsOpen(false);
+    const next = currentSettings();
+    if (JSON.stringify(next) === settingsAtOpenRef.current) return;
+    setDefaultCity(next.defaultCity);
+    updateLocalSettings(next);
+    if (user) {
+      setDoc(doc(db, 'users', user.uid), { ...next, updatedAt: Date.now() }, { merge: true }).catch(
+        logWriteError('settings')
+      );
+    }
     showToast('Saved');
   };
 
@@ -1839,7 +1833,7 @@ export const App: React.FC = () => {
             {!isReadOnly && (
               <button
                 type="button"
-                onClick={() => setIsSettingsOpen(true)}
+                onClick={openSettings}
                 className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
                 aria-label={hasUnseenChangelog ? 'Settings · new features' : 'Settings'}
                 title="Settings"
@@ -2659,8 +2653,7 @@ export const App: React.FC = () => {
       <MountWhenOpened open={isSettingsOpen}>
         <SettingsModal
           isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
-          onSubmit={saveSettings}
+          onClose={closeSettings}
           useCurrentLocation={useCurrentLocation}
           onToggleCurrentLocation={() => {
             if (!useCurrentLocation) {

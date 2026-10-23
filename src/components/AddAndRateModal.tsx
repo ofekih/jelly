@@ -16,6 +16,7 @@ import { hasSquareCover, posterUrl, searchTitles, spotPlaceLabel } from '../lib/
 import { isMediaPlaceId } from '../lib/tasteModel';
 import { GROUP_COPY, searchPlaceholder, wantLabel } from '../lib/groups';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
@@ -75,6 +76,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const copy = GROUP_COPY[group];
   const isTitles = !copy.hasLocation; // Movies, shows and books
   useBodyScrollLock(isOpen);
+  const swipe = useSwipeDownDismiss({ onClose });
   const [step, setStep] = useState<'search' | 'q1_rating' | 'q2_category'>('search');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceCandidate[]>([]);
@@ -291,8 +293,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
     ? Array.from(new Set([...candidateCategories, ...GROUP_CATEGORIES[group]]))
     : candidateCategories;
 
+  // Past search it's a bottom sheet: dragging its top edge down closes it
+  const isSheet = step !== 'search';
+  const dragFromTop = isSheet ? swipe.bindHandleTouch : undefined;
+
   return (
     <div
+      style={isSheet ? swipe.backdropStyle : undefined}
       className={`fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-xs animate-jelly-backdrop overscroll-contain ${
         step === 'search'
           ? 'items-start sm:items-center pt-2 sm:pt-4 px-2 sm:px-4'
@@ -301,6 +308,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={swipe.sheetRef}
+        style={isSheet ? swipe.sheetStyle : undefined}
         className={`w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col overscroll-contain ${
           step === 'search'
             ? 'rounded-3xl max-h-[60dvh] sm:max-h-[85vh] animate-jelly-dialog'
@@ -310,13 +319,19 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
       >
         {/* Mobile Grab Handle Pill (on non-search steps) */}
         {step !== 'search' && (
-          <div className="w-full pt-2.5 pb-1 flex justify-center sm:hidden shrink-0 touch-none select-none">
+          <div
+            {...dragFromTop}
+            className="w-full pt-2.5 pb-1 flex justify-center sm:hidden shrink-0 touch-none select-none cursor-grab active:cursor-grabbing"
+          >
             <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
           </div>
         )}
 
         {/* Minimal Top Bar */}
-        <div className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between shrink-0 touch-none select-none">
+        <div
+          {...dragFromTop}
+          className="px-5 pt-3 sm:pt-4 pb-3 flex items-center justify-between shrink-0 touch-none select-none"
+        >
           {step !== 'search' && !reRankingEntry ? (
             <button
               type="button"

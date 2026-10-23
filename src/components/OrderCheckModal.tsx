@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { RestaurantEntry } from '../types';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import {
   CheckOutcome,
   countSpotsToCheck,
@@ -20,6 +21,7 @@ interface OrderCheckModalProps {
 /** Asks about pairs whose order disagrees with your earlier answers, one at a time */
 export const OrderCheckModal: React.FC<OrderCheckModalProps> = ({ isOpen, list, onAnswer, onClose }) => {
   useBodyScrollLock(isOpen);
+  const swipe = useSwipeDownDismiss({ onClose });
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [answered, setAnswered] = useState(0);
   const [lastMove, setLastMove] = useState<string | null>(null);
@@ -98,9 +100,23 @@ export const OrderCheckModal: React.FC<OrderCheckModalProps> = ({ isOpen, list, 
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop">
-      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col animate-jelly-sheet sm:animate-jelly-dialog overscroll-contain">
-        <div className="px-5 pt-4 pb-1 flex items-center justify-between">
+    <div
+      style={swipe.backdropStyle}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+    >
+      <div
+        ref={swipe.sheetRef}
+        style={swipe.sheetStyle}
+        className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col animate-jelly-sheet sm:animate-jelly-dialog overscroll-contain"
+      >
+        {/* Mobile swipe-down handle: dragging the top edge down closes the sheet */}
+        <div
+          {...swipe.bindHandleTouch}
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0 touch-none select-none"
+        >
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
+        </div>
+        <div {...swipe.bindHandleTouch} className="px-5 pt-2 sm:pt-4 pb-1 flex items-center justify-between touch-none select-none">
           <span className="w-8" />
           <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
             {current ? 'Which do you prefer?' : 'Order check'}

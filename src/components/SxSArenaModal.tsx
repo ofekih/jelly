@@ -3,6 +3,7 @@ import { RotateCcw, X } from 'lucide-react';
 import { CATEGORY_LABEL, PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
 import { getCategoryList } from '../lib/categoryLists';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
+import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import {
   getBestInsertionIndex,
   getPlacementElo,
@@ -49,6 +50,7 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
   onFinishPlacement,
 }) => {
   useBodyScrollLock(isOpen);
+  const swipe = useSwipeDownDismiss({ onClose });
   const [searchState, setSearchState] = useState<SxSSearchState | null>(null);
 
   const pool = useMemo(() => {
@@ -169,8 +171,15 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
         .join(' · ');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop">
-      <div className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col animate-jelly-sheet sm:animate-jelly-dialog overscroll-contain">
+    <div
+      style={swipe.backdropStyle}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/55 backdrop-blur-xs p-0 sm:p-4 animate-jelly-backdrop"
+    >
+      <div
+        ref={swipe.sheetRef}
+        style={swipe.sheetStyle}
+        className="w-full max-w-xl bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-3xl shadow-2xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden flex flex-col animate-jelly-sheet sm:animate-jelly-dialog overscroll-contain"
+      >
         {/* Subtle Progress Line */}
         <div className="w-full h-1 bg-zinc-100 dark:bg-zinc-800">
           <div
@@ -179,8 +188,16 @@ export const SxSArenaModal: React.FC<SxSArenaModalProps> = ({
           />
         </div>
 
+        {/* Mobile swipe-down handle: dragging the top edge down closes the sheet */}
+        <div
+          {...swipe.bindHandleTouch}
+          className="w-full pt-2.5 pb-1 flex justify-center sm:hidden cursor-grab active:cursor-grabbing shrink-0 touch-none select-none"
+        >
+          <div className="w-10 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-700 pointer-events-none" />
+        </div>
+
         {/* Minimal Top Header */}
-        <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+        <div {...swipe.bindHandleTouch} className="px-5 pt-2 sm:pt-4 pb-2 flex items-center justify-between touch-none select-none">
           <div className="w-8">
             {searchState.history.length > 0 && (
               <button
