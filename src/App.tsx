@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -82,7 +82,6 @@ import {
   OrderConflict,
   PROMPT_MARGIN,
 } from './lib/comparisonHistory';
-import { OrderCheckModal } from './components/OrderCheckModal';
 import {
   deriveDefaultHandle,
   getFriendMatchesForSpot,
@@ -92,24 +91,16 @@ import {
 import { isMediaPlaceId } from './lib/tasteModel';
 import { isFilterActive, matchesSpotFilters, sortByDistance, SpotFilters } from './lib/spotFilters';
 import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './components/GameNightSelect';
-import { AddAndRateModal } from './components/AddAndRateModal';
 import { BookmarkList } from './components/BookmarkList';
 import { ForYouList } from './components/ForYouList';
 import { ConfirmModal } from './components/ConfirmModal';
-import { EatTogetherModal } from './components/EatTogetherModal';
-import { FollowListModal } from './components/FollowListModal';
-import { FriendsModal } from './components/FriendsModal';
 import { JellyBeanIcon } from './components/JellyBeanIcon';
-import { PendingPlacement, SxSArenaModal } from './components/SxSArenaModal';
+import type { PendingPlacement } from './components/SxSArenaModal';
 import { RestaurantList } from './components/RestaurantList';
-import { RestaurantMapView } from './components/RestaurantMapView';
-import { ShareModal } from './components/ShareModal';
-import { SpotDetailModal } from './components/SpotDetailModal';
-import { WhatsNewModal } from './components/WhatsNewModal';
-import { SettingsModal } from './components/SettingsModal';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { UpdateAvailableBanner } from './components/UpdateAvailableBanner';
 import { Toast, useToast } from './components/Toast';
+import { lazyNamed, MountWhenOpened, preloadWhenIdle } from './components/Deferred';
 import { useUserLocation } from './lib/useUserLocation';
 import { subscribeAccountLists } from './lib/sync/accountLists';
 import { reconcileFollowEdges, saveFollowChange } from './lib/sync/follows';
@@ -147,6 +138,20 @@ const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
 };
 
 const NO_BOOKMARKS: BookmarkEntry[] = [];
+
+// Screens that aren't needed for the first paint load in their own chunks (see Deferred.tsx)
+const RestaurantMapView = lazyNamed(() => import('./components/RestaurantMapView'), 'RestaurantMapView');
+const AddAndRateModal = lazyNamed(() => import('./components/AddAndRateModal'), 'AddAndRateModal');
+const OrderCheckModal = lazyNamed(() => import('./components/OrderCheckModal'), 'OrderCheckModal');
+const SxSArenaModal = lazyNamed(() => import('./components/SxSArenaModal'), 'SxSArenaModal');
+const SpotDetailModal = lazyNamed(() => import('./components/SpotDetailModal'), 'SpotDetailModal');
+const FriendsModal = lazyNamed(() => import('./components/FriendsModal'), 'FriendsModal');
+const EatTogetherModal = lazyNamed(() => import('./components/EatTogetherModal'), 'EatTogetherModal');
+const ShareModal = lazyNamed(() => import('./components/ShareModal'), 'ShareModal');
+const WhatsNewModal = lazyNamed(() => import('./components/WhatsNewModal'), 'WhatsNewModal');
+const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'SettingsModal');
+const FollowListModal = lazyNamed(() => import('./components/FollowListModal'), 'FollowListModal');
+const DEFERRED_SCREENS = [RestaurantMapView, AddAndRateModal, OrderCheckModal, SxSArenaModal, SpotDetailModal, FriendsModal, EatTogetherModal, ShareModal, WhatsNewModal, SettingsModal, FollowListModal];
 
 /** A local copy that fails to load (corrupt or hand-edited) starts the list empty instead of crashing. */
 function loadStored<T>(load: () => T[]): T[] {
@@ -295,6 +300,8 @@ export const App: React.FC = () => {
     users: SharedListPayload[];
   }>({ isOpen: false, title: '', users: [] });
   const { toast, showToast } = useToast();
+
+  useEffect(() => preloadWhenIdle(DEFERRED_SCREENS), []);
 
   // A rejected save (usually an outdated app hitting newer rules) would otherwise only reach the
   // console and quietly undo itself on the next load
@@ -2309,27 +2316,29 @@ export const App: React.FC = () => {
         {sharedListLoading ? (
           <div className="py-16 text-center text-xs text-zinc-400">Loading shared list...</div>
         ) : viewMode === 'map' && groupCopy.hasLocation ? (
-          <RestaurantMapView
-            mode={activeTab === 'for_you' ? 'want_to_try' : activeTab}
-            restaurants={filteredRestaurants}
-            bookmarks={activeTab === 'for_you' ? filteredForYou : filteredBookmarks}
-            darkMode={darkMode}
-            userLocation={userLocation}
-            selectedCity={selectedCity}
-            worldScale={selectedGroup === 'travel'}
-            onRequestLocation={() => requestUserLocation()}
-            onSelectSpot={(spot) => {
-              trackEvent('view_spot_detail', {
-                restaurant_name: spot.name,
-                category: spot.category,
-                magic_score: spot.magicScore,
-                rank_position: spot.rankIndex + 1,
-                from_map: true,
-              });
-              setActiveDetailSpot(spot);
-            }}
-            onRankBookmark={activeTab === 'for_you' ? handleRankForYou : handleStartRankFromBookmark}
-          />
+          <Suspense fallback={<div className="py-16 text-center text-xs text-zinc-400">Loading map...</div>}>
+            <RestaurantMapView
+              mode={activeTab === 'for_you' ? 'want_to_try' : activeTab}
+              restaurants={filteredRestaurants}
+              bookmarks={activeTab === 'for_you' ? filteredForYou : filteredBookmarks}
+              darkMode={darkMode}
+              userLocation={userLocation}
+              selectedCity={selectedCity}
+              worldScale={selectedGroup === 'travel'}
+              onRequestLocation={() => requestUserLocation()}
+              onSelectSpot={(spot) => {
+                trackEvent('view_spot_detail', {
+                  restaurant_name: spot.name,
+                  category: spot.category,
+                  magic_score: spot.magicScore,
+                  rank_position: spot.rankIndex + 1,
+                  from_map: true,
+                });
+                setActiveDetailSpot(spot);
+              }}
+              onRankBookmark={activeTab === 'for_you' ? handleRankForYou : handleStartRankFromBookmark}
+            />
+          </Suspense>
         ) : activeTab === 'for_you' ? (
           <ForYouList
             spots={filteredForYou}
@@ -2443,161 +2452,175 @@ export const App: React.FC = () => {
       </footer>
 
       {/* Add & Rate Wizard (Search -> Q1: 1-10 -> Q2: List) */}
-      <AddAndRateModal
-        isOpen={isAddModalOpen}
-        onClose={() => {
-          setIsAddModalOpen(false);
-          setReRankingEntry(null);
-          setRankingBookmark(null);
-        }}
-        existingRestaurants={restaurants}
-        defaultCategory={selectedCategory}
-        myUid={user?.uid}
-        bookmarkedPlaceIds={myBookmarkedPlaceIds}
-        friendLists={friendLists}
-        reRankingEntry={reRankingEntry}
-        defaultCity={defaultCity}
-        linearRatingScale={linearRatingScale}
-        userLocation={useCurrentLocation ? userLocation : null}
-        onCompleteQuestions={handleCompleteQuestions}
-        onAddBookmark={(candidate) => handleAddBookmark(candidate)}
-      />
+      <MountWhenOpened open={isAddModalOpen}>
+        <AddAndRateModal
+          isOpen={isAddModalOpen}
+          onClose={() => {
+            setIsAddModalOpen(false);
+            setReRankingEntry(null);
+            setRankingBookmark(null);
+          }}
+          existingRestaurants={restaurants}
+          defaultCategory={selectedCategory}
+          myUid={user?.uid}
+          bookmarkedPlaceIds={myBookmarkedPlaceIds}
+          friendLists={friendLists}
+          reRankingEntry={reRankingEntry}
+          defaultCity={defaultCity}
+          linearRatingScale={linearRatingScale}
+          userLocation={useCurrentLocation ? userLocation : null}
+          onCompleteQuestions={handleCompleteQuestions}
+          onAddBookmark={(candidate) => handleAddBookmark(candidate)}
+        />
+      </MountWhenOpened>
 
-      <OrderCheckModal
-        isOpen={isOrderCheckOpen}
-        list={selectedCategoryList}
-        onAnswer={handleOrderCheckAnswer}
-        onClose={() => setIsOrderCheckOpen(false)}
-      />
+      <MountWhenOpened open={isOrderCheckOpen}>
+        <OrderCheckModal
+          isOpen={isOrderCheckOpen}
+          list={selectedCategoryList}
+          onAnswer={handleOrderCheckAnswer}
+          onClose={() => setIsOrderCheckOpen(false)}
+        />
+      </MountWhenOpened>
 
       {/* Q3+: SxS Comparison Modal */}
-      <SxSArenaModal
-        isOpen={isSxSOpen}
-        onClose={() => {
-          setIsSxSOpen(false);
-          setPendingPlacement(null);
-        }}
-        existingRestaurants={restaurants}
-        pendingPlacement={pendingPlacement}
-        onFinishPlacement={handleFinishPlacement}
-      />
+      <MountWhenOpened open={isSxSOpen}>
+        <SxSArenaModal
+          isOpen={isSxSOpen}
+          onClose={() => {
+            setIsSxSOpen(false);
+            setPendingPlacement(null);
+          }}
+          existingRestaurants={restaurants}
+          pendingPlacement={pendingPlacement}
+          onFinishPlacement={handleFinishPlacement}
+        />
+      </MountWhenOpened>
 
       {/* Spot Detail / Re-Rank / Hidden Edit Sheet */}
-      <SpotDetailModal
-        restaurant={activeDetailSpot}
-        readOnly={isReadOnly}
-        friendOwnerName={sharedList?.ownerName}
-        isBookmarkedInMyList={isDetailSpotBookmarkedByMe}
-        friendMatches={activeDetailFriendMatches}
-        socialMetrics={activeDetailSocialMetrics}
-        onSaveFromFriendToBookmark={
-          sharedList
-            ? (spot: RestaurantEntry) =>
-                handleBookmarkSpotFromFriend(
-                  spot,
-                  sharedList.ownerName,
-                  sharedList.ownerUid || sharedList.id
-                )
-            : undefined
-        }
-        onClose={() => setActiveDetailSpot(null)}
-        onReRank={(spot) => {
-          trackEvent('open_rerank_modal', {
-            restaurant_name: spot.name,
-            category: spot.category,
-          });
-          setReRankingEntry(spot);
-          setIsAddModalOpen(true);
-        }}
-        onSaveEdits={handleSaveSpotEdits}
-        onDelete={handleDeleteRestaurant}
-      />
+      <MountWhenOpened open={Boolean(activeDetailSpot)}>
+        <SpotDetailModal
+          restaurant={activeDetailSpot}
+          readOnly={isReadOnly}
+          friendOwnerName={sharedList?.ownerName}
+          isBookmarkedInMyList={isDetailSpotBookmarkedByMe}
+          friendMatches={activeDetailFriendMatches}
+          socialMetrics={activeDetailSocialMetrics}
+          onSaveFromFriendToBookmark={
+            sharedList
+              ? (spot: RestaurantEntry) =>
+                  handleBookmarkSpotFromFriend(
+                    spot,
+                    sharedList.ownerName,
+                    sharedList.ownerUid || sharedList.id
+                  )
+              : undefined
+          }
+          onClose={() => setActiveDetailSpot(null)}
+          onReRank={(spot) => {
+            trackEvent('open_rerank_modal', {
+              restaurant_name: spot.name,
+              category: spot.category,
+            });
+            setReRankingEntry(spot);
+            setIsAddModalOpen(true);
+          }}
+          onSaveEdits={handleSaveSpotEdits}
+          onDelete={handleDeleteRestaurant}
+        />
+      </MountWhenOpened>
 
       {/* Friends Directory & @Handle Modal */}
-      <FriendsModal
-        isOpen={isFriendsOpen}
-        onClose={() => {
-          setIsFriendsOpen(false);
-          if (followers.length > 0) {
-            markFollowersSeen(followers.map((f) => f.id));
+      <MountWhenOpened open={isFriendsOpen}>
+        <FriendsModal
+          isOpen={isFriendsOpen}
+          onClose={() => {
+            setIsFriendsOpen(false);
+            if (followers.length > 0) {
+              markFollowersSeen(followers.map((f) => f.id));
+            }
+          }}
+          isSignedIn={Boolean(user)}
+          userUid={user?.uid}
+          userHandle={userHandle}
+          myRestaurants={restaurants}
+          onUpdateHandle={handleUpdateUserHandle}
+          friends={friends}
+          friendListsMap={friendListsMap}
+          followers={followers}
+          newFollowerIds={newFollowerIds}
+          onOpenFollowList={(title, users) =>
+            setFollowListDialog({ isOpen: true, title, users })
           }
-        }}
-        isSignedIn={Boolean(user)}
-        userUid={user?.uid}
-        userHandle={userHandle}
-        myRestaurants={restaurants}
-        onUpdateHandle={handleUpdateUserHandle}
-        friends={friends}
-        friendListsMap={friendListsMap}
-        followers={followers}
-        newFollowerIds={newFollowerIds}
-        onOpenFollowList={(title, users) =>
-          setFollowListDialog({ isOpen: true, title, users })
-        }
-        onSearchDirectory={handleSearchPublicLists}
-        onFollowFriend={handleFollowFriend}
-        onFollowByShareId={handleFollowByShareId}
-        onUnfollowFriend={handleUnfollowFriend}
-        onViewFriendList={(friendUid: string) => {
-          const found = friends.find((f) => f.uid === friendUid);
-          if (found) {
-            handleSelectFriendToView(found);
-          } else if (friendListsMap[friendUid]) {
-            setSharedList(friendListsMap[friendUid]);
-          } else {
-            const fromFollowers = followers.find((f) => f.id === friendUid);
-            if (fromFollowers) handleViewUserList(fromFollowers);
-          }
-        }}
-        onOpenBlendWithFriend={(friendUid: string) => {
-          setEatTogetherFriendUid(friendUid);
-          setIsEatTogetherOpen(true);
-        }}
-        onPublishMyProfile={() => handlePublishShareLink()}
-      />
+          onSearchDirectory={handleSearchPublicLists}
+          onFollowFriend={handleFollowFriend}
+          onFollowByShareId={handleFollowByShareId}
+          onUnfollowFriend={handleUnfollowFriend}
+          onViewFriendList={(friendUid: string) => {
+            const found = friends.find((f) => f.uid === friendUid);
+            if (found) {
+              handleSelectFriendToView(found);
+            } else if (friendListsMap[friendUid]) {
+              setSharedList(friendListsMap[friendUid]);
+            } else {
+              const fromFollowers = followers.find((f) => f.id === friendUid);
+              if (fromFollowers) handleViewUserList(fromFollowers);
+            }
+          }}
+          onOpenBlendWithFriend={(friendUid: string) => {
+            setEatTogetherFriendUid(friendUid);
+            setIsEatTogetherOpen(true);
+          }}
+          onPublishMyProfile={() => handlePublishShareLink()}
+        />
+      </MountWhenOpened>
 
       {/* Eat Together / Group Blend Modal */}
-      <EatTogetherModal
-        isOpen={isEatTogetherOpen}
-        onClose={() => setIsEatTogetherOpen(false)}
-        myRestaurants={restaurants}
-        myBookmarks={bookmarks}
-        friends={friends}
-        friendListsMap={friendListsMap}
-        initialSelectedFriendUid={eatTogetherFriendUid}
-        initialCategory={selectedCategory}
-        userLocation={userLocation}
-        bookmarkedPlaceIds={myBookmarkedPlaceIds}
-        onSaveFriendSpotToBookmarks={(candidate, recByLabel, recByUid) =>
-          handleBookmarkSpotFromFriend(candidate, recByLabel, recByUid)
-        }
-        onOpenFriendsModal={() => setIsFriendsOpen(true)}
-      />
+      <MountWhenOpened open={isEatTogetherOpen}>
+        <EatTogetherModal
+          isOpen={isEatTogetherOpen}
+          onClose={() => setIsEatTogetherOpen(false)}
+          myRestaurants={restaurants}
+          myBookmarks={bookmarks}
+          friends={friends}
+          friendListsMap={friendListsMap}
+          initialSelectedFriendUid={eatTogetherFriendUid}
+          initialCategory={selectedCategory}
+          userLocation={userLocation}
+          bookmarkedPlaceIds={myBookmarkedPlaceIds}
+          onSaveFriendSpotToBookmarks={(candidate, recByLabel, recByUid) =>
+            handleBookmarkSpotFromFriend(candidate, recByLabel, recByUid)
+          }
+          onOpenFriendsModal={() => setIsFriendsOpen(true)}
+        />
+      </MountWhenOpened>
 
       {/* Share List & Top 10 Snapshot Card Modal */}
-      <ShareModal
-        isOpen={isShareOpen}
-        onClose={() => setIsShareOpen(false)}
-        restaurants={
-          filteredRestaurants.length > 0
-            ? filteredRestaurants
-            : getCategoryList(activeRestaurants, selectedCategory)
-        }
-        bookmarks={activeBookmarks.filter((b) => b.category === selectedCategory)}
-        selectedCategory={selectedCategory}
-        selectedCity={selectedCity}
-        selectedCuisine={selectedCuisine}
-        ownerName={
-          sharedList
-            ? sharedList.ownerName
-            : user?.displayName
-            ? user.displayName.split(' ')[0]
-            : ''
-        }
-        isSignedIn={Boolean(user)}
-        darkMode={darkMode}
-        onPublishShareLink={() => handlePublishShareLink()}
-      />
+      <MountWhenOpened open={isShareOpen}>
+        <ShareModal
+          isOpen={isShareOpen}
+          onClose={() => setIsShareOpen(false)}
+          restaurants={
+            filteredRestaurants.length > 0
+              ? filteredRestaurants
+              : getCategoryList(activeRestaurants, selectedCategory)
+          }
+          bookmarks={activeBookmarks.filter((b) => b.category === selectedCategory)}
+          selectedCategory={selectedCategory}
+          selectedCity={selectedCity}
+          selectedCuisine={selectedCuisine}
+          ownerName={
+            sharedList
+              ? sharedList.ownerName
+              : user?.displayName
+              ? user.displayName.split(' ')[0]
+              : ''
+          }
+          isSignedIn={Boolean(user)}
+          darkMode={darkMode}
+          onPublishShareLink={() => handlePublishShareLink()}
+        />
+      </MountWhenOpened>
 
       {/* Confirmation Modal for Deleting Spots / Bookmarks / Friends */}
       <ConfirmModal
@@ -2616,54 +2639,60 @@ export const App: React.FC = () => {
       />
 
       {/* Modal to view followers and following for anyone */}
-      <FollowListModal
-        isOpen={followListDialog.isOpen}
-        onClose={() => setFollowListDialog((prev) => ({ ...prev, isOpen: false }))}
-        title={followListDialog.title}
-        users={followListDialog.users}
-        myUid={user?.uid}
-        followedUids={followedUids}
-        onFollowUser={handleFollowFriend}
-        onUnfollowUser={handleUnfollowFriend}
-        onSelectUser={(selectedUser) => {
-          setFollowListDialog((prev) => ({ ...prev, isOpen: false }));
-          handleViewUserList(selectedUser);
-        }}
-      />
+      <MountWhenOpened open={followListDialog.isOpen}>
+        <FollowListModal
+          isOpen={followListDialog.isOpen}
+          onClose={() => setFollowListDialog((prev) => ({ ...prev, isOpen: false }))}
+          title={followListDialog.title}
+          users={followListDialog.users}
+          myUid={user?.uid}
+          followedUids={followedUids}
+          onFollowUser={handleFollowFriend}
+          onUnfollowUser={handleUnfollowFriend}
+          onSelectUser={(selectedUser) => {
+            setFollowListDialog((prev) => ({ ...prev, isOpen: false }));
+            handleViewUserList(selectedUser);
+          }}
+        />
+      </MountWhenOpened>
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSubmit={saveSettings}
-        useCurrentLocation={useCurrentLocation}
-        onToggleCurrentLocation={() => {
-          if (!useCurrentLocation) {
-            requestUserLocation({
-              deniedMessage: 'Enable location permissions in your browser to use current location',
-              onDone: () => setUseCurrentLocation(true),
-            });
-          } else {
-            setUseCurrentLocation(false);
-          }
-        }}
-        hasLocation={Boolean(userLocation)}
-        defaultCity={defaultCity}
-        onDefaultCityChange={setDefaultCity}
-        linearRatingScale={linearRatingScale}
-        onLinearRatingScaleChange={setLinearRatingScale}
-        onExport={handleExportJson}
-        hasUnseenChangelog={hasUnseenChangelog}
-        onOpenWhatsNew={() => {
-          trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
-          setIsWhatsNewOpen(true);
-          setHasUnseenChangelog(false);
-          updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
-        }}
-        email={user ? user.email : undefined}
-        onSignOut={requestSignOut}
-      />
+      <MountWhenOpened open={isSettingsOpen}>
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onSubmit={saveSettings}
+          useCurrentLocation={useCurrentLocation}
+          onToggleCurrentLocation={() => {
+            if (!useCurrentLocation) {
+              requestUserLocation({
+                deniedMessage: 'Enable location permissions in your browser to use current location',
+                onDone: () => setUseCurrentLocation(true),
+              });
+            } else {
+              setUseCurrentLocation(false);
+            }
+          }}
+          hasLocation={Boolean(userLocation)}
+          defaultCity={defaultCity}
+          onDefaultCityChange={setDefaultCity}
+          linearRatingScale={linearRatingScale}
+          onLinearRatingScaleChange={setLinearRatingScale}
+          onExport={handleExportJson}
+          hasUnseenChangelog={hasUnseenChangelog}
+          onOpenWhatsNew={() => {
+            trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
+            setIsWhatsNewOpen(true);
+            setHasUnseenChangelog(false);
+            updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
+          }}
+          email={user ? user.email : undefined}
+          onSignOut={requestSignOut}
+        />
+      </MountWhenOpened>
 
-      <WhatsNewModal isOpen={isWhatsNewOpen} onClose={() => setIsWhatsNewOpen(false)} />
+      <MountWhenOpened open={isWhatsNewOpen}>
+        <WhatsNewModal isOpen={isWhatsNewOpen} onClose={() => setIsWhatsNewOpen(false)} />
+      </MountWhenOpened>
 
       {/* PWA Mobile Install Nudge */}
       <PwaInstallBanner />
