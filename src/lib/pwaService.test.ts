@@ -1,13 +1,28 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
+  captureInstallPrompt,
   dismissPwaNudge,
+  getInstallPrompt,
+  isIosDevice,
+  isIosSafari,
   isMobileDevice,
   isPwaNudgeDismissed,
   isRunningAsPwa,
   PWA_DISMISS_KEY,
   PWA_INSTALLED_KEY,
+  promptInstall,
   recordPwaInstalled,
+  subscribeInstallPrompt,
 } from './pwaService';
+
+const IPHONE_SAFARI =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const IPHONE_CHROME =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1';
+const IPHONE_FIREFOX =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/132.0 Mobile/15E148 Safari/605.1.15';
+const MAC_SAFARI =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
 
 describe('pwaService', () => {
   let mockStorage: Record<string, string>;
@@ -114,6 +129,69 @@ describe('pwaService', () => {
 
     it('records pwa install status', () => {
       recordPwaInstalled(storage);
+      expect(storage.getItem(PWA_INSTALLED_KEY)).toBe('true');
+    });
+  });
+
+  describe('iOS detection', () => {
+    const nav = (userAgent: string, maxTouchPoints = 0) =>
+      ({ userAgent, maxTouchPoints }) as unknown as Navigator;
+
+    it('tells Safari apart from other iPhone browsers', () => {
+      expect(isIosSafari(nav(IPHONE_SAFARI))).toBe(true);
+      expect(isIosSafari(nav(IPHONE_CHROME))).toBe(false);
+      expect(isIosSafari(nav(IPHONE_FIREFOX))).toBe(false);
+      expect(isIosDevice(nav(IPHONE_CHROME))).toBe(true);
+      expect(isIosDevice(nav(IPHONE_FIREFOX))).toBe(true);
+    });
+
+    it('counts an iPad asking for the desktop site as iOS, but not a Mac', () => {
+      expect(isIosDevice(nav(MAC_SAFARI, 5))).toBe(true);
+      expect(isIosSafari(nav(MAC_SAFARI, 5))).toBe(true);
+      expect(isIosDevice(nav(MAC_SAFARI, 0))).toBe(false);
+    });
+  });
+
+  describe('install prompt', () => {
+    const fakePrompt = (outcome: 'accepted' | 'dismissed') =>
+      Object.assign(new Event('beforeinstallprompt', { cancelable: true }), {
+        platforms: ['web'],
+        userChoice: Promise.resolve({ outcome, platform: 'web' }),
+        prompt: vi.fn(() => Promise.resolve()),
+      });
+
+    it('keeps the event fired before anyone listens, and uses it only once', async () => {
+      const target = new EventTarget();
+      captureInstallPrompt(target, storage);
+      const event = fakePrompt('accepted');
+      target.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(getInstallPrompt()).toBe(event);
+
+      const listener = vi.fn();
+      const unsubscribe = subscribeInstallPrompt(listener);
+      expect(await promptInstall()).toBe(true);
+      expect(event.prompt).toHaveBeenCalledOnce();
+      expect(getInstallPrompt()).toBeNull();
+      expect(listener).toHaveBeenCalled();
+      expect(await promptInstall()).toBe(false);
+      unsubscribe();
+    });
+
+    it('reports a dismissed dialog', async () => {
+      const target = new EventTarget();
+      captureInstallPrompt(target, storage);
+      target.dispatchEvent(fakePrompt('dismissed'));
+      expect(await promptInstall()).toBe(false);
+    });
+
+    it('records the install and drops the event once the app is installed', () => {
+      const target = new EventTarget();
+      captureInstallPrompt(target, storage);
+      target.dispatchEvent(fakePrompt('accepted'));
+      target.dispatchEvent(new Event('appinstalled'));
+      expect(getInstallPrompt()).toBeNull();
       expect(storage.getItem(PWA_INSTALLED_KEY)).toBe('true');
     });
   });

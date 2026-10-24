@@ -17,6 +17,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.3.3',
+    date: '2026-10-23',
+    title: 'Easier install',
+    highlights: [
+      'Install jelly in one tap on Android, and in one click from Chrome or Edge on your computer',
+      'Install steps now fit Chrome, Firefox and Edge on iPhone, and show up on iPad too',
+    ],
+  },
+  {
     version: '3.3.2',
     date: '2026-10-23',
     title: 'Swipe to close',

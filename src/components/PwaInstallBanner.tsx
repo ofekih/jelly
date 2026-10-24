@@ -1,98 +1,59 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Download, PlusSquare, Share2, Sparkles, X } from 'lucide-react';
 import {
   dismissPwaNudge,
+  getInstallPrompt,
+  isIosDevice,
   isIosSafari,
   isMobileDevice,
   isPwaNudgeDismissed,
   isRunningAsPwa,
+  promptInstall,
   recordPwaInstalled,
+  subscribeInstallPrompt,
 } from '../lib/pwaService';
 
-interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: string[];
-  readonly userChoice: Promise<{
-    outcome: 'accepted' | 'dismissed';
-    platform: string;
-  }>;
-  prompt(): Promise<void>;
-}
-
 export const PwaInstallBanner: React.FC = () => {
-  const [isVisible, setIsVisible] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showIosGuide, setShowIosGuide] = useState(false);
-  const [isIos, setIsIos] = useState(false);
+  const [isDue, setIsDue] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  // Captured in main.tsx before React mounts, since browsers fire it once, early
+  const installPrompt = useSyncExternalStore(subscribeInstallPrompt, getInstallPrompt);
+  const [ios] = useState(() => (isIosDevice() ? (isIosSafari() ? 'safari' : 'other') : null));
+  const [isMobile] = useState(() => isMobileDevice() || isIosDevice());
 
   useEffect(() => {
-    // 1. Never show if already running as standalone PWA
-    if (isRunningAsPwa()) return;
-
-    // 2. Only show on mobile devices
-    if (!isMobileDevice()) return;
-
-    // 3. Check if user dismissed recently
-    if (isPwaNudgeDismissed()) return;
-
-    setIsIos(isIosSafari());
-
-    // Listen for Chrome/Android native install prompt event
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-    };
-
-    // Listen for app installed event
-    const handleAppInstalled = () => {
-      recordPwaInstalled();
-      setIsVisible(false);
-      setDeferredPrompt(null);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    window.addEventListener('appinstalled', handleAppInstalled);
-
+    if (isRunningAsPwa() || isPwaNudgeDismissed()) return;
     // Subtle 2.5s delay after page load before sliding up
     const timer = setTimeout(() => {
-      // Re-verify conditions
-      if (!isRunningAsPwa() && isMobileDevice() && !isPwaNudgeDismissed()) {
-        setIsVisible(true);
-      }
+      if (!isRunningAsPwa() && !isPwaNudgeDismissed()) setIsDue(true);
     }, 2500);
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
+    return () => clearTimeout(timer);
   }, []);
 
-  if (!isVisible) return null;
+  // Phones always get the nudge (with steps if there's no install dialog); desktops only when
+  // Chrome/Edge offer one-click install
+  if (!isDue || isHidden || !(isMobile || installPrompt)) return null;
 
   const handleDismiss = () => {
     dismissPwaNudge();
-    setIsVisible(false);
+    setIsHidden(true);
   };
 
   const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      try {
-        await deferredPrompt.prompt();
-        const choice = await deferredPrompt.userChoice;
-        if (choice.outcome === 'accepted') {
-          recordPwaInstalled();
-          setIsVisible(false);
-        } else {
-          handleDismiss();
-        }
-      } catch {
+    if (!installPrompt) {
+      setShowGuide((prev) => !prev);
+      return;
+    }
+    try {
+      if (await promptInstall()) {
+        recordPwaInstalled();
+        setIsHidden(true);
+      } else {
         handleDismiss();
       }
-      setDeferredPrompt(null);
-    } else if (isIos) {
-      setShowIosGuide((prev) => !prev);
-    } else {
-      setShowIosGuide((prev) => !prev);
+    } catch {
+      handleDismiss();
     }
   };
 
@@ -121,7 +82,9 @@ export const PwaInstallBanner: React.FC = () => {
                 </span>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug mt-0.5">
-                Add to your home screen for instant rankings & full-screen view.
+                {isMobile
+                  ? 'Add to your home screen for instant rankings & full-screen view.'
+                  : 'Open jelly in its own window, one click from your dock or taskbar.'}
               </p>
             </div>
           </div>
@@ -136,10 +99,10 @@ export const PwaInstallBanner: React.FC = () => {
           </button>
         </div>
 
-        {/* Expandable step instructions (for iOS Safari or when native prompt is not active) */}
-        {showIosGuide && (
+        {/* Step-by-step instructions where the browser has no install dialog (iOS, Firefox) */}
+        {showGuide && (
           <div className="mt-1 p-3 bg-zinc-50 dark:bg-zinc-800/70 rounded-xl border border-zinc-200/60 dark:border-zinc-700/60 text-xs text-zinc-700 dark:text-zinc-300 space-y-2 animate-in fade-in duration-200">
-            {isIos ? (
+            {ios === 'safari' ? (
               <>
                 <div className="flex items-center gap-2">
                   <span className="w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold flex items-center justify-center text-[11px] shrink-0">
@@ -148,6 +111,27 @@ export const PwaInstallBanner: React.FC = () => {
                   <span>
                     Tap the <strong className="font-semibold text-zinc-900 dark:text-zinc-100">Share</strong> button{' '}
                     <Share2 className="w-3.5 h-3.5 inline mx-0.5 text-sky-500" /> in Safari's toolbar.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold flex items-center justify-center text-[11px] shrink-0">
+                    2
+                  </span>
+                  <span>
+                    Scroll down and tap <strong className="font-semibold text-zinc-900 dark:text-zinc-100">Add to Home Screen</strong>{' '}
+                    <PlusSquare className="w-3.5 h-3.5 inline mx-0.5 text-emerald-500" />.
+                  </span>
+                </div>
+              </>
+            ) : ios === 'other' ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold flex items-center justify-center text-[11px] shrink-0">
+                    1
+                  </span>
+                  <span>
+                    Tap <strong className="font-semibold text-zinc-900 dark:text-zinc-100">Share</strong>{' '}
+                    <Share2 className="w-3.5 h-3.5 inline mx-0.5 text-sky-500" />—in the address bar, or in the browser's menu.
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -193,12 +177,12 @@ export const PwaInstallBanner: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5" />
             <span>
-              {deferredPrompt
+              {installPrompt
                 ? 'Install'
-                : showIosGuide
+                : showGuide
                 ? 'Hide instructions'
-                : isIos
-                ? 'Install on iPhone'
+                : ios
+                ? 'Add to Home Screen'
                 : 'How to install'}
             </span>
           </button>

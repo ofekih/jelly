@@ -84,20 +84,96 @@ export function isMobileDevice(win?: Window, nav?: Navigator): boolean {
 }
 
 /**
- * Checks if the device is iOS Safari (which requires manual "Add to Home Screen" via Share sheet).
+ * Checks if the device runs iOS or iPadOS, in any browser. iPads ask for desktop sites by default
+ * and report a Mac user agent, so a Mac with a touchscreen counts as an iPad.
+ */
+export function isIosDevice(nav?: Navigator): boolean {
+  try {
+    const activeNav = nav ?? (typeof navigator !== 'undefined' ? navigator : undefined);
+    if (!activeNav) return false;
+    const ua = activeNav.userAgent || '';
+    if (/iPhone|iPad|iPod/i.test(ua)) return true;
+    return /Macintosh/i.test(ua) && (activeNav.maxTouchPoints ?? 0) > 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks if the device is iOS Safari, where Add to Home Screen sits right in the Share sheet.
+ * Other iOS browsers (Chrome, Firefox, Edge) can add to the home screen too, from their own Share.
  */
 export function isIosSafari(nav?: Navigator): boolean {
   try {
     const activeNav = nav ?? (typeof navigator !== 'undefined' ? navigator : undefined);
     if (!activeNav) return false;
     const ua = activeNav.userAgent || '';
-    const isIOS = /iPhone|iPad|iPod/i.test(ua);
     const isWebKit = /WebKit/i.test(ua);
-    const isChromeOrFirefox = /CriOS|FxiOS|OPiOS|EdgiOS|mercury/i.test(ua);
-    return isIOS && isWebKit && !isChromeOrFirefox;
+    const isOtherBrowser = /CriOS|FxiOS|OPiOS|EdgiOS|mercury/i.test(ua);
+    return isIosDevice(activeNav) && isWebKit && !isOtherBrowser;
   } catch {
     return false;
   }
+}
+
+/** Chrome/Edge/Samsung Internet's install event, which lets a button open the native install dialog. */
+export interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  readonly userChoice: Promise<{
+    outcome: 'accepted' | 'dismissed';
+    platform: string;
+  }>;
+  prompt(): Promise<void>;
+}
+
+let installPrompt: BeforeInstallPromptEvent | null = null;
+const installPromptListeners = new Set<() => void>();
+
+function setInstallPrompt(next: BeforeInstallPromptEvent | null): void {
+  installPrompt = next;
+  installPromptListeners.forEach((listener) => listener());
+}
+
+/**
+ * Starts listening for the browser's install event. Call before rendering: browsers often fire it
+ * right after load, before React mounts, and never again for that page.
+ */
+export function captureInstallPrompt(target: EventTarget = window, storage?: Storage): void {
+  target.addEventListener('beforeinstallprompt', (e) => {
+    // Keep it for the banner's Install button instead of the browser's own mini-infobar
+    e.preventDefault();
+    setInstallPrompt(e as BeforeInstallPromptEvent);
+  });
+  target.addEventListener('appinstalled', () => {
+    recordPwaInstalled(storage);
+    setInstallPrompt(null);
+  });
+}
+
+/** The captured install event, if the browser offered one and it hasn't been used yet. */
+export function getInstallPrompt(): BeforeInstallPromptEvent | null {
+  return installPrompt;
+}
+
+/** Calls `listener` whenever the install event arrives or is used up; returns the unsubscribe. */
+export function subscribeInstallPrompt(listener: () => void): () => void {
+  installPromptListeners.add(listener);
+  return () => {
+    installPromptListeners.delete(listener);
+  };
+}
+
+/**
+ * Opens the native install dialog. The event works only once, so it is cleared either way;
+ * resolves to whether the user accepted.
+ */
+export async function promptInstall(): Promise<boolean> {
+  const prompt = installPrompt;
+  if (!prompt) return false;
+  setInstallPrompt(null);
+  await prompt.prompt();
+  const choice = await prompt.userChoice;
+  return choice.outcome === 'accepted';
 }
 
 /**

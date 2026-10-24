@@ -1,7 +1,7 @@
 {
   "name": "jelly",
   "short_name": "jelly",
-  "description": "Personal ELO-based restaurant rankings.",
+  "description": "Personal rankings of the things you love, plus a want-to-try list.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",
