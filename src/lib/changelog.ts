@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '3.4.0',
+    date: '2026-10-23',
+    title: 'Better share links',
+    highlights: [
+      'Links to your list now show your top 10 and its scores right in the message, on WhatsApp, iMessage, Slack and more',
+      'Sharing your top-10 card now sends the image itself, not just a line of text',
+      'The jelly icon on your home screen and in link previews is bigger and easier to spot',
+    ],
+  },
+  {
     version: '3.3.3',
     date: '2026-10-23',
     title: 'Easier install',

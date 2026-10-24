@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "sourceMap": true
   },
-  "include": ["src", "../src/lib/tasteModel.ts", "../src/types.ts"]
+  "include": ["src", "../src/lib/tasteModel.ts", "../src/lib/shareCard.ts", "../src/lib/media.ts", "../src/types.ts"]
 }

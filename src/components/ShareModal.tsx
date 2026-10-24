@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, Copy, Download, Link2, Loader2, Share2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SpotCategory } from '../types';
 import { Sheet, SheetHeader } from './Sheet';
 import { JellyBeanIcon } from './JellyBeanIcon';
 import { spotPlaceLabel } from '../lib/media';
+import { cardPixelSize, drawShareCard, type CardSpot } from '../lib/shareCard';
 import { ScoreBadge } from './ScoreBadge';
 
 interface ShareModalProps {
@@ -20,21 +21,44 @@ interface ShareModalProps {
   onPublishShareLink: () => Promise<string | null>;
 }
 
-function getScoreBadgeHex(score: number): string {
-  if (score >= 9.0) return '#059669';
-  if (score >= 7.8) return '#0d9488';
-  if (score >= 6.5) return '#d97706';
-  return '#e11d48';
-}
+let logoImage: Promise<HTMLImageElement | null> | null = null;
 
+/** The transparent logo drawn on the card, loaded once. */
 function loadLogoImage(): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
+  logoImage ??= new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
     img.src = '/jelly-logo.png';
   });
+  return logoImage;
+}
+
+const toCardSpot = (r: RestaurantEntry): CardSpot => ({
+  name: r.name,
+  sub: [r.cuisines[0] || r.primaryTypeDisplay, spotPlaceLabel(r)].filter(Boolean).join(' · '),
+  score: r.magicScore,
+});
+
+interface CardSpec {
+  heading: string;
+  spots: CardSpot[];
+  dark: boolean;
+  fileName: string;
+}
+
+/** The portrait top-10 card as a PNG file, ready for `navigator.share` or a download. */
+async function renderCardFile({ fileName, ...content }: CardSpec): Promise<File | null> {
+  const { width, height } = cardPixelSize('portrait', content.spots.length);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  drawShareCard(ctx, 'portrait', { ...content, logo: await loadLogoImage() });
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  return blob && new File([blob], fileName, { type: 'image/png' });
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -53,8 +77,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
-
-  if (!isOpen) return null;
+  const [card, setCard] = useState<{ key: string; file: File | null } | null>(null);
 
   const topSpots = restaurants.slice(0, 10);
 
@@ -63,8 +86,36 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     CATEGORY_LABEL[selectedCategory]
   }${selectedCity !== 'ALL' ? ` · ${selectedCity}` : ''}`;
 
+  const cardKey = JSON.stringify({
+    heading: `${ownerName ? `${ownerName} · ` : ''}${cardTitle}`,
+    spots: topSpots.map(toCardSpot),
+    dark: darkMode ?? document.documentElement.classList.contains('dark'),
+    fileName: `jelly-${cardTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`,
+  } satisfies CardSpec);
+
+  // Drawn ahead of time, so tapping Share opens the share sheet right away (iOS only allows that
+  // straight from the tap)
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    renderCardFile(JSON.parse(cardKey) as CardSpec).then((file) => {
+      if (!cancelled) setCard({ key: cardKey, file });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, cardKey]);
+
+  if (!isOpen) return null;
+
+  const cardFile = card?.key === cardKey ? card.file : null;
+
   const canNativeShare =
     typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const canShareCard =
+    canNativeShare &&
+    typeof navigator.canShare === 'function' &&
+    (!cardFile || navigator.canShare({ files: [cardFile] }));
 
   const buildTextSummary = (urlToInclude?: string | null) => {
     const lines = [
@@ -132,211 +183,28 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     setTimeout(() => setCopiedText(false), 2500);
   };
 
-  const renderCardCanvas = async (): Promise<HTMLCanvasElement | null> => {
-    const scale = 2;
-    const width = 440;
-    const rowHeight = 46;
-    const headerHeight = 96;
-    const footerHeight = 52;
-    const height = headerHeight + Math.max(1, topSpots.length) * rowHeight + footerHeight;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    ctx.scale(scale, scale);
-
-    const isDark =
-      darkMode ??
-      (typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
-
-    const colors = isDark
-      ? {
-          bg: '#09090b',
-          border: '#27272a',
-          headerTitle: '#f4f4f5',
-          headerSub: '#a1a1aa',
-          divider: '#18181b',
-          rank: '#71717a',
-          name: '#f4f4f5',
-          sub: '#71717a',
-          footer: '#52525b',
-        }
-      : {
-          bg: '#ffffff',
-          border: '#e4e4e7',
-          headerTitle: '#18181b',
-          headerSub: '#71717a',
-          divider: '#f4f4f5',
-          rank: '#a1a1aa',
-          name: '#18181b',
-          sub: '#71717a',
-          footer: '#71717a',
-        };
-
-    // Background
-    ctx.fillStyle = colors.bg;
-    ctx.fillRect(0, 0, width, height);
-
-    // Border
-    ctx.strokeStyle = colors.border;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, width - 2, height - 2);
-
-    // Header Logo & Title
-    const logoImg = await loadLogoImage();
-    if (logoImg) {
-      ctx.drawImage(logoImg, 26, 26, 24, 24);
-      ctx.fillStyle = colors.headerTitle;
-      ctx.font = '800 20px Inter, system-ui, sans-serif';
-      ctx.fillText('jelly', 58, 44);
-    } else {
-      ctx.fillStyle = '#10b981';
-      ctx.beginPath();
-      ctx.arc(34, 38, 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#f43f5e';
-      ctx.beginPath();
-      ctx.arc(46, 42, 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = colors.headerTitle;
-      ctx.font = '800 20px Inter, system-ui, sans-serif';
-      ctx.fillText('jelly', 62, 45);
-    }
-
-    ctx.fillStyle = colors.headerSub;
-    ctx.font = '600 12px Inter, system-ui, sans-serif';
-    ctx.fillText(
-      `${ownerName ? `${ownerName} · ` : ''}${cardTitle}`,
-      26,
-      74
-    );
-
-    // Divider
-    ctx.strokeStyle = colors.divider;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(24, 88);
-    ctx.lineTo(width - 24, 88);
-    ctx.stroke();
-
-    // Rows
-    topSpots.forEach((spot, idx) => {
-      const y = headerHeight + idx * rowHeight;
-
-      // Rank
-      ctx.fillStyle = colors.rank;
-      ctx.font = '700 13px Inter, system-ui, sans-serif';
-      ctx.fillText(`${idx + 1}`, 26, y + 24);
-
-      // Name
-      ctx.fillStyle = colors.name;
-      ctx.font = '700 14px Inter, system-ui, sans-serif';
-      const maxNameWidth = 270;
-      let displayName = spot.name;
-      while (ctx.measureText(displayName).width > maxNameWidth && displayName.length > 4) {
-        displayName = displayName.slice(0, -2) + '…';
-      }
-      ctx.fillText(displayName, 54, y + 19);
-
-      // Subtitle
-      const sub = [
-        spot.cuisines[0] || spot.primaryTypeDisplay,
-        spotPlaceLabel(spot),
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      ctx.fillStyle = colors.sub;
-      ctx.font = '500 11px Inter, system-ui, sans-serif';
-      ctx.fillText(sub, 54, y + 35);
-
-      // Score circle
-      const badgeX = width - 42;
-      const badgeY = y + 22;
-      ctx.fillStyle = getScoreBadgeHex(spot.magicScore);
-      ctx.beginPath();
-      ctx.arc(badgeX, badgeY, 15, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '800 11px Inter, system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(spot.magicScore.toFixed(1), badgeX, badgeY + 4);
-      ctx.textAlign = 'left';
-    });
-
-    // Footer
-    ctx.fillStyle = colors.footer;
-    ctx.font = '600 11px Inter, system-ui, sans-serif';
-    ctx.fillText('eatwithjelly.com', 26, height - 20);
-
-    return canvas;
-  };
-
   const handleDownloadCardPng = async () => {
-    const canvas = await renderCardCanvas();
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
+    const file = cardFile ?? (await renderCardFile(JSON.parse(cardKey) as CardSpec));
+    if (!file) return;
+    const url = URL.createObjectURL(file);
     const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `jelly-${cardTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
+    a.href = url;
+    a.download = file.name;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const handleNativeShareListOrCard = async () => {
-    setIsPublishing(true);
-    let effectiveUrl = shareUrl;
-    if (!effectiveUrl && isSignedIn) {
-      try {
-        effectiveUrl = await onPublishShareLink();
-        if (effectiveUrl) setShareUrl(effectiveUrl);
-      } catch {
-        // Fall back to origin
-      }
-    }
-    const finalUrl =
-      effectiveUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://eatwithjelly.com');
-    const title = `${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`;
-    const blurb = `🍬 Check out ${ownerName ? `${ownerName}'s ` : 'my '}${cardTitle.toLowerCase()} on jelly! ${finalUrl}`;
-
+  const handleShareCard = async () => {
+    if (!cardFile) return;
     try {
-      if (canNativeShare) {
-        const canvas = await renderCardCanvas();
-        if (canvas && typeof navigator.canShare === 'function') {
-          const blob = await new Promise<Blob | null>((resolve) =>
-            canvas.toBlob((b) => resolve(b), 'image/png')
-          );
-          if (blob) {
-            const fileName = `jelly-${cardTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`;
-            const file = new File([blob], fileName, { type: 'image/png' });
-            if (navigator.canShare({ files: [file] })) {
-              await navigator.share({
-                files: [file],
-                title,
-                text: blurb,
-              });
-              return;
-            }
-          }
-        }
-        await navigator.share({
-          title,
-          text: blurb,
-          url: finalUrl,
-        });
-        return;
-      }
+      // The image alone: apps handed an image plus text often send only the text
+      await navigator.share({
+        files: [cardFile],
+        title: `${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`,
+      });
     } catch (err: any) {
-      if (err?.name === 'AbortError') return;
-    } finally {
-      setIsPublishing(false);
+      if (err?.name !== 'AbortError') await handleDownloadCardPng();
     }
-
-    await handleCopyTextSummary();
   };
 
   return (
@@ -463,14 +331,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
             {/* Action Buttons */}
             <div className="space-y-2 pt-1">
-              {canNativeShare && (
+              {canShareCard && (
                 <button
                   type="button"
-                  onClick={handleNativeShareListOrCard}
-                  className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-2xs"
+                  onClick={handleShareCard}
+                  disabled={!cardFile}
+                  className="w-full disabled:opacity-60 py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-2xs"
                 >
                   <Share2 className="w-4 h-4" />
-                  <span>Share Top 10 Card &amp; List</span>
+                  <span>Share Top 10 Card</span>
                 </button>
               )}
 

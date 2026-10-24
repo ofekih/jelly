@@ -38,7 +38,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/lib/socialService.ts` | Firestore reads/writes for `profiles` (build, prefix search), follower edges, follow counts, `placeStats` fetch; `usePlaceStats.ts` caches stats for components |
 | `src/lib/publicList.ts` | Builds the public `sharedLists` payload under the ~1 MiB doc limit (drops notes before spots) |
 | `src/lib/sync/` | Account sync, kept out of `App.tsx` and tested against the emulator (`sync.emu.test.ts`): `accountLists` (both lists ⇄ cloud + local copy: server-confirmed seeding, stored-score refresh, migrations), `userDoc` (settings + friends merge), `follows` (follow list + follower edges), `publish` (`sharedLists` + `profiles`), `localCache` (local keys + which account the copy mirrors; only signed-out data is ever uploaded) |
-| `functions/` | Cloud Functions: `tmdb`, `books`, `bgg`, `igdb` (title search proxies, CDN-cached; BGG and IGDB results re-ranked by rating count + name match), `onRestaurantWritten` (recomputes `placeStats`, marks `predictionJobs/{uid}` dirty), `onBookmarkWritten`, `processPredictionJobs` (every minute, debounced), `nightlyPredictions`; one-time `scripts/backfill.ts`; emulator tests (`npm run test:emulator`). Compiles `src/lib/tasteModel.ts` + `src/types.ts` too (rootDir `..`, main `lib/functions/src/index.js`) |
+| `functions/` | Cloud Functions: `tmdb`, `books`, `bgg`, `igdb` (title search proxies, CDN-cached; BGG and IGDB results re-ranked by rating count + name match), `onRestaurantWritten` (recomputes `placeStats`, marks `predictionJobs/{uid}` dirty), `onBookmarkWritten`, `processPredictionJobs` (every minute, debounced), `nightlyPredictions`, `sharePage` (share links `/l/<uid>?c=<category>`: the deployed `index.html` with that list's link-preview tags swapped into its `share-meta` block, and `/l/<uid>/card.png`, the 1200×630 card drawn with `@napi-rs/canvas` and Inter from `functions/assets/`); one-time `scripts/backfill.ts`; emulator tests (`npm run test:emulator`). Compiles `src/lib/tasteModel.ts`, `shareCard.ts`, `media.ts` + `src/types.ts` too (rootDir `..`, main `lib/functions/src/index.js`) |
 | `src/lib/placesService.ts` | Google Places search + autocomplete, name-match ranking (`computeNameMatchScore`), manual candidates |
 | `src/lib/media.ts` | Title lists (Watch, Read, Play): search via `/api/{tmdb,books,bgg,igdb}/search` per list (Hosting rewrites → functions in `functions/src/tmdb.ts`, `books.ts`, `games.ts`; secrets `TMDB_READ_TOKEN`, `GOOGLE_BOOKS_API_KEY`, `BGG_API_TOKEN`, `TWITCH_CLIENT_ID`/`TWITCH_CLIENT_SECRET`; dev proxies to production), poster URLs, `spotLink`, `spotPlaceLabel`, board-game helpers (`playersLabel`, `gameFacts`, `fitsPlayers`/`fitsTime`) |
 | `src/lib/categorizer.ts` | Maps Google place types → spot categories (best match first) + tags (cuisines, sight subtypes, country/continent) |
@@ -51,10 +51,11 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/components/SxSArenaModal.tsx` | Pairwise comparisons; prefers same-cuisine opponents |
 | `src/components/RestaurantList.tsx` | Ranked list, drag-to-rerank, swipe actions |
 | `src/components/RestaurantMapView.tsx` | Google Map with custom score pins (light/dark styles) |
+| `src/lib/shareLinks.ts`, `shareCard.ts` | Share links (`/l/<uid>?c=`, older `/?list=<uid>` still opens; parsing pasted links) and the top-10 card drawing shared by `ShareModal` (portrait PNG) and `sharePage` (landscape link preview) |
 | `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx`, `SettingsModal.tsx` | Feature modals; `Toast.tsx` (`useToast`) is the one-at-a-time toast |
 | `src/dev/emulator.ts`, `scripts/emulator/seed.ts`, `e2e/` | Emulator mode (`IS_EMULATOR` in `firebase.ts`, compiled out of production): test-user sign-in + "Emulator" badge; the seed data; Playwright flows |
 | `firestore.rules` | Security rules with per-field validators (`isValidUserDoc`, `isValidSharedList`, …) |
-| `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (original artwork), `favicon.png` (crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`) |
+| `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (the original artwork cropped so the beans fill ~3/4 of the frame, inside the maskable safe zone), `favicon.png` (tighter crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`, the share card and `functions/assets/`) |
 
 ## Data model (Firestore)
 - `users/{uid}` – settings/profile (`customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, …)
@@ -105,7 +106,8 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 - **Mobile is first-class**: verify touch drag (dnd-kit sensors), autocomplete scroll position,
   Web Share API (`navigator.share`) and layout on iOS/Android, not just desktop.
 - **Destructive actions** (delete spot/bookmark/friend) always go through `ConfirmModal`.
-- **Brand assets**: the jelly beans logo comes from `public/jelly-icon-512.png`; the beans are not tilted.
+- **Brand assets**: the jelly beans logo comes from `public/jelly-icon-512.png`; the beans are not tilted. Never use the uncropped artwork (small beans in a big dark frame) anywhere.
+- **Link previews**: messaging apps read `og:*` tags themselves, so `og:image` must be an absolute URL. Keep `index.html`'s `<!-- share-meta -->` block: `sharePage` replaces it for share links. The Share modal's card share sends the image alone (apps given an image plus text often keep only the text) and is drawn when the sheet opens, since iOS only opens the share sheet straight from a tap.
 - **Copy style**: em-dash without spaces (`word—word`), spaced en-dash for clauses (`a – b`),
   unspaced en-dash for ranges (`1–10`).
 - API keys in `src/firebase.ts` are browser keys (restricted by referrer in GCP); don't move them

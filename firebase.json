@@ -55,6 +55,10 @@
         "function": { "functionId": "igdb", "region": "us-central1" }
       },
       {
+        "source": "/l/**",
+        "function": { "functionId": "sharePage", "region": "us-central1" }
+      },
+      {
         "source": "/about",
         "destination": "/about.html"
       },

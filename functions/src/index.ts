@@ -12,6 +12,7 @@ import { recomputePlaceStat } from './recompute';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
 import { searchBoardGames, searchVideoGames } from './games';
+import { appHtml, cardHeading, listPreview, parseSharePath, previewMeta, siteOrigin, withShareMeta } from './sharePage';
 
 initializeApp();
 
@@ -170,4 +171,51 @@ export const bgg = onRequest(
 export const igdb = onRequest(
   { secrets: [twitchClientId, twitchClientSecret], memory: '256MiB', maxInstances: 5, timeoutSeconds: 20 },
   titleSearch('igdb', (q) => searchVideoGames(q, twitchClientId.value(), twitchClientSecret.value()))
+);
+
+/**
+ * Share links, `/l/<uid>?c=<category>`: the app's page with that list's link preview (title, top
+ * three, card image), and the card itself at `/l/<uid>/card.png`. See `sharePage.ts`.
+ */
+export const sharePage = onRequest(
+  { memory: '512MiB', maxInstances: 10, timeoutSeconds: 20 },
+  async (req, res) => {
+    const target = parseSharePath(req.path);
+    if (!target || (req.method !== 'GET' && req.method !== 'HEAD')) {
+      res.redirect(302, '/');
+      return;
+    }
+    const { shareId } = target;
+    const snap = await getFirestore()
+      .doc(`sharedLists/${shareId}`)
+      .get()
+      .catch((err) => {
+        logger.warn('share preview: list read failed', { shareId, err: String(err) });
+        return null;
+      });
+    const preview = snap?.exists ? listPreview(snap.data()!, req.query.c) : null;
+
+    if (target.kind === 'card') {
+      if (!preview) {
+        res.set('Cache-Control', 'public, max-age=60').status(404).send('Not found');
+        return;
+      }
+      const { renderCardPng } = await import('./shareCardImage');
+      const png = await renderCardPng(cardHeading(preview), preview.spots);
+      // Preview URLs carry the list's updatedAt, so a cached card is never stale for long
+      res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400').type('png').send(png);
+      return;
+    }
+
+    const origin = siteOrigin(req.get('x-forwarded-host'));
+    const html = await appHtml(origin);
+    const page = html && (preview ? withShareMeta(html, previewMeta(preview, shareId, origin)) : html);
+    if (!page) {
+      // The app opens the older link form too, just without the preview
+      const c = typeof req.query.c === 'string' ? `&c=${encodeURIComponent(req.query.c)}` : '';
+      res.redirect(302, `/?list=${shareId}${c}`);
+      return;
+    }
+    res.set('Cache-Control', 'public, max-age=0, s-maxage=300').type('html').send(page);
+  }
 );

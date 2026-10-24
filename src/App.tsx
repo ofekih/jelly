@@ -134,6 +134,7 @@ import { buildForYouSpots, ForYouSpot } from './lib/predictions';
 import { FollowCounts } from './components/FollowCounts';
 import { PublicListTrim } from './lib/publicList';
 import { useFollowers, useFriendListSubscriptions } from './lib/useSocialFeeds';
+import { isSharePath, parseShareUrl, shareIdFromText, shareListUrl } from './lib/shareLinks';
 
 const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
   bookmarkNotes: 'Your list is too big to share in full – friends won’t see your bookmark notes',
@@ -212,12 +213,11 @@ export const App: React.FC = () => {
 
   const [friendListsMap, setFriendListsMap] = useState<Record<string, SharedListPayload>>({});
 
-  // Shared List Read-Only Mode (?list=<shareId> or Friend Switcher)
+  // Shared List Read-Only Mode (/l/<shareId>, older ?list=<shareId>, or Friend Switcher)
   const [sharedList, setSharedList] = useState<SharedListPayload | null>(null);
-  const [sharedListLoading, setSharedListLoading] = useState<boolean>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return Boolean(params.get('list'));
-  });
+  const [sharedListLoading, setSharedListLoading] = useState<boolean>(() =>
+    Boolean(parseShareUrl(new URL(window.location.href)))
+  );
 
   const [defaultCity, setDefaultCity] = useState<string>(() => readLocalSettings().defaultCity || '');
 
@@ -235,6 +235,8 @@ export const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   // Each category is a fully separate list; exactly one is shown at a time (its group's lists are the tabs)
   const [selectedCategory, setSelectedCategory] = useState<SpotCategory>(() => {
+    const sharedCategory = parseShareUrl(new URL(window.location.href))?.category;
+    if (sharedCategory) return sharedCategory;
     const { lastCategory } = readLocalSettings();
     return isSpotCategory(lastCategory) ? lastCategory : DEFAULT_CATEGORY;
   });
@@ -332,10 +334,9 @@ export const App: React.FC = () => {
     requestUserLocation({ silent: true });
   }, [requestUserLocation]);
 
-  // Check URL for shared list parameter (?list=<shareId>)
+  // Open a shared list from the URL (/l/<shareId> or ?list=<shareId>)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const shareId = params.get('list');
+    const shareId = parseShareUrl(new URL(window.location.href))?.shareId;
     if (!shareId) {
       setSharedListLoading(false);
       return;
@@ -372,8 +373,10 @@ export const App: React.FC = () => {
 
   const exitSharedListView = () => {
     const url = new URL(window.location.href);
-    if (url.searchParams.has('list')) {
+    if (isSharePath(url.pathname) || url.searchParams.has('list')) {
+      url.pathname = '/';
       url.searchParams.delete('list');
+      url.searchParams.delete('c');
       window.history.replaceState({}, '', url.toString());
     }
     setSharedList(null);
@@ -791,16 +794,8 @@ export const App: React.FC = () => {
     const trimmed = rawQuery.trim();
     if (!trimmed) return [];
 
-    // Support pasting a full share link (?list=<shareId>)
-    let extractedListId: string | null = null;
-    try {
-      if (trimmed.includes('list=')) {
-        const u = new URL(trimmed.startsWith('http') ? trimmed : `https://eatwithjelly.com/${trimmed}`);
-        extractedListId = u.searchParams.get('list');
-      }
-    } catch {
-      // Ignore URL parse error
-    }
+    // Support pasting a full share link
+    const extractedListId = shareIdFromText(trimmed);
 
     const results: SharedListPayload[] = [];
     const seenIds = new Set<string>();
@@ -993,7 +988,10 @@ export const App: React.FC = () => {
     openRankFor(spot);
   };
 
-  const handlePublishShareLink = async (overrideHandle?: string): Promise<string | null> => {
+  const handlePublishShareLink = async (
+    overrideHandle?: string,
+    category?: SpotCategory
+  ): Promise<string | null> => {
     if (!user) {
       showToast('Sign in with Google to create a live share link');
       return null;
@@ -1005,9 +1003,7 @@ export const App: React.FC = () => {
       bookmarks_count: lists?.bookmarks.length ?? 0,
     });
 
-    const shareId = user.uid;
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/?list=${shareId}`;
+    return shareListUrl(window.location.origin, user.uid, category);
   };
 
   const handleGoogleSignIn = async () => {
@@ -2467,7 +2463,7 @@ export const App: React.FC = () => {
           }
           isSignedIn={Boolean(user)}
           darkMode={darkMode}
-          onPublishShareLink={() => handlePublishShareLink()}
+          onPublishShareLink={() => handlePublishShareLink(undefined, selectedCategory)}
         />
       </MountWhenOpened>
 

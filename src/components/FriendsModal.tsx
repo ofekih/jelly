@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { FriendProfile, RestaurantEntry, SharedListPayload } from '../types';
 import { computeUserTasteSimilarity, sanitizeHandle } from '../lib/friendsService';
+import { shareIdFromText } from '../lib/shareLinks';
 import { FollowCounts } from './FollowCounts';
 import { Sheet, SheetHeader } from './Sheet';
 
@@ -87,24 +88,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
     let cancelled = false;
     setIsSearching(true);
     const timer = setTimeout(async () => {
-      // Check if user pasted a full URL with ?list=...
-      try {
-        if (trimmed.includes('list=')) {
-          const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
-          const listParam = url.searchParams.get('list');
-          if (listParam) {
-            const results = await onSearchDirectory(listParam);
-            if (!cancelled) {
-              setSearchResults(results);
-              setIsSearching(false);
-            }
-            return;
-          }
-        }
-      } catch {
-        // Not a URL, proceed with handle/name search
-      }
-
+      // A handle, a name, or a pasted share link (the search opens that list directly)
       const results = await onSearchDirectory(trimmed);
       if (!cancelled) {
         setSearchResults(results);
@@ -158,19 +142,8 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
   const handleQuickAddFromInput = async () => {
     const trimmed = searchInput.trim();
     if (!trimmed) return;
-    try {
-      if (trimmed.includes('list=')) {
-        const url = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
-        const listId = url.searchParams.get('list');
-        if (listId) {
-          const ok = await onFollowByShareId(listId);
-          if (ok) setSearchInput('');
-          return;
-        }
-      }
-    } catch {
-      // Ignore
-    }
+    const listId = shareIdFromText(trimmed);
+    if (listId && (await onFollowByShareId(listId))) setSearchInput('');
   };
 
   return (
@@ -287,7 +260,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                     </button>
                   )}
                 </div>
-                {searchInput.includes('list=') && (
+                {shareIdFromText(searchInput) && (
                   <button
                     type="button"
                     onClick={handleQuickAddFromInput}
