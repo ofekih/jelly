@@ -71,7 +71,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       `🍬 ${ownerName ? `${ownerName}'s ` : ''}${cardTitle} on jelly`,
       ...topSpots.map(
         (r, i) =>
-          `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) — ${[
+          `${i + 1}. ${r.name} (${r.magicScore.toFixed(1)}) – ${[
             r.cuisines[0] || r.primaryTypeDisplay,
             spotPlaceLabel(r),
           ]

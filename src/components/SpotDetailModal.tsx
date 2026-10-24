@@ -127,7 +127,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
       .filter(Boolean)
       .join(' · ');
     const shareText = `${restaurant.name} (${restaurant.magicScore.toFixed(1)}/10)${
-      sub ? ` — ${sub}` : ''
+      sub ? ` – ${sub}` : ''
     }${restaurant.notes ? `\n"${restaurant.notes}"` : ''}`;
     const shareUrl = restaurant.media ? link.href : restaurant.googleMapsUri || window.location.origin;
 

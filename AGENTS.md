@@ -1,4 +1,4 @@
-# jelly — agent guide
+# jelly – agent guide
 
 jelly (always lowercase, including the app/web-app name) is a personal ranking web app for
 restaurants, places, movies, TV shows, books and games. Live at https://eatwithjelly.com.
