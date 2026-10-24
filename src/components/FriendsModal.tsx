@@ -6,13 +6,13 @@ import {
   Eye,
   Loader2,
   Search,
-  Share2,
   Sparkles,
   Trash2,
   UserPlus,
   Users,
   X,
 } from 'lucide-react';
+import { ShareIcon } from './PlatformIcons';
 import { FriendProfile, RestaurantEntry, SharedListPayload } from '../types';
 import { computeUserTasteSimilarity, sanitizeHandle } from '../lib/friendsService';
 import { shareIdFromText } from '../lib/shareLinks';
@@ -195,7 +195,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
                     ) : (
                       <>
                         {canNativeShare ? (
-                          <Share2 className="w-3.5 h-3.5" />
+                          <ShareIcon className="w-3.5 h-3.5" />
                         ) : (
                           <Copy className="w-3.5 h-3.5" />
                         )}

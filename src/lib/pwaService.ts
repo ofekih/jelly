@@ -99,6 +99,17 @@ export function isIosDevice(nav?: Navigator): boolean {
   }
 }
 
+/** Checks if the device is an iPhone, iPad or Mac, which share one set of system icons. */
+export function isApplePlatform(nav?: Navigator): boolean {
+  try {
+    const activeNav = nav ?? (typeof navigator !== 'undefined' ? navigator : undefined);
+    if (!activeNav) return false;
+    return isIosDevice(activeNav) || /Macintosh|Mac OS X/i.test(activeNav.userAgent || '');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Checks if the device is iOS Safari, where Add to Home Screen sits right in the Share sheet.
  * Other iOS browsers (Chrome, Firefox, Edge) can add to the home screen too, from their own Share.

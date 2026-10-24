@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Bookmark, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
+import { Bookmark, Loader2, MapPin, Plus, Search, X } from 'lucide-react';
+import { BackIcon } from './PlatformIcons';
 import {
   CATEGORY_EMOJI,
   CATEGORY_GROUP,
@@ -339,7 +340,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
               className="p-1.5 -ml-1.5 rounded-full text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
               aria-label="Back"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <BackIcon className="w-5 h-5" />
             </button>
           ) : (
             <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">

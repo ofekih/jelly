@@ -7,10 +7,10 @@ import {
   MapPin,
   Pencil,
   RefreshCw,
-  Share2,
   Trash2,
   Users,
 } from 'lucide-react';
+import { ShareIcon } from './PlatformIcons';
 import {
   CATEGORY_GROUP,
   CATEGORY_LABEL,
@@ -483,7 +483,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                         </>
                       ) : (
                         <>
-                          <Share2 className="w-3.5 h-3.5 shrink-0" />
+                          <ShareIcon className="w-3.5 h-3.5 shrink-0" />
                           <span>Share</span>
                         </>
                       )}
@@ -552,7 +552,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                         </>
                       ) : (
                         <>
-                          <Share2 className="w-3.5 h-3.5" />
+                          <ShareIcon className="w-3.5 h-3.5" />
                           <span>{restaurant.media ? 'Share' : 'Share Spot'}</span>
                         </>
                       )}

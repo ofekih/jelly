@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
-import { Download, PlusSquare, Share2, Sparkles, X } from 'lucide-react';
+import { Download, PlusSquare, Share, Sparkles, X } from 'lucide-react';
 import {
   dismissPwaNudge,
   getInstallPrompt,
@@ -110,7 +110,7 @@ export const PwaInstallBanner: React.FC = () => {
                   </span>
                   <span>
                     Tap the <strong className="font-semibold text-zinc-900 dark:text-zinc-100">Share</strong> button{' '}
-                    <Share2 className="w-3.5 h-3.5 inline mx-0.5 text-sky-500" /> in Safari's toolbar.
+                    <Share className="w-3.5 h-3.5 inline mx-0.5 text-sky-500" /> in Safari's toolbar.
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -131,7 +131,7 @@ export const PwaInstallBanner: React.FC = () => {
                   </span>
                   <span>
                     Tap <strong className="font-semibold text-zinc-900 dark:text-zinc-100">Share</strong>{' '}
-                    <Share2 className="w-3.5 h-3.5 inline mx-0.5 text-sky-500" />—in the address bar, or in the browser's menu.
+                    <Share className="w-3.5 h-3.5 inline mx-0.5 text-sky-500" />—in the address bar, or in the browser's menu.
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

@@ -3,6 +3,7 @@ import {
   captureInstallPrompt,
   dismissPwaNudge,
   getInstallPrompt,
+  isApplePlatform,
   isIosDevice,
   isIosSafari,
   isMobileDevice,
@@ -143,6 +144,14 @@ describe('pwaService', () => {
       expect(isIosSafari(nav(IPHONE_FIREFOX))).toBe(false);
       expect(isIosDevice(nav(IPHONE_CHROME))).toBe(true);
       expect(isIosDevice(nav(IPHONE_FIREFOX))).toBe(true);
+    });
+
+    it('counts iPhones, iPads and Macs as Apple, not Android or Windows', () => {
+      expect(isApplePlatform(nav(IPHONE_CHROME))).toBe(true);
+      expect(isApplePlatform(nav(MAC_SAFARI, 5))).toBe(true);
+      expect(isApplePlatform(nav(MAC_SAFARI))).toBe(true);
+      expect(isApplePlatform(nav('Mozilla/5.0 (Linux; Android 14; Pixel 8)'))).toBe(false);
+      expect(isApplePlatform(nav('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'))).toBe(false);
     });
 
     it('counts an iPad asking for the desktop site as iOS, but not a Mac', () => {

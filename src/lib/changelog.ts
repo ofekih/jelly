@@ -24,6 +24,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Links to your list now show your top 10 and its scores right in the message, on WhatsApp, iMessage, Slack and more',
       'Sharing your top-10 card now sends the image itself, not just a line of text',
       'The jelly icon on your home screen and in link previews is bigger and easier to spot',
+      'Share and back buttons now look like the ones on your phone—iPhone or Android',
     ],
   },
   {

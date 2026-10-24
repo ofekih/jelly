@@ -25,13 +25,13 @@ import {
   Plus,
   Search,
   Settings,
-  Share2,
   Sparkles,
   Sun,
   UserPlus,
   Users,
   X,
 } from 'lucide-react';
+import { ShareIcon } from './components/PlatformIcons';
 import { auth, db, googleProvider, setAnalyticsUser, trackEvent } from './firebase';
 import {
   ALL_CATEGORIES,
@@ -1667,7 +1667,7 @@ export const App: React.FC = () => {
                 aria-label="Share list"
                 title="Share list"
               >
-                <Share2 className="w-4 h-4" />
+                <ShareIcon className="w-4 h-4" />
               </button>
             )}
 

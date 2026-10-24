@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Download, Link2, Loader2, Share2 } from 'lucide-react';
+import { Check, Copy, Download, Link2, Loader2 } from 'lucide-react';
+import { ShareIcon } from './PlatformIcons';
 import { BookmarkEntry, CATEGORY_LABEL, RestaurantEntry, SpotCategory } from '../types';
 import { Sheet, SheetHeader } from './Sheet';
 import { JellyBeanIcon } from './JellyBeanIcon';
@@ -212,7 +213,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       {(scrollContainerRef) => (
         <>
           <SheetHeader
-            icon={<Share2 className="w-4 h-4 text-emerald-500" />}
+            icon={<ShareIcon className="w-4 h-4 text-emerald-500" />}
             title="Share your jelly list"
             onClose={onClose}
           />
@@ -242,7 +243,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         {isPublishing ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
-                          <Share2 className="w-3.5 h-3.5" />
+                          <ShareIcon className="w-3.5 h-3.5" />
                         )}
                         <span>Share</span>
                       </button>
@@ -338,7 +339,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                   disabled={!cardFile}
                   className="w-full disabled:opacity-60 py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-2xs"
                 >
-                  <Share2 className="w-4 h-4" />
+                  <ShareIcon className="w-4 h-4" />
                   <span>Share Top 10 Card</span>
                 </button>
               )}
