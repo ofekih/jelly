@@ -1,4 +1,5 @@
 import { CATEGORY_GROUP, COMMON_CUISINES, SpotCategory, SpotGroup } from '../types';
+import { formatPrice, type PriceInfo } from './price';
 
 interface GroupCopy {
   together: string; // "Eat Together"
@@ -240,6 +241,16 @@ export function searchPlaceholder(category: SpotCategory): string {
 /** Whether a category's spots are places (with a map, distances and cities) */
 export function hasLocation(category: SpotCategory): boolean {
   return GROUP_COPY[CATEGORY_GROUP[category]].hasLocation;
+}
+
+/** Whether a list's spots have a price worth showing (meals, entry fees, hotels; not titles or cities) */
+export function showsPrice(category: SpotCategory): boolean {
+  return category === 'stays' || GROUP_COPY[CATEGORY_GROUP[category]].showPrice;
+}
+
+/** A spot's price line (`$$ · $20–30`, or the tier alone when `compact`), '' where lists show no price. */
+export function spotPrice(spot: PriceInfo, category: SpotCategory, options?: { compact?: boolean }): string {
+  return showsPrice(category) ? formatPrice(spot, options) : '';
 }
 
 /** Name of the bookmarked ("want to") list a category's spots are saved to */

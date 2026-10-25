@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Bookmark, ExternalLink, LogIn, Sparkles } from 'lucide-react';
 import { CATEGORY_GROUP, CATEGORY_LABEL, SpotCategory } from '../types';
-import { GROUP_COPY, hasLocation, wantLabel } from '../lib/groups';
+import { GROUP_COPY, hasLocation, spotPrice, wantLabel } from '../lib/groups';
 import { hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { PosterThumb } from './PosterThumb';
 import type { ForYouSpot } from '../lib/predictions';
@@ -47,6 +47,7 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
   const { prediction } = item;
   const subtitleParts = [
     item.cuisines[0],
+    spotPrice(item, item.category, { compact: true }),
     spotPlaceLabel(item),
     formatDistanceMiles(getItemDistanceMiles(item, userLocation)),
   ].filter(Boolean);

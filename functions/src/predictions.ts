@@ -17,7 +17,8 @@ import {
   type TasteRater,
   type TasteSimilarityResult,
 } from '../../src/lib/tasteModel';
-import { CATEGORY_GROUP, type MediaInfo, type PredictionPlace, type SpotCategory } from '../../src/types';
+import { parsePriceRange } from '../../src/lib/price';
+import { CATEGORY_GROUP, type MediaInfo, type PredictionPlace, type PriceRange, type SpotCategory } from '../../src/types';
 import { placeKeyOf, placeStatId } from './placeStats';
 
 /** A ranked or bookmarked spot as stored at `users/{uid}/restaurants|bookmarks/{id}`. */
@@ -31,6 +32,8 @@ export interface SpotDoc {
   category: string;
   cuisines: string[];
   media?: MediaInfo;
+  priceLevel?: number;
+  priceRange?: PriceRange;
 }
 
 export interface RankedDoc extends SpotDoc {
@@ -104,6 +107,11 @@ export function toSpotDoc(data: Record<string, unknown> | undefined): SpotDoc | 
     category,
     cuisines: Array.isArray(data.cuisines) ? data.cuisines.filter((c): c is string => typeof c === 'string') : [],
     media: mediaOf(data.media),
+    priceLevel:
+      typeof data.priceLevel === 'number' && Number.isInteger(data.priceLevel) && data.priceLevel >= 0 && data.priceLevel <= 4
+        ? data.priceLevel
+        : undefined,
+    priceRange: parsePriceRange(data.priceRange),
   };
 }
 
@@ -173,6 +181,13 @@ export function predictionPlace(sources: SpotDoc[], cuisines: string[]): Predict
   if (tags.length > 0) place.cuisines = tags;
   const media = sources.find((s) => s.media)?.media;
   if (media) place.media = media;
+  // The most common tier, and a range only from an entry with that same tier (see mergePrice)
+  const priceLevel = mostCommon(sources.map((s) => s.priceLevel));
+  if (priceLevel !== undefined) {
+    place.priceLevel = priceLevel;
+    const priceRange = sources.find((s) => s.priceLevel === priceLevel && s.priceRange)?.priceRange;
+    if (priceRange) place.priceRange = priceRange;
+  }
   return place;
 }
 

@@ -24,6 +24,19 @@ describe('parsePredictionsDoc places', () => {
     expect(parsed.get('c__bars')!.place).toBeUndefined();
     expect(parsed.get('d__bars')!.place).not.toHaveProperty('lat');
   });
+
+  it('keeps a valid price tier and range, and drops malformed ones', () => {
+    const range = { currency: 'USD', start: 20, end: 30 };
+    const parsed = parsePredictionsDoc({
+      spots: {
+        a__bars: p(8, { place: { name: 'A', priceLevel: 2, priceRange: range } }),
+        b__bars: p(8, { place: { name: 'B', priceLevel: 7, priceRange: { currency: 'dollars', start: 1 } } }),
+      },
+    });
+    expect(parsed.get('a__bars')!.place).toMatchObject({ priceLevel: 2, priceRange: range });
+    expect(parsed.get('b__bars')!.place).not.toHaveProperty('priceLevel');
+    expect(parsed.get('b__bars')!.place).not.toHaveProperty('priceRange');
+  });
 });
 
 describe('parsePredictionKey', () => {

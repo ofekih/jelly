@@ -214,6 +214,51 @@ describe('users/{uid}/restaurants and bookmarks: movies & shows', () => {
   });
 });
 
+describe('users/{uid}/restaurants and bookmarks: price ranges', () => {
+  const spot = {
+    id: 'ChIJpizza__restaurants',
+    placeId: 'ChIJpizza',
+    name: 'Pizza Place',
+    formattedAddress: '1 Main St, San Francisco, CA, USA',
+    category: 'restaurants',
+    categories: ['restaurants'],
+    cuisines: ['Pizza'],
+    priceLevel: 2,
+    initialRating: 7,
+    rankIndex: 0,
+    magicScore: 7,
+    comparisonsCount: 0,
+  };
+  const ranked = (priceRange: unknown) =>
+    setDoc(doc(as('alice'), `users/alice/restaurants/${spot.id}`), { ...spot, priceRange });
+  const saved = (priceRange: unknown) => {
+    const { initialRating: _r, rankIndex: _i, magicScore: _m, comparisonsCount: _c, ...bookmark } = spot;
+    return setDoc(doc(as('alice'), 'users/alice/bookmarks/ChIJpizza'), { ...bookmark, priceRange });
+  };
+
+  it('accepts closed, open-ended and free ranges', async () => {
+    await assertSucceeds(ranked({ currency: 'USD', start: 20, end: 30 }));
+    await assertSucceeds(ranked({ currency: 'EUR', start: 100 }));
+    await assertSucceeds(ranked({ currency: 'USD', start: 0, end: 10 }));
+    await assertSucceeds(ranked({ currency: 'IDR', start: 150000, end: 300000 }));
+    await assertSucceeds(saved({ currency: 'USD', start: 20, end: 30 }));
+  });
+
+  it('rejects malformed ranges', async () => {
+    for (const write of [ranked, saved]) {
+      await assertFails(write({ currency: 'usd', start: 20 }));
+      await assertFails(write({ currency: 'US', start: 20 }));
+      await assertFails(write({ currency: 'USD' }));
+      await assertFails(write({ currency: 'USD', start: -1 }));
+      await assertFails(write({ currency: 'USD', start: 30, end: 20 }));
+      await assertFails(write({ currency: 'USD', start: 2e9 }));
+      await assertFails(write({ currency: 'USD', start: '20' }));
+      await assertFails(write({ currency: 'USD', start: 20, perPerson: true }));
+      await assertFails(write('$20–30'));
+    }
+  });
+});
+
 describe('users/{uid}/private/predictions', () => {
   it('only the owner can read it', async () => {
     await assertSucceeds(getDoc(doc(as('bob'), 'users/bob/private/predictions')));

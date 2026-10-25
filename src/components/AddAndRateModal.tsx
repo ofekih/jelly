@@ -15,7 +15,7 @@ import {
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
 import { hasSquareCover, posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
 import { isMediaPlaceId } from '../lib/tasteModel';
-import { GROUP_COPY, searchPlaceholder, wantLabel } from '../lib/groups';
+import { GROUP_COPY, searchPlaceholder, spotPrice, wantLabel } from '../lib/groups';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
@@ -111,6 +111,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         lng: reRankingEntry.lng,
         googleMapsUri: reRankingEntry.googleMapsUri,
         priceLevel: reRankingEntry.priceLevel,
+        priceRange: reRankingEntry.priceRange,
         categories: reRankingEntry.categories?.length
           ? reRankingEntry.categories
           : [reRankingEntry.category],
@@ -450,7 +451,14 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
                             {item.name}
                           </div>
                           <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-                            {[primaryCuisine, locationShort, distLabel].filter(Boolean).join(' · ')}
+                            {[
+                              primaryCuisine,
+                              spotPrice(item, reRankingEntry?.category ?? defaultCategory),
+                              locationShort,
+                              distLabel,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
                           </div>
                           {(friendMatches.length > 0 ||
                             (socialMetrics &&

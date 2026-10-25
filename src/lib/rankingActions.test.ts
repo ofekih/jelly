@@ -116,6 +116,37 @@ describe('placeSpot', () => {
     expect(placed.entry.rankedHistory?.map((h) => h.initialRating)).toEqual([7, 6]);
   });
 
+  it('takes a fresh price range only when it matches the kept tier', () => {
+    const range = { currency: 'USD', start: 20, end: 30 };
+    const place = (stored: Partial<RestaurantEntry>, fresh: Partial<PlaceCandidate>) =>
+      placeSpot(
+        [spot('a', 9, 0), spot('b', 7, 1, 'restaurants', stored)],
+        {
+          candidate: candidate('b', fresh),
+          initialRating: 6,
+          category: 'restaurants',
+          cuisines: ['Thai'],
+          existingIdToReplace: 'b__restaurants',
+        },
+        { insertIndex: 1, comparisonsDone: 0, answers: [] },
+        500
+      ).entry;
+    expect(place({ priceLevel: 2 }, { priceLevel: 2, priceRange: range })).toMatchObject({ priceLevel: 2, priceRange: range });
+    // A hand-picked $$$ keeps its tier and gets no $$ range
+    const manual = place({ priceLevel: 3 }, { priceLevel: 2, priceRange: range });
+    expect(manual.priceLevel).toBe(3);
+    expect(manual.priceRange).toBeUndefined();
+    // A new spot takes everything from search
+    expect(
+      placeSpot(
+        [],
+        { candidate: candidate('new', { priceRange: range }), initialRating: 8, category: 'restaurants', cuisines: [] },
+        { insertIndex: 0, comparisonsDone: 0, answers: [] },
+        500
+      ).entry
+    ).toMatchObject({ priceLevel: 2, priceRange: range });
+  });
+
   it('keeps notes when re-ranking the only spot in a list (no comparisons to make)', () => {
     const only = spot('solo', 7, 0, 'bakeries', { notes: 'Morning buns', priceLevel: 1 });
     const placement: PendingPlacement = {

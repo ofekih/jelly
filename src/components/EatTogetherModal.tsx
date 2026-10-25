@@ -14,7 +14,7 @@ import {
   SharedListPayload,
 } from '../types';
 import { BlendSpotItem, computeGroupBlend } from '../lib/friendsService';
-import { GROUP_COPY } from '../lib/groups';
+import { GROUP_COPY, spotPrice } from '../lib/groups';
 import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../lib/geo';
 import { fitsPlayers, fitsTime, hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './GameNightSelect';
@@ -324,9 +324,12 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                     const primaryCuisine = item.cuisines[0] || item.primaryTypeDisplay;
                     const locationShort = spotPlaceLabel(item);
                     const distLabel = formatDistanceMiles(getItemDistanceMiles(item, userLocation));
-                    const subParts = [primaryCuisine, locationShort, distLabel].filter(
-                      Boolean
-                    );
+                    const subParts = [
+                      primaryCuisine,
+                      spotPrice(item, item.category, { compact: true }),
+                      locationShort,
+                      distLabel,
+                    ].filter(Boolean);
 
                     const isBookmarked =
                       item.myWantToTry ||
@@ -395,6 +398,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                                     lng: item.lng,
                                     googleMapsUri: item.googleMapsUri,
                                     priceLevel: item.priceLevel,
+                                    priceRange: item.priceRange,
                                     categories: item.categories,
                                     cuisines: item.cuisines,
                                     primaryTypeDisplay: item.primaryTypeDisplay,

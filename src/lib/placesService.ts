@@ -2,13 +2,7 @@ import { DEFAULT_PLACES_API_KEY } from '../firebase';
 import { CATEGORY_GROUP, PlaceCandidate, SpotCategory, SpotGroup } from '../types';
 import { autoCategorizePlace } from './categorizer';
 import { haversineDistanceMiles, UserCoordinates } from './geo';
-
-const GOOGLE_PRICE_MAP: Record<string, number> = {
-  PRICE_LEVEL_INEXPENSIVE: 1,
-  PRICE_LEVEL_MODERATE: 2,
-  PRICE_LEVEL_EXPENSIVE: 3,
-  PRICE_LEVEL_VERY_EXPENSIVE: 4,
-};
+import { fromGooglePriceRange, GOOGLE_PRICE_LEVEL, type PriceInfo } from './price';
 
 interface GoogleAddressComponent {
   longText?: string;
@@ -102,7 +96,10 @@ const PLACES_FIELD_MASK = [
   'types',
   'primaryType',
   'primaryTypeDisplayName',
+  // priceLevel and priceRange are both Enterprise fields: the serves* fields below already put
+  // every request in the (pricier) Enterprise + Atmosphere tier, so they add nothing to the bill
   'priceLevel',
+  'priceRange',
   'googleMapsUri',
   'servesBreakfast',
   'servesBrunch',
@@ -255,12 +252,40 @@ function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate
       `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
         `${name} ${formattedAddress}`
       )}`,
-    priceLevel: p.priceLevel ? GOOGLE_PRICE_MAP[p.priceLevel] : undefined,
+    ...googlePrice(p),
     categories,
     cuisines,
     primaryTypeDisplay,
     source: 'google_places',
   };
+}
+
+/** A Places API (New) place's tier and per-person range. */
+export function googlePrice(p: { priceLevel?: unknown; priceRange?: unknown }): PriceInfo {
+  return {
+    priceLevel: typeof p.priceLevel === 'string' ? GOOGLE_PRICE_LEVEL[p.priceLevel] : undefined,
+    priceRange: fromGooglePriceRange(p.priceRange),
+  };
+}
+
+/**
+ * Just a place's price, for spots saved before ranges were stored. Asking only for these two
+ * Enterprise fields bills as Place Details Enterprise (1,000 free a month, then $20 per 1,000),
+ * a separate SKU from search's details calls. Null when worth retrying later (offline, server
+ * error, rate limit); `{}` when Google has nothing to give (e.g. a place ID that no longer exists).
+ */
+export async function fetchPlacePrice(placeId: string, customApiKey?: string): Promise<PriceInfo | null> {
+  const apiKey = (customApiKey && customApiKey.trim()) || DEFAULT_PLACES_API_KEY;
+  try {
+    const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+      headers: { 'X-Goog-Api-Key': apiKey, 'X-Goog-FieldMask': 'priceLevel,priceRange' },
+    });
+    if (res.status === 429 || res.status >= 500) return null;
+    if (!res.ok) return {};
+    return googlePrice(await res.json());
+  } catch {
+    return null;
+  }
 }
 
 async function fetchPlaceDetailsById(

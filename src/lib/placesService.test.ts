@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { locationAdjustedScore } from './placesService';
+import { googlePrice, locationAdjustedScore } from './placesService';
 
 const LA = { lat: 34.05, lng: -118.24 };
 const london = {
@@ -31,5 +31,19 @@ describe('locationAdjustedScore', () => {
 
   it('leaves scores alone without a location', () => {
     expect(locationAdjustedScore(120, london, 'natural history museum', null)).toBe(120);
+  });
+});
+
+describe('googlePrice', () => {
+  it('maps the tier enum (free included) and the per-person range', () => {
+    expect(
+      googlePrice({
+        priceLevel: 'PRICE_LEVEL_MODERATE',
+        priceRange: { startPrice: { currencyCode: 'USD', units: '20' }, endPrice: { currencyCode: 'USD', units: '30' } },
+      })
+    ).toEqual({ priceLevel: 2, priceRange: { currency: 'USD', start: 20, end: 30 } });
+    expect(googlePrice({ priceLevel: 'PRICE_LEVEL_FREE' })).toEqual({ priceLevel: 0, priceRange: undefined });
+    expect(googlePrice({ priceLevel: 'PRICE_LEVEL_UNSPECIFIED' })).toEqual({ priceLevel: undefined, priceRange: undefined });
+    expect(googlePrice({})).toEqual({ priceLevel: undefined, priceRange: undefined });
   });
 });

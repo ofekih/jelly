@@ -201,6 +201,16 @@ export interface GameResult {
   weight?: number;
 }
 
+/**
+ * Typical spend per person from Google Places (`priceRange`): `start` inclusive, `end` exclusive and
+ * missing for "100+"; whole units of `currency` (ISO 4217). Formatting lives in `lib/price.ts`.
+ */
+export interface PriceRange {
+  currency: string;
+  start?: number;
+  end?: number;
+}
+
 export interface RankedHistoryEvent {
   timestamp: number;
   initialRating: number;
@@ -224,7 +234,8 @@ export interface RestaurantEntry {
   lat?: number;
   lng?: number;
   googleMapsUri?: string;
-  priceLevel?: number; // 1 ($) to 4 ($$$$)
+  priceLevel?: number; // 0 (free), 1 ($) to 4 ($$$$)
+  priceRange?: PriceRange; // Only alongside the tier it came with (see mergePrice)
 
   // Each listing belongs to exactly ONE category list (the same place can appear in several lists
   // as separate, independently ranked entries)
@@ -259,6 +270,7 @@ export interface PlaceCandidate {
   lng?: number;
   googleMapsUri?: string;
   priceLevel?: number;
+  priceRange?: PriceRange;
   categories: SpotCategory[]; // Auto-detected categories, best match first
   cuisines: string[]; // Auto-detected cuisines
   primaryTypeDisplay?: string;
@@ -277,6 +289,7 @@ export interface BookmarkEntry {
   lng?: number;
   googleMapsUri?: string;
   priceLevel?: number;
+  priceRange?: PriceRange;
   category: SpotCategory;
   categories: SpotCategory[];
   cuisines: string[];
@@ -301,6 +314,8 @@ export interface PredictionPlace {
   lng?: number;
   cuisines?: string[];
   media?: MediaInfo;
+  priceLevel?: number;
+  priceRange?: PriceRange;
 }
 
 export interface SharedListPayload {
