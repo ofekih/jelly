@@ -30,6 +30,7 @@ import { ProfilePage } from './components/ProfilePage';
 import { SharedListBanner } from './components/SharedListBanner';
 import { scrollToTop } from './lib/useScrollChrome';
 import { useHistoryPage } from './lib/useHistoryPage';
+import { primeKeyboard } from './lib/keyboardPrime';
 import { auth, db, googleProvider, setAnalyticsUser, trackEvent } from './firebase';
 import {
   ALL_CATEGORIES,
@@ -681,7 +682,6 @@ export const App: React.FC = () => {
       category: primaryCategory,
       recommended_by: recommendedBy?.name || '',
     });
-    setIsAddModalOpen(false);
     showToast(
       recommendedBy?.name
         ? `Saved ${candidate.name} (Rec by ${recommendedBy.name})`
@@ -1549,8 +1549,12 @@ export const App: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // The full-screen search page covers the main screen (re-ranking is only a sheet)
+  const searchCovers = isAddModalOpen && !reRankingEntry;
   const openAddModal = () => {
     trackEvent('open_add_modal');
+    // Raise the iOS keyboard now, inside the tap: the search page focuses its box a render later
+    primeKeyboard();
     setReRankingEntry(null);
     setRankingBookmark(null);
     setIsAddModalOpen(true);
@@ -1583,7 +1587,7 @@ export const App: React.FC = () => {
           else selectGroup(group);
         }}
         onWordmark={() => scrollToTop()}
-        inert={isProfileOpen}
+        inert={isProfileOpen || searchCovers}
         showSearch={activeRestaurants.length > 0 || activeBookmarks.length > 0}
         searchActive={isSearchExpanded || Boolean(listSearchQuery)}
         onToggleSearch={() => {
@@ -1595,7 +1599,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Centered Feed */}
-      <main ref={mainRef} inert={isProfileOpen || undefined} className="max-w-xl mx-auto px-4 pt-2 space-y-3">
+      <main ref={mainRef} inert={isProfileOpen || searchCovers || undefined} className="max-w-xl mx-auto px-4 pt-2 space-y-3">
         {/* Friend Switcher Bar + Eat Together Pill (shown whenever user follows 1+ friends or is viewing a shared list) */}
         {(friends.length > 0 || sharedList) && (
           <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain no-scrollbar pb-0.5">
@@ -2156,7 +2160,7 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      <footer inert={isProfileOpen || undefined} className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
+      <footer inert={isProfileOpen || searchCovers || undefined} className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
         jelly – rank the things you love ·{' '}
         <a href="/about" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
           About
@@ -2167,7 +2171,7 @@ export const App: React.FC = () => {
         </a>
       </footer>
 
-      {/* Add & Rate Wizard (Search -> Q1: 1-10 -> Q2: List) */}
+      {/* Add flow: search page (→ place page) → rating sheet (gut feeling → list) */}
       <MountWhenOpened open={isAddModalOpen}>
         <AddAndRateModal
           isOpen={isAddModalOpen}
@@ -2187,6 +2191,10 @@ export const App: React.FC = () => {
           userLocation={useCurrentLocation ? userLocation : null}
           onCompleteQuestions={handleCompleteQuestions}
           onAddBookmark={(candidate) => handleAddBookmark(candidate)}
+          onRemoveBookmark={(candidate) => {
+            const existing = findMyBookmark(candidate);
+            if (existing) executeDeleteBookmark(existing.id);
+          }}
         />
       </MountWhenOpened>
 

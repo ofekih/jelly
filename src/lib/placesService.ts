@@ -344,7 +344,8 @@ export async function searchPlaces(
   defaultCity?: string,
   userLocation?: UserCoordinates | null,
   group: SpotGroup = 'eat',
-  category?: SpotCategory // The list being searched from: its places come first
+  category?: SpotCategory, // The list being searched from: its places come first
+  options: { cityChosen?: boolean } = {} // `defaultCity` was picked for this search: use it in any group
 ): Promise<{ results: PlaceCandidate[]; providerUsed: 'google_places' | 'osm_photon' }> {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -352,7 +353,7 @@ export async function searchPlaces(
   }
   // Destinations are searched worldwide; sights are biased to nearby but not to the default city
   // (appending it would break searches like "Louvre")
-  if (group !== 'eat') defaultCity = undefined;
+  if (group !== 'eat' && !options.cityChosen) defaultCity = undefined;
   if (group === 'travel') userLocation = null;
 
   const effectiveQuery =

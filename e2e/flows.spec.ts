@@ -125,3 +125,45 @@ test('the profile page shows your stats and closes with Back', async ({ page }) 
   await expect(profile).toBeHidden();
   await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
 });
+
+test('search finds a title, opens its page, goes back, then saves and ranks it from its row', async ({ page }) => {
+  // Title search goes to the TMDB proxy; answer it here so the test never needs the network
+  await page.route('**/api/tmdb/search**', (route) =>
+    route.fulfill({
+      json: {
+        results: [
+          { kind: 'movie', id: 438631, title: 'Dune', year: 2021, creator: 'Denis Villeneuve', genres: ['Sci-Fi'] },
+          { kind: 'movie', id: 329865, title: 'Arrival', year: 2016, creator: 'Denis Villeneuve', genres: ['Sci-Fi'] },
+        ],
+      },
+    })
+  );
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  const search = page.getByRole('dialog', { name: 'Search' });
+  await search.getByRole('tab', { name: 'Watch' }).click();
+  await search.getByRole('textbox').fill('villeneuve');
+  // Arrival is the seeded #1 movie
+  await expect(search.getByText(/^Ranked #1 · /)).toBeVisible();
+
+  await search.getByRole('button', { name: 'Open Dune' }).click();
+  const placePage = page.getByRole('dialog', { name: 'Dune' });
+  await expect(placePage.getByText('Not in your lists')).toBeVisible();
+  await page.goBack();
+  await expect(placePage).toBeHidden();
+  await expect(search.getByRole('textbox')).toHaveValue('villeneuve');
+
+  await search.getByRole('button', { name: 'Save Dune to Want to Watch' }).click();
+  await expect(search.getByText('On your Want to Watch')).toBeVisible();
+
+  await search.getByRole('button', { name: 'Rank Dune' }).click();
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  const prompt = page.getByText(/which do you prefer/i);
+  await expect(prompt).toBeVisible();
+  while (await prompt.isVisible()) {
+    await page.getByRole('button', { name: /Tap to pick/ }).filter({ hasNotText: 'Dune' }).first().click();
+    await page.waitForTimeout(250);
+  }
+  await expect(page.getByText('Ranked Dune #4 in Movies')).toBeVisible();
+  await expect(search).toBeHidden();
+  await expect(page.locator('main').getByText('Dune')).toBeVisible();
+});
