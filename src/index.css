@@ -212,6 +212,9 @@ html[data-group='play'] {
 @keyframes jelly-toast-fade-out {
   to {
     opacity: 0;
+  }
+}
+
 /* App shell. `--jelly-bottom-bar` is the bottom bar's height including the home-indicator safe
    area; BottomNav sets `data-bottom-bar` on <html> while it's shown. Anything pinned to the bottom
    (toasts, the install nudge) sits at `calc(var(--jelly-bottom-bar, 0px) + 12px)`. Phones get a
