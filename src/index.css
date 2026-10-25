@@ -156,3 +156,61 @@ html[data-group='play'] {
   animation: jelly-dialog-pop 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+
+/* Toasts and the update notice: rise in with a little spring, sink out; the countdown under an
+   Undo shrinks over the toast's lifetime (its duration and pause state are set inline) */
+@keyframes jelly-toast-in {
+  from {
+    transform: translate3d(0, 16px, 0) scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes jelly-toast-out {
+  to {
+    transform: translate3d(0, 8px, 0) scale(0.97);
+    opacity: 0;
+  }
+}
+
+@keyframes jelly-toast-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.animate-jelly-toast-in {
+  animation: jelly-toast-in 340ms cubic-bezier(0.34, 1.36, 0.64, 1);
+}
+
+.animate-jelly-toast-out {
+  animation: jelly-toast-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-jelly-toast-countdown {
+  animation-name: jelly-toast-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-jelly-toast-in {
+    animation: jelly-modal-fade-in 160ms ease-out;
+  }
+  .animate-jelly-toast-out {
+    animation: jelly-toast-fade-out 160ms ease-in forwards;
+  }
+}
+
+@keyframes jelly-toast-fade-out {
+  to {
+    opacity: 0;
+  }
+}

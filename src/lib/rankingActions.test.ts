@@ -6,8 +6,9 @@ import {
   placeSpot,
   reorderSpot,
   restoreSpot,
+  undoReorder,
 } from './rankingActions';
-import { getCategoryList } from './categoryLists';
+import { getCategoryList, recomputeAllCategoryScores } from './categoryLists';
 import { PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
 
 function spot(
@@ -177,6 +178,85 @@ describe('reorderSpot', () => {
     expect(reorderSpot(list, 'a__restaurants', 'bar__bars', 500)).toBeNull();
   });
 });
+
+describe('undoReorder', () => {
+  // Scored the way persisting scores them, so "exactly as before" includes ranks and scores
+  const list = recomputeAllCategoryScores([
+    spot('a', 9, 0, 'restaurants', { comparisons: [{ opponentId: 'b__restaurants', result: 1, at: 50 }] }),
+    spot('b', 7, 1),
+    spot('c', 6, 2, 'restaurants', { comparisons: [{ opponentId: 'a__restaurants', result: 0, at: 60 }] }),
+    spot('d', 5, 3),
+    spot('bar', 8, 0, 'bars'),
+  ]);
+
+  it('restores the list exactly, ranks, scores and answers included', () => {
+    for (const [activeId, overId] of [
+      ['c__restaurants', 'a__restaurants'],
+      ['a__restaurants', 'd__restaurants'],
+      ['b__restaurants', 'c__restaurants'],
+      ['d__restaurants', 'b__restaurants'],
+    ]) {
+      const moved = reorderSpot(list, activeId, overId, 500)!;
+      const undone = undoReorder(recomputeAllCategoryScores(moved.restaurants), moved.undo)!;
+      expect(recomputeAllCategoryScores(undone)).toEqual(list);
+    }
+  });
+
+  it('puts back an older answer the drag replaced', () => {
+    // c had answered "below a"; dragging it above a overwrites that answer
+    const moved = reorderSpot(list, 'c__restaurants', 'a__restaurants', 500)!;
+    expect(moved.entry.comparisons?.find((c) => c.opponentId === 'a__restaurants')?.at).toBe(500);
+    const undone = undoReorder(moved.restaurants, moved.undo)!;
+    expect(undone.find((r) => r.placeId === 'c')?.comparisons).toEqual([
+      { opponentId: 'a__restaurants', result: 0, at: 60 },
+    ]);
+  });
+
+  it('keeps edits made since and never loses spots', () => {
+    const moved = reorderSpot(list, 'c__restaurants', 'a__restaurants', 500)!;
+    // Since then: b (c's old neighbour above) was deleted, e was added at the top, and c got a
+    // note and a newer answer
+    const later = moved.restaurants
+      .filter((r) => r.placeId !== 'b')
+      .map((r) =>
+        r.placeId === 'c'
+          ? {
+              ...r,
+              notes: 'new',
+              comparisons: [...(r.comparisons ?? []), { opponentId: 'd__restaurants', result: 1 as const, at: 700 }],
+            }
+          : r
+      );
+    const withE = inOrder(later, ['e', 'c', 'a', 'd']);
+    const undone = undoReorder(withE, moved.undo)!;
+    // Back above its old neighbour below, d
+    expect(ids(undone)).toEqual(['e', 'a', 'c', 'd']);
+    expect(undone).toHaveLength(withE.length);
+    const c = undone.find((r) => r.placeId === 'c')!;
+    expect(c.notes).toBe('new');
+    expect(c.comparisons).toEqual([
+      { opponentId: 'a__restaurants', result: 0, at: 60 },
+      { opponentId: 'd__restaurants', result: 1, at: 700 },
+    ]);
+  });
+
+  it('puts a spot that was #1 back at the top', () => {
+    const moved = reorderSpot(list, 'a__restaurants', 'c__restaurants', 500)!;
+    const undone = undoReorder(moved.restaurants.filter((r) => r.placeId !== 'b'), moved.undo)!;
+    expect(ids(undone)).toEqual(['a', 'c', 'd']);
+  });
+
+  it('does nothing once the spot is gone from that list', () => {
+    const moved = reorderSpot(list, 'c__restaurants', 'a__restaurants', 500)!;
+    expect(undoReorder(moved.restaurants.filter((r) => r.placeId !== 'c'), moved.undo)).toBeNull();
+  });
+});
+
+/** Puts the restaurants list in this order, adding plain spots for unknown place IDs */
+function inOrder(all: RestaurantEntry[], order: string[]): RestaurantEntry[] {
+  const list = order.map((p, i) => ({ ...(all.find((r) => r.placeId === p) ?? spot(p, 9.5, 0)), rankIndex: i }));
+  return recomputeAllCategoryScores([...all.filter((r) => r.category !== 'restaurants'), ...list]);
+}
 
 describe('restoreSpot', () => {
   it('puts a deleted spot back at its rank without undoing later edits', () => {

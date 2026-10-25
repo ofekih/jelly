@@ -100,6 +100,7 @@ import {
   placeSpot,
   reorderSpot,
   restoreSpot,
+  undoReorder,
 } from './lib/rankingActions';
 import { RestaurantList } from './components/RestaurantList';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
@@ -320,9 +321,10 @@ export const App: React.FC = () => {
         if (now - lastWriteErrorAtRef.current < 10_000) return;
         lastWriteErrorAtRef.current = now;
         showToast('Couldn’t save your last change – reload jelly and try again', {
-          label: 'Reload',
-          onClick: () => window.location.reload(),
-        }, 8000);
+          action: { label: 'Reload', onClick: () => window.location.reload() },
+          durationMs: 8000,
+          kind: 'error',
+        });
       }),
     [showToast]
   );
@@ -888,9 +890,9 @@ export const App: React.FC = () => {
     }
     if (target) {
       trackEvent('delete_bookmark', { restaurant_name: target.name });
-      showToast(
-        `Removed ${target.name}`,
-        {
+      showToast(`Removed ${target.name}`, {
+        kind: 'removed',
+        action: {
           label: 'Undo',
           onClick: () => {
             setBookmarks(prevBookmarks);
@@ -900,11 +902,10 @@ export const App: React.FC = () => {
                 logWriteError('undo delete bookmark')
               );
             }
-            showToast(`Restored ${target.name}`);
+            showToast(`Restored ${target.name}`, { kind: 'restored' });
           },
         },
-        5000
-      );
+      });
     }
   };
 
@@ -1126,6 +1127,19 @@ export const App: React.FC = () => {
       to_rank: moved.to + 1,
     });
     await persistOrderedRestaurants(moved.restaurants);
+    showToast(`Moved ${moved.entry.name} to #${moved.to + 1}`, {
+      kind: 'moved',
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          const undone = undoReorder(restaurantsRef.current, moved.undo);
+          if (!undone) return;
+          trackEvent('undo_reorder', { restaurant_name: moved.entry.name });
+          persistOrderedRestaurants(undone);
+          showToast(`${moved.entry.name} is back at #${moved.from + 1}`, { kind: 'restored' });
+        },
+      },
+    });
   };
 
   // Order check: fix pairs whose order disagrees with the stored side-by-side answers
@@ -1175,17 +1189,16 @@ export const App: React.FC = () => {
       category: target.category,
     });
     await persistOrderedRestaurants(remaining, id);
-    showToast(
-      `Removed ${target.name}`,
-      {
+    showToast(`Removed ${target.name}`, {
+      kind: 'removed',
+      action: {
         label: 'Undo',
         onClick: () => {
           persistOrderedRestaurants(restoreSpot(restaurantsRef.current, target));
-          showToast(`Restored ${target.name}`);
+          showToast(`Restored ${target.name}`, { kind: 'restored' });
         },
       },
-      5500
-    );
+    });
   };
 
   const handleDeleteRestaurant = (id: string) => {

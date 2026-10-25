@@ -118,6 +118,18 @@ export function placeSpot(
 /** The result for a list with nothing to compare against: straight to #1. */
 export const FIRST_IN_LIST: PlacementResult = { insertIndex: 0, comparisonsDone: 0, answers: [] };
 
+/** What a drag changed, enough to take it back (see `undoReorder`). */
+export interface ReorderUndo {
+  /** The dragged spot as it was before the drag, and right after it */
+  before: RestaurantEntry;
+  after: RestaurantEntry;
+  /** Its neighbours before the drag (IDs), to find its old place even if the list changed since */
+  aboveId?: string;
+  belowId?: string;
+  /** Its old index in the list */
+  from: number;
+}
+
 /**
  * Drags `activeId` to where `overId` is, within its own list only. The moved spot remembers the
  * drag as answers, so earlier answers it overrides never get flagged as conflicts. Null when
@@ -128,7 +140,7 @@ export function reorderSpot(
   activeId: string,
   overId: string,
   now: number
-): { restaurants: RestaurantEntry[]; entry: RestaurantEntry; from: number; to: number } | null {
+): { restaurants: RestaurantEntry[]; entry: RestaurantEntry; from: number; to: number; undo: ReorderUndo } | null {
   const active = restaurants.find((r) => r.id === activeId);
   if (!active) return null;
   const list = getCategoryList(restaurants, active.category);
@@ -138,7 +150,64 @@ export function reorderSpot(
 
   const moved = moveSpot(list, from, to);
   moved[to] = appendComparisons(moved[to], dragComparisons(list, from, to, now));
-  return { restaurants: replaceCategoryList(restaurants, active.category, moved), entry: moved[to], from, to };
+  const undo: ReorderUndo = {
+    before: list[from],
+    after: moved[to],
+    aboveId: list[from - 1]?.id,
+    belowId: list[from + 1]?.id,
+    from,
+  };
+  return { restaurants: replaceCategoryList(restaurants, active.category, moved), entry: moved[to], from, to, undo };
+}
+
+const comparisonKey = (c: StoredComparison) => `${c.opponentId}|${c.result}|${c.at}`;
+const sameComparisons = (a?: StoredComparison[], b?: StoredComparison[]) =>
+  (a ?? []).map(comparisonKey).join() === (b ?? []).map(comparisonKey).join();
+
+/** The dragged spot's answers without what the drag added (and with any it pushed out back). */
+function comparisonsBeforeDrag(current: RestaurantEntry, undo: ReorderUndo): StoredComparison[] | undefined {
+  const { before, after } = undo;
+  // Untouched since the drag: exactly what it had
+  if (sameComparisons(current.comparisons, after.comparisons)) return before.comparisons;
+  const hadBefore = new Set((before.comparisons ?? []).map(comparisonKey));
+  const added = new Set((after.comparisons ?? []).map(comparisonKey).filter((k) => !hadBefore.has(k)));
+  const hasAfter = new Set((after.comparisons ?? []).map(comparisonKey));
+  const kept = (current.comparisons ?? []).filter((c) => !added.has(comparisonKey(c)));
+  const replaced = (before.comparisons ?? []).filter(
+    (b) => !hasAfter.has(comparisonKey(b)) && !kept.some((c) => c.opponentId === b.opponentId)
+  );
+  return [...kept, ...replaced].sort((x, y) => x.at - y.at);
+}
+
+/**
+ * Undoes a drag: puts the spot back between its old neighbours and drops the answers the drag
+ * recorded. Right after the drag this restores the list exactly (ranks and scores are refitted
+ * from the same order); if the list changed in between, everything else stays as it is now and
+ * the spot goes back next to whichever old neighbour is still there. Null when the spot is no
+ * longer in that list (deleted or moved to another list), so there is nothing to undo.
+ */
+export function undoReorder(restaurants: RestaurantEntry[], undo: ReorderUndo): RestaurantEntry[] | null {
+  const { category, id } = undo.before;
+  const list = getCategoryList(restaurants, category);
+  const current = list.find((r) => r.id === id);
+  if (!current) return null;
+
+  const others = list.filter((r) => r.id !== id);
+  const aboveIndex = undo.aboveId ? others.findIndex((r) => r.id === undo.aboveId) : -1;
+  const belowIndex = undo.belowId ? others.findIndex((r) => r.id === undo.belowId) : -1;
+  const index =
+    aboveIndex !== -1
+      ? aboveIndex + 1
+      : belowIndex !== -1
+      ? belowIndex
+      : undo.aboveId
+      ? Math.min(undo.from, others.length)
+      : 0; // It was #1
+
+  const restored: RestaurantEntry = { ...current, comparisons: comparisonsBeforeDrag(current, undo) };
+  if (restored.comparisons === undefined) delete restored.comparisons;
+  others.splice(index, 0, restored);
+  return replaceCategoryList(restaurants, category, others);
 }
 
 /** Undoes a delete: puts `entry` back at its old rank in the current list (keeping later edits). */
