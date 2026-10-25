@@ -1,0 +1,77 @@
+/* Onboarding tour motion (loaded with the tour's own chunk). Every animation is skipped when the
+   viewer prefers reduced motion. */
+@keyframes tour-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tour-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tour-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -7px, 0) rotate(1.5deg);
+  }
+}
+
+@keyframes tour-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tour-pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-jade-500) 35%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+.tour-rise {
+  animation: tour-rise 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.tour-pop {
+  animation: tour-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.tour-float {
+  animation: tour-float 5.5s ease-in-out infinite;
+}
+.tour-fade {
+  animation: tour-fade 380ms ease-out both;
+}
+.tour-pulse {
+  animation: tour-pulse-ring 1.8s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-rise,
+  .tour-pop,
+  .tour-float,
+  .tour-fade,
+  .tour-pulse {
+    animation: none !important;
+  }
+}

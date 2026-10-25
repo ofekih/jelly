@@ -60,6 +60,7 @@ import {
   stripUndefined,
 } from './lib/firestoreDoc';
 import { readLocalSettings, updateLocalSettings } from './lib/localSettings';
+import { shouldAutoOpenTour } from './lib/onboarding';
 import { CURRENT_VERSION, hasUnseenRelease } from './lib/changelog';
 import { GROUP_COPY, wantLabel } from './lib/groups';
 import {
@@ -157,6 +158,8 @@ const ShareModal = lazyNamed(() => import('./components/ShareModal'), 'ShareModa
 const WhatsNewModal = lazyNamed(() => import('./components/WhatsNewModal'), 'WhatsNewModal');
 const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'SettingsModal');
 const FollowListModal = lazyNamed(() => import('./components/FollowListModal'), 'FollowListModal');
+// Only new users (or a replay) ever need the welcome tour, so it isn't preloaded
+const OnboardingTour = lazyNamed(() => import('./components/onboarding/OnboardingTour'), 'OnboardingTour');
 const DEFERRED_SCREENS = [RestaurantMapView, AddAndRateModal, OrderCheckModal, SxSArenaModal, SpotDetailModal, FriendsModal, EatTogetherModal, ShareModal, WhatsNewModal, SettingsModal, FollowListModal];
 
 /** A local copy that fails to load (corrupt or hand-edited) starts the list empty instead of crashing. */
@@ -285,6 +288,9 @@ export const App: React.FC = () => {
   const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  // Welcome tour: opens once for brand-new users; `openTour` replays it (Settings, profile)
+  const [isTourOpen, setIsTourOpen] = useState(false);
+  const openTour = () => setIsTourOpen(true);
   // Dot on Settings after a new major/minor release; brand-new visitors start caught up.
   const [hasUnseenChangelog, setHasUnseenChangelog] = useState(() => {
     const settings = readLocalSettings();
@@ -498,6 +504,29 @@ export const App: React.FC = () => {
       friends.map((f) => f.uid)
     ).catch(logWriteError('follower edges'));
   }, [user, friends]);
+
+  // Brand-new users get the welcome tour once auth (and a signed-in account's lists) settle. The
+  // short wait lets a cached-empty snapshot be replaced by the server's before deciding.
+  useEffect(() => {
+    if (isTourOpen) return;
+    const eligible = () =>
+      shouldAutoOpenTour({
+        authSettled: !authLoading,
+        signedIn: Boolean(user),
+        listsLoaded: cloudLoadedRef.current,
+        viewingSharedList: Boolean(sharedList) || sharedListLoading,
+        rankedCount: restaurants.length,
+        bookmarkCount: bookmarks.length,
+        seen: Boolean(readLocalSettings().onboardingSeen),
+      });
+    if (!eligible()) return;
+    const timer = setTimeout(() => {
+      if (!eligible()) return;
+      updateLocalSettings({ onboardingSeen: true });
+      setIsTourOpen(true);
+    }, user ? 1500 : 500);
+    return () => clearTimeout(timer);
+  }, [authLoading, user, sharedList, sharedListLoading, restaurants, bookmarks, isTourOpen]);
 
   // Your lists, kept in step with the cloud and the device's local copy (src/lib/sync)
   useEffect(() => {
@@ -2531,8 +2560,27 @@ export const App: React.FC = () => {
           }}
           email={user ? user.email : undefined}
           onSignOut={requestSignOut}
+          onReplayTour={() => {
+            trackEvent('onboarding_replay', { source: 'settings' });
+            closeSettings();
+            openTour();
+          }}
         />
       </MountWhenOpened>
+
+      {isTourOpen && (
+        <Suspense fallback={null}>
+          <OnboardingTour
+            onClose={() => setIsTourOpen(false)}
+            onAddFirst={() => {
+              setReRankingEntry(null);
+              setRankingBookmark(null);
+              setIsAddModalOpen(true);
+            }}
+            onSignIn={user ? undefined : handleGoogleSignIn}
+          />
+        </Suspense>
+      )}
 
       <MountWhenOpened open={isWhatsNewOpen}>
         <WhatsNewModal isOpen={isWhatsNewOpen} onClose={() => setIsWhatsNewOpen(false)} />
