@@ -61,7 +61,7 @@ export const PwaInstallBanner: React.FC = () => {
     <aside
       role="region"
       aria-label="Install jelly app"
-      className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-sm z-40 animate-jelly-sheet"
+      className="fixed bottom-[calc(var(--jelly-bottom-bar,0px)+12px)] left-4 right-4 sm:left-auto sm:right-6 sm:max-w-sm z-40 animate-jelly-sheet"
     >
       <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-zinc-200/90 dark:border-zinc-800 flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">

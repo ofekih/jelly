@@ -23,7 +23,7 @@ export async function startEmulatorSession(auth: Auth): Promise<void> {
   badge.textContent = 'Emulator';
   badge.setAttribute('aria-hidden', 'true');
   badge.style.cssText =
-    'position:fixed;left:8px;bottom:8px;z-index:9999;padding:2px 8px;border-radius:9999px;' +
+    'position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 2px);z-index:9999;padding:2px 8px;border-radius:9999px;' +
     'background:#f59e0b;color:#18181b;font:600 10px/1.6 system-ui;pointer-events:none;opacity:.9';
   document.body.appendChild(badge);
 

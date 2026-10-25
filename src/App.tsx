@@ -15,27 +15,24 @@ import {
 import {
   ArrowUpDown,
   Bookmark,
-  Check,
   List,
-  LogIn,
   Map as MapIcon,
   MapPin,
-  Moon,
   Navigation,
-  Plus,
   Search,
-  Settings,
   Sparkles,
-  Sun,
   UserPlus,
-  Users,
   X,
 } from 'lucide-react';
-import { ShareIcon } from './components/PlatformIcons';
+import { AppHeader } from './components/AppHeader';
+import { BottomNav } from './components/BottomNav';
+import { ProfilePage } from './components/ProfilePage';
+import { SharedListBanner } from './components/SharedListBanner';
+import { scrollToTop } from './lib/useScrollChrome';
+import { useHistoryPage } from './lib/useHistoryPage';
 import { auth, db, googleProvider, setAnalyticsUser, trackEvent } from './firebase';
 import {
   ALL_CATEGORIES,
-  ALL_GROUPS,
   BookmarkEntry,
   CATEGORY_EMOJI,
   CATEGORY_GROUP,
@@ -43,7 +40,6 @@ import {
   DEFAULT_CATEGORY,
   FriendProfile,
   GROUP_CATEGORIES,
-  GROUP_EMOJI,
   GROUP_LABEL,
   isSpotCategory,
   SpotCategory,
@@ -91,7 +87,6 @@ import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './components/Ga
 import { BookmarkList } from './components/BookmarkList';
 import { ForYouList } from './components/ForYouList';
 import { ConfirmModal } from './components/ConfirmModal';
-import { JellyBeanIcon } from './components/JellyBeanIcon';
 import {
   existingEntryFor,
   FIRST_IN_LIST,
@@ -134,7 +129,6 @@ import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
 import { usePredictionMap, usePredictions, watchPredictions } from './lib/usePredictions';
 import { buildForYouSpots, ForYouSpot } from './lib/predictions';
 import { usePriceBackfill } from './lib/usePriceBackfill';
-import { FollowCounts } from './components/FollowCounts';
 import { PublicListTrim } from './lib/publicList';
 import { useFollowers, useFriendListSubscriptions } from './lib/useSocialFeeds';
 import { isSharePath, parseShareUrl, shareIdFromText, shareListUrl } from './lib/shareLinks';
@@ -188,6 +182,10 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
+    // Browser and status-bar chrome follow the app's theme, not just the system's
+    for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+      meta.content = darkMode ? '#09090b' : '#fafafa';
+    }
   }, [darkMode]);
 
   const [restaurants, setRestaurants] = useState<RestaurantEntry[]>(() =>
@@ -328,6 +326,8 @@ export const App: React.FC = () => {
     users: SharedListPayload[];
   }>({ isOpen: false, title: '', users: [] });
   const { toast, showToast } = useToast();
+  // The profile page lives in the browser history, so Back (or Android's back button) closes it
+  const [isProfileOpen, openProfile, closeProfile] = useHistoryPage('jellyProfile');
 
   useEffect(() => preloadWhenIdle(DEFERRED_SCREENS), []);
 
@@ -399,7 +399,7 @@ export const App: React.FC = () => {
       url.pathname = '/';
       url.searchParams.delete('list');
       url.searchParams.delete('c');
-      window.history.replaceState({}, '', url.toString());
+      window.history.replaceState(window.history.state, '', url.toString());
     }
     setSharedList(null);
   };
@@ -1268,6 +1268,15 @@ export const App: React.FC = () => {
     void persistOrderedRestaurants(current.map((r) => (r.id === id ? { ...r, ...price } : r)));
     setActiveDetailSpot((prev) => (prev?.id === id ? { ...prev, ...price } : prev));
   });
+
+  // Switching list, tab, view or whose list you're viewing starts at its top, not partway down the
+  // previous list (only when you'd scrolled into the list; near the top nothing moves)
+  const mainRef = useRef<HTMLElement>(null);
+  const sharedListId = sharedList?.id;
+  useEffect(() => {
+    const main = mainRef.current;
+    if (main && window.scrollY > main.offsetTop) window.scrollTo({ top: 0 });
+  }, [selectedCategory, activeTab, viewMode, sharedListId]);
   const activeRestaurants = sharedList ? sharedList.restaurants : restaurants;
   const activeBookmarks = sharedList ? sharedList.bookmarks ?? NO_BOOKMARKS : bookmarks;
 
@@ -1540,288 +1549,56 @@ export const App: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const openAddModal = () => {
+    trackEvent('open_add_modal');
+    setReRankingEntry(null);
+    setRankingBookmark(null);
+    setIsAddModalOpen(true);
+  };
+  const openFriends = () => {
+    trackEvent('open_friends_modal');
+    setIsFriendsOpen(true);
+  };
+  const openShare = () => {
+    if (activeRestaurants.length === 0) {
+      showToast('Rank something first, then share your list');
+      return;
+    }
+    trackEvent('open_share_modal');
+    setIsShareOpen(true);
+  };
+  const openWhatsNew = () => {
+    trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
+    setIsWhatsNewOpen(true);
+    setHasUnseenChangelog(false);
+    updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 pb-24 transition-colors duration-200">
-      {/* Shared List / Friend List Banner */}
-      {sharedList && (
-        <div className="bg-emerald-600 text-white px-4 py-2 text-xs font-semibold">
-          <div className="max-w-xl mx-auto w-full flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-wrap">
-              <span className="truncate">
-                Viewing {sharedList.ownerName}&rsquo;s List ({sharedList.restaurants.length} ranked)
-              </span>
-              {sharedList.handle && (
-                <span className="text-emerald-100/90 text-[11px] font-medium hidden sm:inline">
-                  @{sharedList.handle}
-                </span>
-              )}
-              <div className="flex items-center gap-1.5 text-emerald-100/90 text-[11px]">
-                <FollowCounts
-                  uid={sharedList.ownerUid || sharedList.id}
-                  followersTitle={`${sharedList.ownerName}'s Followers`}
-                  followingTitle={`${sharedList.ownerName} is Following`}
-                  onOpenFollowList={(title, users) => setFollowListDialog({ isOpen: true, title, users })}
-                  buttonClassName="hover:underline font-medium"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {sharedList.ownerUid !== user?.uid && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isViewingSharedOwnerFollowed) {
-                      handleUnfollowFriend(sharedList.ownerUid || sharedList.id);
-                    } else {
-                      handleFollowFriend(sharedList);
-                    }
-                  }}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-flex items-center gap-1 transition-colors ${
-                    isViewingSharedOwnerFollowed
-                      ? 'bg-white/20 hover:bg-white/30 text-white'
-                      : 'bg-white text-emerald-700 hover:bg-emerald-50 shadow-2xs'
-                  }`}
-                >
-                  {isViewingSharedOwnerFollowed ? (
-                    <>
-                      <Check className="w-3 h-3" />
-                      <span>Following</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="w-3 h-3" />
-                      <span>Follow {sharedList.ownerName}</span>
-                    </>
-                  )}
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  const friendUid = sharedList.ownerUid || sharedList.id;
-                  if (!isViewingSharedOwnerFollowed && friendUid !== user?.uid) {
-                    handleFollowFriend(sharedList);
-                  }
-                  setEatTogetherFriendUid(friendUid);
-                  setIsEatTogetherOpen(true);
-                }}
-                className="px-2.5 py-1 rounded-full bg-zinc-950/30 hover:bg-zinc-950/45 text-white text-[11px] font-bold inline-flex items-center gap-1 transition-colors"
-                title={`Compare & blend lists with ${sharedList.ownerName}`}
-              >
-                <Sparkles className="w-3 h-3 text-amber-300" />
-                <span>Blend</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={exitSharedListView}
-                className="px-2.5 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-colors"
-              >
-                My List
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Ultra-Minimal Top Navigation Bar */}
-      <header className="sticky top-0 z-30 bg-zinc-50/85 dark:bg-zinc-950/85 backdrop-blur-md border-b border-zinc-200/70 dark:border-zinc-800/80">
-        <div className="max-w-xl mx-auto px-4 py-2 sm:py-0 sm:h-14 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-2">
-          {/* Clean Wordmark with Jelly Bean Emblem */}
-          <button
-            type="button"
-            onClick={() => {
-              if (sharedList) exitSharedListView();
-            }}
-            className="h-10 flex items-center gap-2 text-left shrink-0"
-          >
-            <JellyBeanIcon size={22} />
-            <span className="font-display font-extrabold text-lg tracking-tight text-zinc-900 dark:text-zinc-100">
-              jelly
-            </span>
-          </button>
-
-          {/* Group Switcher: Eat · Explore · Travel · Watch · Read. Its own full-width row on phones, inline
-              from sm up; only the active group is named */}
-          <div
-            role="tablist"
-            aria-label="Group"
-            className="order-last w-full flex sm:order-none sm:w-auto sm:mr-auto sm:inline-flex p-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/80"
-          >
-            {ALL_GROUPS.map((group) => {
-              const active = group === selectedGroup;
-              return (
-                <button
-                  key={group}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  aria-label={GROUP_LABEL[group]}
-                  title={GROUP_LABEL[group]}
-                  onClick={() => selectGroup(group)}
-                  className={`h-7 rounded-full text-xs font-bold flex items-center justify-center gap-1 transition-all sm:flex-none ${
-                    active
-                      ? 'flex-[2] px-2.5 bg-emerald-500 text-white dark:text-zinc-950 shadow-2xs'
-                      : 'flex-1 px-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <span aria-hidden="true" className="text-sm leading-none">
-                    {GROUP_EMOJI[group]}
-                  </span>
-                  <span className={active ? '' : 'hidden'}>{GROUP_LABEL[group]}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Minimal Controls */}
-          <div className="flex items-center gap-0.5 sm:gap-1">
-            {(activeRestaurants.length > 0 || activeBookmarks.length > 0) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSearchExpanded((prev) => {
-                    if (prev) setListSearchQuery('');
-                    return !prev;
-                  });
-                }}
-                className={`p-1.5 sm:p-2 rounded-full transition-colors ${
-                  isSearchExpanded || listSearchQuery
-                    ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
-                    : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900'
-                }`}
-                aria-label="Filter list"
-                title="Filter list"
-              >
-                <Search className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Friends Modal Trigger */}
-            <button
-              type="button"
-              onClick={() => {
-                trackEvent('open_friends_modal');
-                setIsFriendsOpen(true);
-              }}
-              className="relative p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-              aria-label="Friends"
-              title="Friends"
-            >
-              <Users className="w-4 h-4" />
-              {newFollowerIds.size > 0 ? (
-                <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 text-white text-[9px] font-extrabold flex items-center justify-center ring-2 ring-zinc-50 dark:ring-zinc-950"
-                  title={`${newFollowerIds.size} new follower${newFollowerIds.size === 1 ? '' : 's'}`}
-                >
-                  +{newFollowerIds.size}
-                </span>
-              ) : friends.length > 0 ? (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-emerald-500 text-zinc-950 text-[9px] font-extrabold flex items-center justify-center">
-                  {friends.length}
-                </span>
-              ) : null}
-            </button>
-
-            {activeRestaurants.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  trackEvent('open_share_modal');
-                  setIsShareOpen(true);
-                }}
-                className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                aria-label="Share list"
-                title="Share list"
-              >
-                <ShareIcon className="w-4 h-4" />
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={toggleDarkMode}
-              className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-              aria-label="Toggle dark mode"
-              title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-
-            {!isReadOnly && (
-              <button
-                type="button"
-                onClick={openSettings}
-                className="p-1.5 sm:p-2 rounded-full text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
-                aria-label={hasUnseenChangelog ? 'Settings · new features' : 'Settings'}
-                title="Settings"
-              >
-                <span className="relative block">
-                  <Settings className="w-4 h-4" />
-                  {hasUnseenChangelog && (
-                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-zinc-950" />
-                  )}
-                </span>
-              </button>
-            )}
-
-            {!authLoading &&
-              !isReadOnly &&
-              (user ? (
-                <button
-                  type="button"
-                  onClick={requestSignOut}
-                  className="p-1 rounded-full shrink-0 hover:opacity-80 transition-opacity"
-                  title={`Signed in as ${user.email} · Click to sign out`}
-                >
-                  {user.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt={user.displayName || 'User'}
-                      className="w-7 h-7 max-w-none rounded-full object-cover border border-zinc-200 dark:border-zinc-700"
-                    />
-                  ) : (
-                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">
-                      {(user.displayName || user.email || 'U')[0].toUpperCase()}
-                    </div>
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  className="px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-900 flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors"
-                >
-                  <LogIn className="w-3.5 h-3.5 shrink-0" />
-                  <span>Sign in</span>
-                </button>
-              ))}
-
-            {!isReadOnly && (
-              <button
-                type="button"
-                onClick={() => {
-                  trackEvent('open_add_modal');
-                  setReRankingEntry(null);
-                  setRankingBookmark(null);
-                  setIsAddModalOpen(true);
-                }}
-                className="ml-0.5 sm:ml-1 px-3.5 py-1.5 rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 text-xs font-bold flex items-center gap-1 whitespace-nowrap shrink-0 transition-all shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5 stroke-[2.5] shrink-0" />
-                <span>Add</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 pb-[calc(var(--jelly-bottom-bar,0px)+1.5rem)] transition-colors duration-200">
+      <AppHeader
+        selectedGroup={selectedGroup}
+        onSelectGroup={(group) => {
+          if (group === selectedGroup) scrollToTop();
+          else selectGroup(group);
+        }}
+        onWordmark={() => scrollToTop()}
+        inert={isProfileOpen}
+        showSearch={activeRestaurants.length > 0 || activeBookmarks.length > 0}
+        searchActive={isSearchExpanded || Boolean(listSearchQuery)}
+        onToggleSearch={() => {
+          setIsSearchExpanded((prev) => {
+            if (prev) setListSearchQuery('');
+            return !prev;
+          });
+        }}
+      />
 
       {/* Main Centered Feed */}
-      <main className="max-w-xl mx-auto px-4 pt-3.5 space-y-3">
+      <main ref={mainRef} inert={isProfileOpen || undefined} className="max-w-xl mx-auto px-4 pt-2 space-y-3">
         {/* Friend Switcher Bar + Eat Together Pill (shown whenever user follows 1+ friends or is viewing a shared list) */}
         {(friends.length > 0 || sharedList) && (
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain no-scrollbar pb-0.5">
             <button
               type="button"
               onClick={exitSharedListView}
@@ -1905,6 +1682,32 @@ export const App: React.FC = () => {
               <span>Friends</span>
             </button>
           </div>
+        )}
+
+        {/* Whose list this is (share link or a friend's list) */}
+        {sharedList && (
+          <SharedListBanner
+            list={sharedList}
+            isOwn={sharedList.ownerUid === user?.uid}
+            isFollowed={isViewingSharedOwnerFollowed}
+            onToggleFollow={() => {
+              if (isViewingSharedOwnerFollowed) {
+                handleUnfollowFriend(sharedList.ownerUid || sharedList.id);
+              } else {
+                handleFollowFriend(sharedList);
+              }
+            }}
+            onBlend={() => {
+              const friendUid = sharedList.ownerUid || sharedList.id;
+              if (!isViewingSharedOwnerFollowed && friendUid !== user?.uid) {
+                handleFollowFriend(sharedList);
+              }
+              setEatTogetherFriendUid(friendUid);
+              setIsEatTogetherOpen(true);
+            }}
+            onExit={exitSharedListView}
+            onOpenFollowList={(title, users) => setFollowListDialog({ isOpen: true, title, users })}
+          />
         )}
 
         {/* Top Row: Ranked vs. Want to Try Segmented Control + List/Map Toggle */}
@@ -2041,7 +1844,7 @@ export const App: React.FC = () => {
         <div
           role="tablist"
           aria-label="List"
-          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-1 px-1"
+          className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain no-scrollbar -mx-1 px-1"
         >
           {GROUP_CATEGORIES[selectedGroup].map((category) => {
             const count = categoryCounts.get(category) || 0;
@@ -2077,7 +1880,7 @@ export const App: React.FC = () => {
         {/* Secondary Filters: Near Me Toggle + City Filter Pill + Cuisine Chips */}
         {currentSourceItems.length > 0 && (
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain no-scrollbar">
               {/* Near Me / Sort by Nearest Pill */}
               {viewMode === 'list' && groupCopy.hasLocation && (
                 <button
@@ -2353,7 +2156,7 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      <footer className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
+      <footer inert={isProfileOpen || undefined} className="max-w-xl mx-auto px-4 pt-8 pb-6 text-center text-[11px] text-zinc-400 dark:text-zinc-600">
         jelly – rank the things you love ·{' '}
         <a href="/about" className="underline hover:text-zinc-600 dark:hover:text-zinc-400">
           About
@@ -2470,6 +2273,7 @@ export const App: React.FC = () => {
           onFollowByShareId={handleFollowByShareId}
           onUnfollowFriend={handleUnfollowFriend}
           onViewFriendList={(friendUid: string) => {
+            closeProfile();
             const found = friends.find((f) => f.uid === friendUid);
             if (found) {
               handleSelectFriendToView(found);
@@ -2564,6 +2368,7 @@ export const App: React.FC = () => {
           onUnfollowUser={handleUnfollowFriend}
           onSelectUser={(selectedUser) => {
             setFollowListDialog((prev) => ({ ...prev, isOpen: false }));
+            closeProfile();
             handleViewUserList(selectedUser);
           }}
         />
@@ -2591,12 +2396,7 @@ export const App: React.FC = () => {
           onLinearRatingScaleChange={setLinearRatingScale}
           onExport={handleExportJson}
           hasUnseenChangelog={hasUnseenChangelog}
-          onOpenWhatsNew={() => {
-            trackEvent('open_whats_new', { had_unseen: hasUnseenChangelog });
-            setIsWhatsNewOpen(true);
-            setHasUnseenChangelog(false);
-            updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
-          }}
+          onOpenWhatsNew={openWhatsNew}
           onOpenFeedback={openFeedback}
           email={user ? user.email : undefined}
           onSignOut={requestSignOut}
@@ -2634,6 +2434,60 @@ export const App: React.FC = () => {
       <MountWhenOpened open={isWhatsNewOpen}>
         <WhatsNewModal isOpen={isWhatsNewOpen} onClose={() => setIsWhatsNewOpen(false)} />
       </MountWhenOpened>
+
+      <ProfilePage
+        open={isProfileOpen}
+        onClose={closeProfile}
+        user={user}
+        authLoading={authLoading}
+        handle={userHandle}
+        onUpdateHandle={handleUpdateUserHandle}
+        restaurants={restaurants}
+        bookmarks={bookmarks}
+        friendCount={friends.length}
+        newFollowerCount={newFollowerIds.size}
+        hasUnseenChangelog={hasUnseenChangelog}
+        darkMode={darkMode}
+        onToggleDarkMode={toggleDarkMode}
+        onSelectGroup={(group) => {
+          exitSharedListView();
+          selectGroup(group);
+          setActiveTab('ranked');
+          closeProfile();
+        }}
+        onOpenShare={openShare}
+        onOpenFriends={openFriends}
+        onOpenSettings={openSettings}
+        onOpenWhatsNew={openWhatsNew}
+        onOpenFeedback={openFeedback}
+        onReplayTour={openTour}
+        onOpenFollowList={(title, users) => setFollowListDialog({ isOpen: true, title, users })}
+        onSignIn={handleGoogleSignIn}
+        onSignOut={requestSignOut}
+      />
+
+      {/* Main navigation: Lists · Friends · (+) · Share · Profile */}
+      <BottomNav
+        active={isProfileOpen ? 'profile' : 'lists'}
+        onLists={() => {
+          if (isProfileOpen) closeProfile();
+          else scrollToTop();
+        }}
+        onFriends={openFriends}
+        onShare={openShare}
+        onProfile={() => {
+          if (isProfileOpen) return;
+          trackEvent('open_profile');
+          openProfile();
+        }}
+        onAdd={isReadOnly ? undefined : openAddModal}
+        newFollowerCount={newFollowerIds.size}
+        friendCount={friends.length}
+        profileDot={hasUnseenChangelog}
+        account={
+          user ? { photoURL: user.photoURL, name: user.displayName, email: user.email } : null
+        }
+      />
 
       {/* PWA Mobile Install Nudge */}
       <PwaInstallBanner />
