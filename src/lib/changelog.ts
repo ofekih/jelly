@@ -17,6 +17,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.1.0',
+    date: '2026-10-25',
+    title: 'Search, look up, review',
+    highlights: [
+      'Search now opens as a full page: pick a group, type, set where to look, then pick from the results',
+      'Tap any result to look it up – details, friends’ scores and reviews – without saying you’ve been',
+      'Leave a public review after you rank something, or skip it in one tap',
+      'Upload your own profile picture from your profile page',
+    ],
+  },
+  {
     version: '4.0.1',
     date: '2026-10-25',
     title: 'Welcome tour for everyone',

@@ -10,6 +10,7 @@ export function primeKeyboard(): void {
   input.type = 'text';
   input.setAttribute('aria-hidden', 'true');
   input.tabIndex = -1;
+  input.dataset.jellyKeyboardPrime = '';
   // 16px: smaller text makes iOS zoom the page in on focus
   input.style.cssText =
     'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px;pointer-events:none;';
@@ -22,4 +23,10 @@ export function primeKeyboard(): void {
     if (document.activeElement === input) input.blur();
     remove();
   }, 2500);
+}
+
+/** Whatever was typed into the stand-in before the real box took over, so fast typing isn't lost */
+export function takePrimedText(): string {
+  const input = document.querySelector<HTMLInputElement>('input[data-jelly-keyboard-prime]');
+  return input?.value ?? '';
 }

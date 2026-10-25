@@ -12,6 +12,7 @@ import {
   SpotCategory,
   SpotGroup,
 } from '../types';
+import { takePrimedText } from '../lib/keyboardPrime';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
 import { hasSquareCover, posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
 import { GROUP_COPY, searchPlaceholder, spotPrice, wantLabel } from '../lib/groups';
@@ -102,6 +103,8 @@ export const SearchPage: React.FC<SearchPageProps> = ({
   // Focus the box on open. On phones App's add button already raised the keyboard with a stand-in
   // input (see keyboardPrime.ts); moving the focus here keeps it up.
   useEffect(() => {
+    const typed = takePrimedText();
+    if (typed) setQuery(typed);
     inputRef.current?.focus({ preventScroll: true });
   }, []);
 
