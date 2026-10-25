@@ -17,6 +17,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.0.1',
+    date: '2026-10-25',
+    title: 'Welcome tour for everyone',
+    highlights: [
+      'The welcome tour’s demos now play even with Reduce Motion turned on – just without the sliding and bouncing',
+    ],
+  },
+  {
     version: '4.0.0',
     date: '2026-10-25',
     title: 'Feels like an app',

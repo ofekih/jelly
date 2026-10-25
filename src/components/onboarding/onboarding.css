@@ -1,5 +1,5 @@
-/* Onboarding tour motion (loaded with the tour's own chunk). Every animation is skipped when the
-   viewer prefers reduced motion. */
+/* Onboarding tour motion (loaded with the tour's own chunk). With reduced motion nothing travels or
+   scales: entrances become plain fades and the looping float/pulse stop, but the demos keep playing. */
 @keyframes tour-rise {
   from {
     opacity: 0;
@@ -68,9 +68,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .tour-rise,
-  .tour-pop,
+  .tour-pop {
+    animation-name: tour-fade !important;
+  }
   .tour-float,
-  .tour-fade,
   .tour-pulse {
     animation: none !important;
   }

@@ -46,7 +46,7 @@ export const TasteScatter: React.FC<{ mine: number[]; friend: number[]; shared?:
         fill={getRatingTier(friend[i]).thumbColor}
         stroke="white"
         strokeWidth={1.5}
-        className="transition-all duration-500 motion-reduce:transition-none"
+        className="transition-all duration-500"
       />
     ))}
   </svg>

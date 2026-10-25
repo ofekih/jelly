@@ -479,11 +479,12 @@ export const AboutPage: React.FC = () => (
         <div className="rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">
           <p>
             jelly is a pet project I built for family & friends. It costs me under $50 a year to run, so it's free –
-            no ads, no subscriptions, no premium tier, and your data is never sold.
+            no ads, no subscriptions, and your data is never sold.
           </p>
           <p className="mt-3">
-            If usage and costs ever grow a lot, I might have to charge something. I don't expect that to happen, but
-            if it ever does, you'll hear about it clearly, well in advance – nothing will quietly change under you.
+            I don't plan to ever charge for jelly. If usage and costs grew a lot, I might need some other way to cover
+            them. I don't expect that to happen, but if it ever does, you'll hear about it clearly, well in advance –
+            nothing will quietly change under you.
           </p>
           <p className="mt-3 text-right font-semibold text-zinc-800 dark:text-zinc-100">– Ofek</p>
         </div>

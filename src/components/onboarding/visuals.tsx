@@ -6,7 +6,6 @@ import { TASTE_MINE, TASTE_PRESETS, TASTE_SPOTS, TasteScatter } from '../../abou
 import { computeUserTasteSimilarity, getSpotSocialMetrics } from '../../lib/friendsService';
 import { getBestInsertionIndex, initSxSSearch, pickNextOpponent, recordSxSComparison } from '../../lib/rankingEngine';
 import { getRatingTier } from '../../lib/ratingTiers';
-import { prefersReducedMotion } from '../../lib/reducedMotion';
 import { ALL_GROUPS, CATEGORY_LABEL, GROUP_CATEGORIES, GROUP_EMOJI, GROUP_LABEL, SharedListPayload } from '../../types';
 
 interface VisualProps {
@@ -20,10 +19,11 @@ const rise = (active: boolean, delayMs: number) => ({
   style: active ? { animationDelay: `${delayMs}ms` } : undefined,
 });
 
-/** Calls `tick` every `ms` while `active` (never with reduced motion) */
+/** Calls `tick` every `ms` while `active`. Runs with reduced motion too: what it changes crossfades
+    or swaps in place, nothing travels across the screen */
 function useTicker(active: boolean, ms: number, tick: () => void) {
   useEffect(() => {
-    if (!active || prefersReducedMotion()) return;
+    if (!active) return;
     const id = window.setInterval(tick, ms);
     return () => clearInterval(id);
   }, [active, ms, tick]);
@@ -92,25 +92,17 @@ const TRUE_GAP = 3;
 
 type SxSPhase = 'ask' | 'pick' | 'done';
 
-function finalPlacement() {
-  let s = initSxSSearch(SXS_LIST, NEW_GUT, ['Japanese']);
-  for (let m = pickNextOpponent(s, SXS_LIST); m; m = pickNextOpponent(s, SXS_LIST)) {
-    s = recordSxSComparison(s, m.opponentIndex, m.opponent, TRUE_GAP <= m.opponentIndex ? 'new_wins' : 'opponent_wins');
-  }
-  return s;
-}
-
 export const SxSVisual: React.FC<VisualProps> = ({ active }) => {
-  const reduced = prefersReducedMotion();
-  const [state, setState] = useState(() => (reduced ? finalPlacement() : initSxSSearch(SXS_LIST, NEW_GUT, ['Japanese'])));
-  const [phase, setPhase] = useState<SxSPhase>(reduced ? 'done' : 'ask');
+  // Plays with reduced motion too: each step swaps in place, the bars only change length
+  const [state, setState] = useState(() => initSxSSearch(SXS_LIST, NEW_GUT, ['Japanese']));
+  const [phase, setPhase] = useState<SxSPhase>('ask');
   const match = useMemo(() => pickNextOpponent(state, SXS_LIST), [state]);
   const { insertIndex } = getBestInsertionIndex(state);
   const newWins = match ? TRUE_GAP <= match.opponentIndex : false;
 
   // ask → pick → (record) ask … → done → start over
   useEffect(() => {
-    if (!active || reduced) return;
+    if (!active) return;
     const delay = phase === 'ask' ? 1000 : phase === 'pick' ? 750 : 3600;
     const id = window.setTimeout(() => {
       if (phase === 'ask') setPhase(match ? 'pick' : 'done');
@@ -124,7 +116,7 @@ export const SxSVisual: React.FC<VisualProps> = ({ active }) => {
       }
     }, delay);
     return () => clearTimeout(id);
-  }, [active, reduced, phase, match, state, newWins]);
+  }, [active, phase, match, state, newWins]);
 
   const placed = useMemo(() => {
     const spots = SXS_LIST.map((e) => ({ name: e.name, gut: e.initialRating }));
@@ -140,7 +132,7 @@ export const SxSVisual: React.FC<VisualProps> = ({ active }) => {
     return (
       <div key={`gap${k}`} className="flex h-2.5 items-center pl-6 pr-9">
         <div
-          className="h-1.5 rounded-full bg-jade-400/80 transition-all duration-500 motion-reduce:transition-none dark:bg-jade-500/70"
+          className="h-1.5 rounded-full bg-jade-400/80 transition-all duration-500 dark:bg-jade-500/70"
           style={{ width: `${Math.max(2, (w / maxW) * 100)}%`, opacity: w < 0.01 ? 0.25 : 1 }}
         />
       </div>
@@ -401,11 +393,11 @@ export const DifferentVisual: React.FC<VisualProps> = ({ active }) => (
 // ---------------------------------------------------------------------------------------------
 // 6. Free
 
-/** Counts up to `to` once the page is on screen (instantly with reduced motion) */
+/** Counts up to `to` once the page is on screen (a changing number isn't motion, so always) */
 function useCountUp(active: boolean, to: number, ms = 900): number {
   const [value, setValue] = useState(active ? 0 : to);
   useEffect(() => {
-    if (!active || prefersReducedMotion()) {
+    if (!active) {
       setValue(to);
       return;
     }
@@ -457,8 +449,8 @@ export const FreeVisual: React.FC<VisualProps> = ({ active }) => {
               ads, no subscriptions.
             </p>
             <p>
-              If usage and costs ever grow a lot I might have to charge, but I don’t expect that, and if it ever happens
-              you’ll hear about it clearly, well in advance.
+              I don’t plan to ever charge for jelly. If usage and costs grew a lot, I might need some other way to cover
+              them, but I don’t expect that, and if it ever happens you’ll hear about it clearly, well in advance.
             </p>
           </blockquote>
           <figcaption className="mt-3 flex items-center justify-end gap-2 text-[13px] font-semibold text-zinc-800 dark:text-zinc-100">

@@ -20,7 +20,7 @@ const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
 interface SpectrumExplorerProps {
   /** Smaller chart, no linear-bar switch (the onboarding tour) */
   compact?: boolean;
-  /** Glide the thumb along the bar on its own until the viewer touches it (skipped with reduced motion) */
+  /** Glide the thumb along the bar on its own until the viewer touches it (steps instead with reduced motion) */
   autoplay?: boolean;
 }
 
@@ -38,13 +38,21 @@ export const SpectrumExplorer: React.FC<SpectrumExplorerProps> = ({ compact = fa
   const tier = getRatingTier(rating);
 
   useEffect(() => {
-    if (!autoplay || touched || prefersReducedMotion()) return;
+    if (!autoplay || touched) return;
+    const reduced = prefersReducedMotion();
     let raf = 0;
     let timer = 0;
     let stop = TOUR.indexOf(pctRef.current) + 1;
     const glide = () => {
       const from = pctRef.current;
       const to = TOUR[stop % TOUR.length];
+      if (reduced) {
+        // Jump to each stop and hold a little longer, so the labels and chart still change
+        setPct(to);
+        stop += 1;
+        timer = window.setTimeout(glide, GLIDE_MS + HOLD_MS);
+        return;
+      }
       const start = performance.now();
       const frame = (now: number) => {
         const t = Math.min(1, (now - start) / GLIDE_MS);
