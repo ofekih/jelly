@@ -16,6 +16,9 @@ import { appHtml, cardHeading, listPreview, parseSharePath, previewMeta, siteOri
 
 initializeApp();
 
+/** Feedback & bug reports from the app → GitHub issues (see `feedback.ts`) */
+export { onFeedbackCreated } from './feedback';
+
 /**
  * Keeps the community average for a spot (`placeStats`) in sync with everyone's rankings, and
  * queues a recompute of the user's own taste predictions.

@@ -122,6 +122,20 @@ rules_version = '2';
 // Collection: placeStats (publicly readable/listable; written only by Cloud Functions / Admin SDK)
 // Document ID: {statId}
 //
+// Collection: feedback (create-only for clients, signed in or out; never read, updated or deleted)
+// Document ID: auto
+// Fields (no other fields, no nulls; see src/lib/feedback.ts):
+//   - kind: string (required, 'idea' | 'bug')
+//   - message: string (required, 1..4000 chars)
+//   - contact: string (optional, 1..200 chars) - how to reach the sender, only if they gave one
+//   - uid: string (required when signed in, == request.auth.uid; absent when signed out)
+//   - diagnostics: map (required) - exactly appVersion (<= 40), build (<= 40), platform (<= 100),
+//     userAgent (<= 500), viewport (<= 40), group (<= 40), list (<= 40) strings and standalone (bool)
+//   - createdAt: timestamp (required, == request.time, i.e. serverTimestamp())
+// The onFeedbackCreated function later adds status / issueNumber / issueUrl (Admin SDK).
+//
+// Collection: feedbackLimits (server-only daily counter for onFeedbackCreated)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -357,6 +371,36 @@ service cloud.firestore {
         (data.createdAt is number || data.createdAt is timestamp);
     }
 
+    function isBoundedString(v, minLen, maxLen) {
+      return v is string && v.size() >= minLen && v.size() <= maxLen;
+    }
+
+    function isValidFeedbackDiagnostics(d) {
+      return d is map &&
+        d.keys().hasOnly(['appVersion', 'build', 'platform', 'userAgent', 'viewport', 'standalone', 'group', 'list']) &&
+        d.keys().hasAll(['appVersion', 'build', 'platform', 'userAgent', 'viewport', 'standalone', 'group', 'list']) &&
+        isBoundedString(d.appVersion, 0, 40) &&
+        isBoundedString(d.build, 0, 40) &&
+        isBoundedString(d.platform, 0, 100) &&
+        isBoundedString(d.userAgent, 0, 500) &&
+        isBoundedString(d.viewport, 0, 40) &&
+        isBoundedString(d.group, 0, 40) &&
+        isBoundedString(d.list, 0, 40) &&
+        d.standalone is bool;
+    }
+
+    function isValidFeedback(data) {
+      return data.keys().hasOnly(['kind', 'message', 'contact', 'uid', 'diagnostics', 'createdAt']) &&
+        data.keys().hasAll(['kind', 'message', 'diagnostics', 'createdAt']) &&
+        data.kind in ['idea', 'bug'] &&
+        isBoundedString(data.message, 1, 4000) &&
+        (!('contact' in data) || isBoundedString(data.contact, 1, 200)) &&
+        ((isAuthenticated() && 'uid' in data && data.uid == request.auth.uid) ||
+         (!isAuthenticated() && !('uid' in data))) &&
+        isValidFeedbackDiagnostics(data.diagnostics) &&
+        data.createdAt == request.time;
+    }
+
     function isDocIdUnchanged() {
       return !('id' in resource.data) ||
         !('id' in request.resource.data) ||
@@ -431,6 +475,12 @@ service cloud.firestore {
     match /placeStats/{statId} {
       allow read: if true;
       allow write: if false;
+    }
+
+    // Feedback and bug reports: anyone may send one; only the Cloud Function (Admin SDK) reads them
+    match /feedback/{feedbackId} {
+      allow create: if isValidFeedback(request.resource.data);
+      allow read, update, delete: if false;
     }
 
     // Default deny on all other paths
