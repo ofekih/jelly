@@ -15,11 +15,13 @@ import {
   CATEGORY_GROUP,
   CATEGORY_LABEL,
   FriendSpotMatch,
+  PriceRange,
   RankedHistoryEvent,
   RestaurantEntry,
 } from '../types';
 import { SpotSocialMetrics } from '../lib/friendsService';
-import { GROUP_COPY, wantLabel } from '../lib/groups';
+import { GROUP_COPY, showsPrice, spotPrice, wantLabel } from '../lib/groups';
+import { priceTierLabel } from '../lib/price';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
 import { PosterThumb } from './PosterThumb';
@@ -52,6 +54,7 @@ interface SpotDetailModalProps {
     updates: {
       cuisines: string[];
       priceLevel?: number;
+      priceRange?: PriceRange;
       notes?: string;
     }
   ) => void;
@@ -91,6 +94,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   if (!restaurant) return null;
 
   const copy = GROUP_COPY[CATEGORY_GROUP[restaurant.category]];
+  const price = spotPrice(restaurant, restaurant.category);
   const link = spotLink(restaurant);
 
   const toggleCuisine = (c: string) => {
@@ -102,6 +106,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
     onSaveEdits(restaurant.id, {
       cuisines,
       priceLevel,
+      // Google's range only stays with the tier it came with: a hand-picked tier drops it
+      priceRange: priceLevel === restaurant.priceLevel ? restaurant.priceRange : undefined,
       notes: notes.trim() || undefined,
     });
     setIsEditMode(false);
@@ -112,6 +118,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
     onSaveEdits(restaurant.id, {
       cuisines: restaurant.cuisines || [],
       priceLevel: restaurant.priceLevel,
+      priceRange: restaurant.priceRange,
       notes: notes.trim() || undefined,
     });
     setIsEditingNoteInline(false);
@@ -208,9 +215,12 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
             <div ref={scrollContainerRef} className="px-5 pb-6 space-y-4 overflow-y-auto">
               {/* Subtle Metadata Row */}
               <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                {restaurant.priceLevel && (
-                  <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-700 dark:text-zinc-300">
-                    {'$'.repeat(restaurant.priceLevel)}
+                {price && (
+                  <span
+                    className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-700 dark:text-zinc-300"
+                    title={restaurant.priceRange ? 'Typical spend per person, from Google' : undefined}
+                  >
+                    {price}
                   </span>
                 )}
                 {restaurant.cuisines.map((c) => (
@@ -580,9 +590,10 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     {copy.tagLabel}
                   </label>
                   <div
-                    className={`flex items-center gap-1 ${copy.showPrice || restaurant.category === 'stays' ? '' : 'hidden'}`}
+                    className={`flex items-center gap-1 ${showsPrice(restaurant.category) ? '' : 'hidden'}`}
                   >
-                    {[1, 2, 3, 4].map((p) => (
+                    {/* Free is for sights (museums, parks); meals and stays start at $ */}
+                    {(CATEGORY_GROUP[restaurant.category] === 'explore' ? [0, 1, 2, 3, 4] : [1, 2, 3, 4]).map((p) => (
                       <button
                         key={p}
                         type="button"
@@ -593,7 +604,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                             : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500'
                         }`}
                       >
-                        {'$'.repeat(p)}
+                        {priceTierLabel(p)}
                       </button>
                     ))}
                   </div>

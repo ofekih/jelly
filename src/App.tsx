@@ -133,6 +133,7 @@ import {
 import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
 import { usePredictionMap, usePredictions, watchPredictions } from './lib/usePredictions';
 import { buildForYouSpots, ForYouSpot } from './lib/predictions';
+import { usePriceBackfill } from './lib/usePriceBackfill';
 import { FollowCounts } from './components/FollowCounts';
 import { PublicListTrim } from './lib/publicList';
 import { useFollowers, useFriendListSubscriptions } from './lib/useSocialFeeds';
@@ -649,6 +650,7 @@ export const App: React.FC = () => {
       lng: candidate.lng,
       googleMapsUri: candidate.googleMapsUri,
       priceLevel: candidate.priceLevel,
+      priceRange: candidate.priceRange,
       category: primaryCategory,
       categories: candidate.categories?.length ? candidate.categories : [primaryCategory],
       cuisines: candidate.cuisines || [],
@@ -713,6 +715,7 @@ export const App: React.FC = () => {
       lng: spot.lng,
       googleMapsUri: spot.googleMapsUri,
       priceLevel: spot.priceLevel,
+      priceRange: spot.priceRange,
       // The spot's own list first, so the bookmark lands in the same category
       categories: Array.from(new Set([fallbackCategory, ...(spot.categories || [])])),
       cuisines: spot.cuisines || [],
@@ -973,6 +976,7 @@ export const App: React.FC = () => {
       lng: bookmark.lng,
       googleMapsUri: bookmark.googleMapsUri,
       priceLevel: bookmark.priceLevel,
+      priceRange: bookmark.priceRange,
       category: bookmark.category,
       categories: bookmark.categories,
       cuisines: bookmark.cuisines,
@@ -1198,6 +1202,7 @@ export const App: React.FC = () => {
     updates: {
       cuisines: string[];
       priceLevel?: number;
+      priceRange?: RestaurantEntry['priceRange'];
       notes?: string;
     }
   ) => {
@@ -1207,6 +1212,7 @@ export const App: React.FC = () => {
             ...r,
             cuisines: updates.cuisines,
             priceLevel: updates.priceLevel,
+            priceRange: updates.priceRange,
             notes: updates.notes,
             updatedAt: Date.now(),
           }
@@ -1255,6 +1261,13 @@ export const App: React.FC = () => {
   };
 
   const isReadOnly = Boolean(sharedList);
+  // Spots saved before price ranges were stored get theirs once, when their sheet opens
+  usePriceBackfill(activeDetailSpot, !isReadOnly, (id, price) => {
+    const current = restaurantsRef.current;
+    if (!current.some((r) => r.id === id)) return;
+    void persistOrderedRestaurants(current.map((r) => (r.id === id ? { ...r, ...price } : r)));
+    setActiveDetailSpot((prev) => (prev?.id === id ? { ...prev, ...price } : prev));
+  });
   const activeRestaurants = sharedList ? sharedList.restaurants : restaurants;
   const activeBookmarks = sharedList ? sharedList.bookmarks ?? NO_BOOKMARKS : bookmarks;
 

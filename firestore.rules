@@ -36,7 +36,8 @@ rules_version = '2';
 //   - lat: number (optional, -90..90) - latitude coordinate
 //   - lng: number (optional, -180..180) - longitude coordinate
 //   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
-//   - priceLevel: number (optional, 0..5) - price tier (1..4)
+//   - priceLevel: number (optional, 0..5) - price tier (0 = free, 1..4 = $..$$$$)
+//   - priceRange: map (optional) - typical spend per person {currency: 'USD' (ISO 4217), start?, end?: number 0..1e9, end >= start}
 //   - status: string (optional, 'ranked' | 'want_to_try') - listing status
 //   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars' | 'museums' | 'theme_parks' | 'zoos' | 'nature' | 'cities' | 'getaways' | 'countries') - spot category
 //   - categories: list<string> (optional, <= 10 items) - suggested categories
@@ -67,7 +68,8 @@ rules_version = '2';
 //   - lat: number (optional, -90..90) - latitude coordinate
 //   - lng: number (optional, -180..180) - longitude coordinate
 //   - googleMapsUri: string (optional, <= 1000 chars) - link to Google Maps
-//   - priceLevel: number (optional, 0..5) - price tier (1..4)
+//   - priceLevel: number (optional, 0..5) - price tier (0 = free, 1..4 = $..$$$$)
+//   - priceRange: map (optional) - typical spend per person {currency: 'USD' (ISO 4217), start?, end?: number 0..1e9, end >= start}
 //   - category: string (optional, 'restaurants' | 'brunch' | 'dessert' | 'bakeries' | 'coffee_tea' | 'bars' | 'museums' | 'theme_parks' | 'zoos' | 'nature' | 'cities' | 'getaways' | 'countries') - spot category
 //   - categories: list<string> (optional, <= 10 items) - suggested categories
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
@@ -207,6 +209,23 @@ service cloud.firestore {
         r[0] is int && r[1] is int && r[0] >= 1 && r[0] <= r[1] && r[1] <= 10000;
     }
 
+    // Validate an optional typical spend per person (`PriceRange` in src/types.ts): an ISO 4217
+    // currency plus whole-unit start and/or end (end missing = "100+"), 0..1e9, end >= start
+    function isValidPriceAmount(v) {
+      return v is number && v >= 0 && v <= 1000000000;
+    }
+
+    function isValidOptionalPriceRange(data) {
+      return !('priceRange' in data) || data.priceRange == null ||
+        (data.priceRange is map &&
+         data.priceRange.keys().hasOnly(['currency', 'start', 'end']) &&
+         data.priceRange.currency is string && data.priceRange.currency.matches('^[A-Z]{3}$') &&
+         ('start' in data.priceRange || 'end' in data.priceRange) &&
+         (!('start' in data.priceRange) || isValidPriceAmount(data.priceRange.start)) &&
+         (!('end' in data.priceRange) || isValidPriceAmount(data.priceRange.end)) &&
+         (!('start' in data.priceRange) || !('end' in data.priceRange) || data.priceRange.end >= data.priceRange.start));
+    }
+
     // Validate optional movie / show / book / game info (`MediaInfo` in src/types.ts)
     function isValidOptionalMedia(data) {
       return !('media' in data) ||
@@ -269,6 +288,7 @@ service cloud.firestore {
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
         (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
+        isValidOptionalPriceRange(data) &&
         (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
         (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
         (!('rankedHistory' in data) || isValidList(data.rankedHistory, 100)) &&
@@ -298,6 +318,7 @@ service cloud.firestore {
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
         (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
         (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
+        isValidOptionalPriceRange(data) &&
         (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
         (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&

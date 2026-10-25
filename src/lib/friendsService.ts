@@ -3,6 +3,7 @@ import {
   CATEGORY_GROUP,
   FriendSpotMatch,
   MediaInfo,
+  PriceRange,
   SpotCategory,
   RestaurantEntry,
   SharedListPayload,
@@ -110,6 +111,7 @@ export interface BlendSpotItem {
   lng?: number;
   googleMapsUri?: string;
   priceLevel?: number;
+  priceRange?: PriceRange;
   category: SpotCategory;
   categories: SpotCategory[];
   cuisines: string[];
@@ -151,6 +153,7 @@ export function computeGroupBlend(
     lng?: number;
     googleMapsUri?: string;
     priceLevel?: number;
+    priceRange?: PriceRange;
     category: SpotCategory;
     categories?: SpotCategory[];
     cuisines?: string[];
@@ -180,6 +183,7 @@ export function computeGroupBlend(
       lng: source.lng,
       googleMapsUri: source.googleMapsUri,
       priceLevel: source.priceLevel,
+      priceRange: source.priceRange,
       category: source.category,
       categories: source.categories?.length ? source.categories : [source.category],
       cuisines: source.cuisines || [],

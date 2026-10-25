@@ -105,6 +105,21 @@ describe('computeUserPredictions', () => {
     expect(Object.values(place)).not.toContain(undefined);
   });
 
+  it('keeps the most common price tier and a range that came with it', () => {
+    const usd = (start: number, end: number) => ({ currency: 'USD', start, end });
+    const spots = [
+      toSpotDoc({ name: 'A', category: 'restaurants', priceLevel: 3, priceRange: usd(50, 100) })!,
+      toSpotDoc({ name: 'A', category: 'restaurants', priceLevel: 2 })!,
+      toSpotDoc({ name: 'A', category: 'restaurants', priceLevel: 2, priceRange: usd(20, 30) })!,
+      toSpotDoc({ name: 'A', category: 'restaurants', priceLevel: 9, priceRange: { currency: 'usd', start: -1 } })!,
+    ];
+    expect(spots[3].priceLevel).toBeUndefined();
+    expect(spots[3].priceRange).toBeUndefined();
+    const place = predictionPlace(spots, []);
+    expect(place.priceLevel).toBe(2);
+    expect(place.priceRange).toEqual(usd(20, 30));
+  });
+
   it('keeps a title’s year, poster and director, trimmed', () => {
     const spot = toSpotDoc({
       placeId: 'tmdb:movie:1',

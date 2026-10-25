@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { BookmarkEntry, CATEGORY_GROUP, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
-import { GROUP_COPY, hasLocation, wantLabel } from '../lib/groups';
+import { GROUP_COPY, hasLocation, spotPrice, wantLabel } from '../lib/groups';
 import { hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
 import { PosterThumb } from './PosterThumb';
 import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
@@ -72,6 +72,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   const distLabel = formatDistanceMiles(rawMiles);
   const subtitleParts = [
     primaryCuisine,
+    spotPrice(item, item.category, { compact: true }),
     locationLabel,
     distLabel,
   ].filter(Boolean);

@@ -18,7 +18,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
-import { hasLocation, wantLabel } from '../lib/groups';
+import { hasLocation, spotPrice, wantLabel } from '../lib/groups';
 import { CommunityStat, getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
@@ -149,6 +149,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
 
   const subtitleParts = [
     primaryCuisine,
+    spotPrice(restaurant, restaurant.category, { compact: true }),
     locationLabel,
     distLabel,
   ].filter(Boolean);

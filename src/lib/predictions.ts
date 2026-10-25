@@ -1,6 +1,7 @@
 import { isSpotCategory, type BookmarkEntry, type PredictionPlace, type SpotCategory } from '../types';
 import { isMediaPlaceId, normalizeName, type PredictionConfidence, type TastePrediction } from './tasteModel';
 import { mediaFields, parseMedia } from './media';
+import { parsePriceRange } from './price';
 
 /**
  * `users/{uid}/private/predictions`: taste predictions from every jelly user (not just the
@@ -33,6 +34,10 @@ function parsePlace(raw: unknown): PredictionPlace | undefined {
     ...(lat !== undefined && lng !== undefined ? { lat, lng } : {}),
     cuisines,
     media: parseMedia(p.media),
+    ...(typeof p.priceLevel === 'number' && Number.isInteger(p.priceLevel) && p.priceLevel >= 0 && p.priceLevel <= 4
+      ? { priceLevel: p.priceLevel }
+      : {}),
+    ...(parsePriceRange(p.priceRange) ? { priceRange: parsePriceRange(p.priceRange) } : {}),
   };
 }
 
@@ -140,6 +145,8 @@ export function buildForYouSpots(
       category,
       categories: [category],
       cuisines: place.cuisines ?? [],
+      priceLevel: place.priceLevel,
+      priceRange: place.priceRange,
       createdAt: 0,
       updatedAt: 0,
       prediction: { score, confidence, basis, raters },

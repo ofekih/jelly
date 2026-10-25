@@ -1,6 +1,7 @@
 import { PlaceCandidate, RestaurantEntry, SpotCategory, StoredComparison } from '../types';
 import { buildEntryId, getCategoryList, replaceCategoryList } from './categoryLists';
 import { appendComparisons, dragComparisons, moveSpot } from './comparisonHistory';
+import { mergePrice } from './price';
 
 /**
  * The list edits behind ranking, re-ranking, dragging and deleting, as pure functions over the
@@ -82,7 +83,7 @@ export function placeSpot(
     lat: candidate.lat,
     lng: candidate.lng,
     googleMapsUri: candidate.googleMapsUri,
-    priceLevel: existing?.priceLevel ?? candidate.priceLevel,
+    ...mergePrice(existing, candidate),
     category,
     categories: Array.from(new Set([category, ...(candidate.categories || [])])),
     cuisines: existing?.cuisines?.length ? existing.cuisines : placement.cuisines,

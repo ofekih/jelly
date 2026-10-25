@@ -10,6 +10,7 @@ import {
   UserCoordinates,
 } from '../lib/geo';
 import { ScoreBadge } from './ScoreBadge';
+import { spotPrice } from '../lib/groups';
 
 declare global {
   interface Window {
@@ -678,6 +679,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
             <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
               {[
                 selectedRanked.cuisines[0] || selectedRanked.primaryTypeDisplay,
+                spotPrice(selectedRanked, selectedRanked.category),
                 selectedRanked.neighborhood || selectedRanked.city,
                 (() => {
                   const dist = getItemDistanceMiles(selectedRanked, userLocation);
@@ -725,6 +727,7 @@ export const RestaurantMapView: React.FC<RestaurantMapViewProps> = ({
             <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
               {[
                 selectedBookmark.cuisines[0] || selectedBookmark.primaryTypeDisplay,
+                spotPrice(selectedBookmark, selectedBookmark.category),
                 selectedBookmark.neighborhood || selectedBookmark.city,
                 (() => {
                   const dist = getItemDistanceMiles(selectedBookmark, userLocation);
