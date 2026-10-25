@@ -7,7 +7,7 @@
  */
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { TEST_USER } from '../../src/dev/emulator';
 import { buildPublicLists } from '../../src/lib/publicList';
 import { recomputeMagicScores } from '../../src/lib/rankingEngine';
@@ -166,6 +166,19 @@ const BOOKMARKS: Record<keyof typeof USERS, BookmarkEntry[]> = {
   jordan: [],
 };
 
+/** Public reviews: author, spot (in Restaurants), text, days ago */
+const REVIEWS: Array<[keyof typeof USERS, { name: string }, string, number]> = [
+  ['jordan', NOODLE, 'The tonkotsu is the best in Orange County. Go early – the line wraps around the building by 6:30.', 2],
+  [
+    'riley',
+    NOODLE,
+    'Rich broth, perfectly chewy noodles and a soft egg that’s actually jammy. The spicy miso is worth the sweat. Service is quick even when it’s packed, and the gyoza are a solid side if you’re sharing. Only knock: the music is loud, so it’s not a long-chat kind of place.',
+    9,
+  ],
+  ['riley', CASA, 'Mole is incredible. Ask for the off-menu tamales on weekends.', 4],
+  ['me', CASA, 'Great patio, generous margaritas, and the carnitas are crispy at the edges.', 12],
+];
+
 /** Who follows whom (the app keeps a private `friends` list plus public follower edges). */
 const FOLLOWS: Record<keyof typeof USERS, Array<keyof typeof USERS>> = {
   me: ['riley', 'jordan'],
@@ -261,6 +274,18 @@ export async function seedEmulator(): Promise<void> {
   }
   for (const [key, s] of stats) {
     batch.set(db.doc(`placeStats/${key}`), { ...s, avg: Math.round((s.sum / s.count) * 100) / 100, updatedAt: now });
+  }
+
+  // Public reviews (`placeReviews`), each with the author's current score for the spot
+  for (const [who, spot, text, daysBeforeNow] of REVIEWS) {
+    const entry = LISTS[who].find((r) => r.name === spot.name && r.category === 'restaurants')!;
+    const at = Timestamp.fromMillis(Date.now() - daysBeforeNow * DAY);
+    batch.set(db.doc(`placeReviews/${entry.id}/reviews/${USERS[who].uid}`), {
+      text,
+      score: entry.magicScore,
+      createdAt: at,
+      updatedAt: at,
+    });
   }
 
   // "For you" (normally written by the prediction functions)

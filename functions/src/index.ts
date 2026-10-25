@@ -9,6 +9,7 @@ import { affectedPlaceKeys, placeStatId } from './placeStats';
 import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from './predictionJobs';
 import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
+import { syncPlaceReview } from './reviews';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
 import { searchBoardGames, searchVideoGames } from './games';
@@ -41,6 +42,8 @@ export const onRestaurantWritten = onDocumentWritten(
     const db = getFirestore();
     await Promise.all([
       ...keys.map((key) => recomputePlaceStat(db, key)),
+      // Public reviews carry the author's score and only live while the spot is ranked
+      ...keys.map((key) => syncPlaceReview(db, event.params.uid, key)),
       markPredictionsDirty(db, event.params.uid),
     ]);
     if (keys.length > 0) logger.debug('placeStats recomputed', { keys: keys.map(placeStatId) });

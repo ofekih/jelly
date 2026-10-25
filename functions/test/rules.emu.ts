@@ -396,3 +396,63 @@ describe('feedback/{id}', () => {
     await assertFails(setDoc(doc(anon(), 'feedbackLimits/daily'), { day: '2026-10-25', count: 0 }));
   });
 });
+
+describe('placeReviews/{placeKey}/reviews/{uid}', () => {
+  const KEY = 'p1__bars';
+  const review = () => ({ text: 'Great cocktails', score: 8.4, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `users/alice/restaurants/${KEY}`), { name: 'Bar', initialRating: 8, rankIndex: 0, magicScore: 8.4 });
+      await setDoc(doc(db, 'users/alice/restaurants/manual_x__bars'), { name: 'Mine', initialRating: 8, rankIndex: 1, magicScore: 7 });
+      await setDoc(doc(db, `placeReviews/${KEY}/reviews/bob`), { text: 'Fine', score: 6, createdAt: 1, updatedAt: 1 });
+    });
+  });
+
+  it('is publicly readable and listable', async () => {
+    await assertSucceeds(getDoc(doc(anon(), `placeReviews/${KEY}/reviews/bob`)));
+    await assertSucceeds(getDocs(collection(anon(), `placeReviews/${KEY}/reviews`)));
+  });
+
+  it('the author can create, edit and delete their review of a spot they ranked', async () => {
+    const ref = doc(as('alice'), `placeReviews/${KEY}/reviews/alice`);
+    await assertSucceeds(setDoc(ref, review()));
+    await assertSucceeds(updateDoc(ref, { text: 'Even better', updatedAt: serverTimestamp() }));
+    await assertSucceeds(deleteDoc(ref));
+  });
+
+  it("nobody can write someone else's review", async () => {
+    await assertFails(setDoc(doc(anon(), `placeReviews/${KEY}/reviews/alice`), review()));
+    await assertFails(setDoc(doc(as('mallory'), `placeReviews/${KEY}/reviews/alice`), review()));
+    await assertFails(updateDoc(doc(as('mallory'), `placeReviews/${KEY}/reviews/bob`), { text: 'x', updatedAt: serverTimestamp() }));
+    await assertFails(deleteDoc(doc(as('mallory'), `placeReviews/${KEY}/reviews/bob`)));
+  });
+
+  it('needs the spot ranked, with its current score', async () => {
+    await assertFails(setDoc(doc(as('alice'), 'placeReviews/p2__bars/reviews/alice'), review()));
+    await assertFails(setDoc(doc(as('alice'), `placeReviews/${KEY}/reviews/alice`), { ...review(), score: 9.9 }));
+    await assertFails(setDoc(doc(as('alice'), 'placeReviews/manual_x__bars/reviews/alice'), { ...review(), score: 7 }));
+    await assertFails(setDoc(doc(as('alice'), `placeReviews/${KEY}`), { text: 'parent' }));
+  });
+
+  it('rejects bad fields and timestamps', async () => {
+    const ref = doc(as('alice'), `placeReviews/${KEY}/reviews/alice`);
+    const bad: Record<string, unknown>[] = [
+      { ...review(), text: '' },
+      { ...review(), text: '  padded  ' },
+      { ...review(), text: 'x'.repeat(2001) },
+      { ...review(), text: 42 },
+      { ...review(), score: '8.4' },
+      { ...review(), name: 'Alice' },
+      { ...review(), createdAt: Date.now() },
+      { ...review(), updatedAt: Date.now() },
+      { text: 'ok', score: 8.4, updatedAt: serverTimestamp() },
+    ];
+    for (const data of bad) await assertFails(setDoc(ref, data));
+    await assertSucceeds(setDoc(ref, { ...review(), text: 'x'.repeat(2000) }));
+    // createdAt can't be rewritten on update, and updatedAt must move
+    await assertFails(setDoc(ref, review()));
+    await assertFails(updateDoc(ref, { text: 'edit' }));
+  });
+});
