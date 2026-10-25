@@ -10,6 +10,8 @@ export interface CloudUserDoc {
   handle?: string;
   seenFollowerIds?: string[];
   friends?: FriendProfile[];
+  /** Uploaded profile picture (src/lib/profilePhoto.ts); absent = the Google photo */
+  customPhotoURL?: string;
 }
 
 export function parseUserDoc(data: Record<string, any>): CloudUserDoc {
@@ -24,6 +26,8 @@ export function parseUserDoc(data: Record<string, any>): CloudUserDoc {
     friends: Array.isArray(data.friends)
       ? data.friends.filter((f: any): f is FriendProfile => Boolean(f) && typeof f.uid === 'string')
       : undefined,
+    customPhotoURL:
+      typeof data.customPhotoURL === 'string' && data.customPhotoURL ? data.customPhotoURL : undefined,
   };
 }
 

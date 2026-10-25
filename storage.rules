@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Cloud Storage holds only uploaded profile pictures (src/lib/profilePhoto.ts):
+//   profilePhotos/{uid}/{name}.webp|jpg – a 512×512 square with a fresh name per upload; the app
+//   deletes the previous one after switching. The download URL (with its token) is saved as
+//   users/{uid}.customPhotoURL and copied to profiles/{uid} + sharedLists/{uid} (see firestore.rules).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /profilePhotos/{uid}/{fileName} {
+      // Public pictures: anyone may fetch one, nobody may list a folder
+      allow get: if true;
+      allow list: if false;
+      // Only the owner, only small images with a sensible name
+      allow create, update: if request.auth != null &&
+        request.auth.uid == uid &&
+        fileName.matches('[A-Za-z0-9_-]{1,64}[.](webp|jpg)') &&
+        request.resource.size < 1024 * 1024 &&
+        request.resource.contentType.matches('image/(webp|jpeg)');
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

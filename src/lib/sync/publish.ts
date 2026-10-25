@@ -8,6 +8,7 @@ export interface PublishInput {
   uid: string;
   displayName: string | null;
   email: string | null;
+  /** Your display photo (`displayPhotoURL`: the uploaded one, else Google's) */
   photoURL: string | null;
   handle: string;
   restaurants: RestaurantEntry[];
@@ -42,7 +43,8 @@ export async function publishPublicDocs(
     followingIds: deleteField(),
     updatedAt: Date.now(),
   };
-  if (photoURL) payload.photoURL = photoURL;
+  // Merged into the existing doc, so a removed photo has to be deleted explicitly
+  payload.photoURL = photoURL || deleteField();
 
   const profile = buildProfileDoc({
     handle,

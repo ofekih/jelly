@@ -3,7 +3,7 @@
 jelly (always lowercase, including the app/web-app name) is a personal ranking web app for
 restaurants, places, movies, TV shows, books and games. Live at https://eatwithjelly.com.
 
-- Firebase project: `ofek-beli-ranker` (Hosting, Auth with Google sign-in, Firestore, Analytics)
+- Firebase project: `ofek-beli-ranker` (Hosting, Auth with Google sign-in, Firestore, Storage for profile photos, Analytics)
 - GitHub: `git@github.com:ofekih/jelly.git`, branch `main`
 - Stack: React 19 + TypeScript + Vite 6 + Tailwind v4, `@dnd-kit` for drag-to-rerank,
   Google Places API (New) + Maps JS API, TMDB (movies & shows, via the `tmdb` function), Google Books
@@ -55,11 +55,12 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/lib/shareLinks.ts`, `shareCard.ts` | Share links (`/l/<uid>?c=`, older `/?list=<uid>` still opens; parsing pasted links) and the top-10 card drawing shared by `ShareModal` (portrait PNG) and `sharePage` (landscape link preview) |
 | `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx`, `SettingsModal.tsx`, `FeedbackModal.tsx` (also opened by `/?feedback=1`) | Feature modals; `Toast.tsx` (`useToast`) is the one-at-a-time toast |
 | `src/dev/emulator.ts`, `scripts/emulator/seed.ts`, `e2e/` | Emulator mode (`IS_EMULATOR` in `firebase.ts`, compiled out of production): test-user sign-in + "Emulator" badge; the seed data; Playwright flows |
-| `firestore.rules` | Security rules with per-field validators (`isValidUserDoc`, `isValidSharedList`, …) |
+| `firestore.rules`, `storage.rules` | Security rules with per-field validators (`isValidUserDoc`, `isValidSharedList`, …; photo URLs must be the Google photo or your own upload); Storage only allows your own `profilePhotos/{uid}/` WebP/JPEG under 1 MB |
+| `src/lib/profilePhoto.ts`, `photoCrop.ts`, `ProfilePhotoButton.tsx`, `PhotoCropper.tsx` | Uploaded profile pictures: `displayPhotoURL(user, customPhotoURL)` is the photo to show anywhere; square crop → 512×512 WebP (JPEG fallback) → Storage (SDK loaded on demand) → `users/{uid}.customPhotoURL` |
 | `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (the original artwork cropped so the beans fill ~3/4 of the frame, inside the maskable safe zone), `favicon.png` (tighter crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`, the share card and `functions/assets/`) |
 
 ## Data model (Firestore)
-- `users/{uid}` – settings/profile (`customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, …)
+- `users/{uid}` – settings/profile (`customPlacesApiKey`, `seenFollowerIds`, `linearRatingScale`, `customPhotoURL`, …)
 - `users/{uid}/restaurants/{id}` – `RestaurantEntry` (ranked spots: `category`, `initialRating`, `rankIndex`/`magicScore` within its category, cuisines, notes…; ID = `${placeId}__${category}`). Movies & shows use `placeId` `tmdb:movie:<id>` / `tmdb:tv:<id>`, books `book:<author surname>:<title>` (Google Books has no work ID, so every edition maps to one book), games `bgg:<id>` / `igdb:<id>`, a `media` map (`year`, `poster`: TMDB path or full cover URL, `creator`; board games also `players`, `best`, `time` as [min, max] and `weight` 1–5) and their "year · director" in `formattedAddress`; titles match only by ID (`isMediaPlaceId`)
 - `users/{uid}/bookmarks/{id}` – `BookmarkEntry` (want-to-try)
 - `sharedLists/{uid}` – public `SharedListPayload` snapshot of a user's list, read one doc at a time (share link, friends' lists). Never list or query the collection. No count limit; `publicList.ts` trims by bytes (1 MiB doc limit).

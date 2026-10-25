@@ -27,7 +27,7 @@ const firebaseConfig = {
 export const DEFAULT_PLACES_API_KEY = 'AIzaSyAi7dipjBO3RrtEaFc9tBHmOjG0v4RxQqY';
 
 /**
- * `npm run dev:emu`: the app talks to local Auth + Firestore emulators (real rules) holding seeded
+ * `npm run dev:emu`: the app talks to local Auth + Firestore + Storage emulators (real rules) holding seeded
  * test accounts, under a `demo-` project that only exists locally. Nothing reaches production.
  */
 export const IS_EMULATOR = import.meta.env.MODE === 'emulator';

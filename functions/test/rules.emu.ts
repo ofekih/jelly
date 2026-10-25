@@ -41,7 +41,7 @@ const validProfile = {
   handleLower: 'alice_1',
   displayName: 'Alice Ng',
   nameLower: 'alice ng',
-  photoURL: 'https://example.com/a.png',
+  photoURL: 'https://lh3.googleusercontent.com/a/ACg8ocK-photo=s96-c',
   followingIds: ['bob'],
   rankedCount: 5,
   updatedAt: Date.now(),
@@ -86,6 +86,54 @@ describe('profiles/{uid}', () => {
     ];
     for (const data of bad) {
       await assertFails(setDoc(doc(as('alice'), 'profiles/alice'), data));
+    }
+  });
+});
+
+describe('profile photos', () => {
+  const storageURL = (uid: string, name = 'm1abc-x7y8z9.webp', host = 'https://firebasestorage.googleapis.com') =>
+    `${host}/v0/b/ofek-beli-ranker.firebasestorage.app/o/profilePhotos%2F${uid}%2F${name}?alt=media&token=1f2e3d4c-aaaa-bbbb-cccc-0123456789ab`;
+  const google = 'https://lh3.googleusercontent.com/a/ACg8ocK-photo=s96-c';
+  const bad = [
+    'https://example.com/a.png',
+    'javascript:alert(1)',
+    storageURL('mallory'),
+    storageURL('alice', 'a.png'),
+    storageURL('alice', '..%2Fx.webp'),
+    storageURL('alice', 'a.webp', 'https://evil.example'),
+    storageURL('alice').replace('ofek-beli-ranker.firebasestorage.app', 'other-bucket'),
+    storageURL('alice') + '&extra=1',
+    'https://lh3.googleusercontent.com.evil.example/a',
+  ];
+
+  it('users/{uid}.customPhotoURL must be your own uploaded file', async () => {
+    await assertSucceeds(setDoc(doc(as('alice'), 'users/alice'), { customPhotoURL: storageURL('alice') }));
+    await assertSucceeds(setDoc(doc(as('alice'), 'users/alice'), { customPhotoURL: storageURL('alice', 'b.jpg') }));
+    // The Storage emulator's host (npm run dev:emu)
+    await assertSucceeds(
+      setDoc(doc(as('alice'), 'users/alice'), { customPhotoURL: storageURL('alice', 'c.webp', 'http://127.0.0.1:9199') })
+    );
+    for (const url of [...bad, google, null]) {
+      await assertFails(setDoc(doc(as('alice'), 'users/alice'), { customPhotoURL: url }));
+    }
+  });
+
+  it('profiles/{uid}.photoURL is the Google photo or your own upload', async () => {
+    await assertSucceeds(setDoc(doc(as('alice'), 'profiles/alice'), { ...validProfile, photoURL: google }));
+    await assertSucceeds(setDoc(doc(as('alice'), 'profiles/alice'), { ...validProfile, photoURL: storageURL('alice') }));
+    for (const url of bad) {
+      await assertFails(setDoc(doc(as('alice'), 'profiles/alice'), { ...validProfile, photoURL: url }));
+    }
+  });
+
+  it('sharedLists/{uid}.photoURL is the Google photo or your own upload', async () => {
+    const list = { ownerUid: 'alice', restaurants: [] };
+    await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), { ...list, photoURL: google }));
+    await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), { ...list, photoURL: storageURL('alice') }));
+    await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), { ...list, photoURL: null }));
+    await assertSucceeds(setDoc(doc(as('alice'), 'sharedLists/alice'), list));
+    for (const url of bad) {
+      await assertFails(setDoc(doc(as('alice'), 'sharedLists/alice'), { ...list, photoURL: url }));
     }
   });
 });
