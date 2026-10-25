@@ -17,6 +17,21 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.0.0',
+    date: '2026-10-25',
+    title: 'Feels like an app',
+    highlights: [
+      'A new bottom bar: your lists, friends, a big + to add, share and your profile, all within thumb’s reach',
+      'The top bar tucks away as you scroll down and comes back when you scroll up',
+      'Your new profile page: your stats, your top pick in every group, settings, dark mode and more',
+      'Moved something by mistake? Undo right after you drag a spot',
+      'Cleaner, calmer pop-ups for undo and for new versions',
+      'See prices on spots, like $$ · $20–30, when Google knows them',
+      'A short welcome tour for new people, and you can replay it from your profile',
+      'Send feedback or report a bug from your profile – I read every message, and most requests ship within 24 hours',
+    ],
+  },
+  {
     version: '3.4.0',
     date: '2026-10-23',
     title: 'Better share links',
