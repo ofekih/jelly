@@ -18,6 +18,12 @@ async function rankedNames(page: Page): Promise<string[]> {
   return SEEDED.filter((name) => text.includes(name)).sort((a, b) => text.indexOf(a) - text.indexOf(b));
 }
 
+/** Settings live on the profile page (bottom bar → avatar). */
+async function openSettings(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /^Profile/ }).click();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+}
+
 /** Drags a sheet's top edge down like a finger would (the app listens to touch events). */
 async function swipeDown(target: Locator, distance = 160): Promise<void> {
   await target.evaluate(async (el, dy) => {
@@ -86,7 +92,7 @@ test('removing a spot can be undone, back in its place', async ({ page }) => {
 });
 
 test('settings save when the sheet is swiped closed', async ({ page }) => {
-  await page.getByRole('button', { name: /^Settings/ }).click();
+  await openSettings(page);
   const title = page.getByRole('heading', { name: 'Settings' });
   await expect(title).toBeVisible();
   await page.getByRole('button', { name: 'Linear' }).click();
@@ -97,15 +103,25 @@ test('settings save when the sheet is swiped closed', async ({ page }) => {
 
   await page.reload();
   await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
-  await page.getByRole('button', { name: /^Settings/ }).click();
+  await openSettings(page);
   await expect(page.getByText('Uniform spacing across the entire spectrum.')).toBeVisible();
 });
 
 test('a short drag springs back instead of closing', async ({ page }) => {
-  await page.getByRole('button', { name: /^Settings/ }).click();
+  await openSettings(page);
   const title = page.getByRole('heading', { name: 'Settings' });
   await expect(title).toBeVisible();
   await swipeDown(title.locator('xpath=../..'), 40);
   await page.waitForTimeout(400);
   await expect(title).toBeVisible();
+});
+
+test('the profile page shows your stats and closes with Back', async ({ page }) => {
+  await page.getByRole('button', { name: /^Profile/ }).click();
+  const profile = page.getByRole('region', { name: 'Profile' });
+  await expect(profile.getByText('Your lists')).toBeVisible();
+  await expect(profile.getByRole('button', { name: /^(Edit handle @|Choose a handle)/ })).toBeVisible();
+  await page.goBack();
+  await expect(profile).toBeHidden();
+  await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
 });

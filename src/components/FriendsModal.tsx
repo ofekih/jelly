@@ -231,7 +231,7 @@ export const FriendsModal: React.FC<FriendsModalProps> = ({
               </div>
             ) : (
               <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 text-xs text-zinc-500 dark:text-zinc-400">
-                Sign in with Google in the header so friends can find your live list by @handle.
+                Sign in with Google from your profile so friends can find your live list by @handle.
               </div>
             )}
 

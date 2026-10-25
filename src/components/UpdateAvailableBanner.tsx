@@ -39,7 +39,7 @@ export const UpdateAvailableBanner: React.FC = () => {
   return (
     <div
       role="status"
-      className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-jelly-dialog"
+      className="fixed top-[calc(env(safe-area-inset-top)+0.75rem)] left-1/2 -translate-x-1/2 z-50 animate-jelly-dialog"
     >
       <button
         type="button"

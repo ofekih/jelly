@@ -32,7 +32,7 @@ export function useToast(): { toast: ToastState | null; showToast: ShowToast } {
 export const Toast: React.FC<{ toast: ToastState | null }> = ({ toast }) => {
   if (!toast) return null;
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-xl flex items-center gap-3 whitespace-nowrap">
+    <div className="fixed bottom-[calc(var(--jelly-bottom-bar,0px)+12px)] left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-xs font-semibold shadow-xl flex items-center gap-3 whitespace-nowrap">
       <span>{toast.message}</span>
       {toast.action && (
         <button
