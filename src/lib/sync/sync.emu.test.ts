@@ -30,6 +30,7 @@ import {
   writeCacheOwner,
 } from './localCache';
 import { publishPublicDocs } from './publish';
+import { displayPhotoURL } from '../profilePhoto';
 import { nameSearchKey, searchProfiles } from '../socialService';
 import { mergeCloudFriends, subscribeUserDoc } from './userDoc';
 
@@ -244,6 +245,30 @@ describe('follows', () => {
 });
 
 describe('publishing', () => {
+  it('shows an uploaded photo on the public docs and drops it again when removed', async () => {
+    const phone = createDevice('alice');
+    const uploaded =
+      'https://firebasestorage.googleapis.com/v0/b/ofek-beli-ranker.firebasestorage.app/o/profilePhotos%2Falice%2Fm1-abc.webp?alt=media&token=1f2e3d4c-aaaa';
+    await setDoc(doc(phone.db, 'users/alice'), { customPhotoURL: uploaded }, { merge: true });
+    const input = {
+      uid: 'alice',
+      displayName: 'Alice',
+      email: 'alice@example.com',
+      photoURL: displayPhotoURL({ photoURL: null }, uploaded),
+      handle: 'alice',
+      restaurants: [spot(1)],
+      bookmarks: [],
+      friends: [],
+    };
+    const first = await publishPublicDocs(phone.db, input, null);
+    expect((await getDoc(doc(phone.db, 'profiles/alice'))).get('photoURL')).toBe(uploaded);
+    expect((await getDoc(doc(phone.db, 'sharedLists/alice'))).get('photoURL')).toBe(uploaded);
+
+    await publishPublicDocs(phone.db, { ...input, photoURL: null }, first.profileJson);
+    expect((await getDoc(doc(phone.db, 'profiles/alice'))).get('photoURL')).toBeUndefined();
+    expect((await getDoc(doc(phone.db, 'sharedLists/alice'))).get('photoURL')).toBeUndefined();
+  });
+
   for (const displayName of ['Ofek Gila', 'Zoë Ålvarez', 'ÉMILE Ünal', '李 小龍']) {
     it(`writes a shared list and a profile the rules accept (${displayName})`, async () => {
       const phone = createDevice('alice');

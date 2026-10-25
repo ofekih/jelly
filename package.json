@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:emulator": "firebase emulators:exec --only firestore --project demo-jelly-sync \"vitest run --config vitest.emulator.config.ts\"",
-    "dev:emu": "firebase emulators:exec --only firestore,auth --project demo-jelly-dev \"tsx scripts/emulator/seed.ts && vite --mode emulator --port 5180 --strictPort\"",
+    "dev:emu": "firebase emulators:exec --only firestore,auth,storage --project demo-jelly-dev \"tsx scripts/emulator/seed.ts && vite --mode emulator --port 5180 --strictPort\"",
     "seed:emu": "tsx scripts/emulator/seed.ts",
     "test:e2e": "playwright test",
     "typecheck:tools": "tsc -p tsconfig.tools.json"

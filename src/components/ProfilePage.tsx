@@ -26,6 +26,7 @@ import {
 import { sanitizeHandle } from '../lib/friendsService';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { Avatar } from './Avatar';
+import { ProfilePhotoButton } from './ProfilePhotoButton';
 import { FollowCounts } from './FollowCounts';
 import { BackIcon, ShareIcon } from './PlatformIcons';
 
@@ -59,6 +60,13 @@ interface ProfilePageProps {
   onOpenFeedback?: () => void;
   /** Shows a "Replay intro" row when passed */
   onReplayTour?: () => void;
+  /** Your photo as everyone sees it (`displayPhotoURL`) */
+  photoURL: string | null;
+  /** An uploaded picture is in use (`users/{uid}.customPhotoURL`) */
+  hasCustomPhoto: boolean;
+  onSavePhoto: (photo: Blob) => Promise<boolean>;
+  onRemovePhoto: () => Promise<void>;
+  onPhotoError: (message: string) => void;
 }
 
 interface GroupStat {
@@ -115,6 +123,11 @@ const ProfileScreen: React.FC<ProfilePageProps & { visible: boolean }> = ({
   onSignOut,
   onOpenFeedback,
   onReplayTour,
+  photoURL,
+  hasCustomPhoto,
+  onSavePhoto,
+  onRemovePhoto,
+  onPhotoError,
 }) => {
   useBodyScrollLock();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -207,12 +220,20 @@ const ProfileScreen: React.FC<ProfilePageProps & { visible: boolean }> = ({
         <div className="max-w-xl mx-auto px-4 space-y-6">
           {/* Identity */}
           <section className="pt-2 flex flex-col items-center text-center">
-            <Avatar
-              photoURL={user?.photoURL}
-              name={user ? displayName || user.email : null}
-              size={88}
-              className="shadow-sm ring-4 ring-white dark:ring-zinc-900"
-            />
+            {user ? (
+              <ProfilePhotoButton
+                photoURL={photoURL}
+                name={displayName || user.email}
+                size={88}
+                className="shadow-sm ring-4 ring-white dark:ring-zinc-900"
+                hasCustomPhoto={hasCustomPhoto}
+                onSave={onSavePhoto}
+                onRemove={onRemovePhoto}
+                onError={onPhotoError}
+              />
+            ) : (
+              <Avatar photoURL={null} name={null} size={88} className="shadow-sm ring-4 ring-white dark:ring-zinc-900" />
+            )}
             {user ? (
               <>
                 <h2 className="mt-3 text-xl font-extrabold tracking-tight">{displayName}</h2>

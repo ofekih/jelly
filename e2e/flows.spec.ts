@@ -125,3 +125,32 @@ test('the profile page shows your stats and closes with Back', async ({ page }) 
   await expect(profile).toBeHidden();
   await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
 });
+
+test('uploading a profile photo shows it everywhere, and removing it goes back', async ({ page }) => {
+  await page.getByRole('button', { name: /^Profile/ }).click();
+  const png = Buffer.from(
+    await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 900;
+      c.height = 600;
+      const ctx = c.getContext('2d')!;
+      ctx.fillStyle = '#a78bfa';
+      ctx.fillRect(0, 0, 900, 600);
+      return c.toDataURL('image/png').split(',')[1];
+    }),
+    'base64'
+  );
+  await page.getByTestId('profile-photo-input').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: png });
+  const cropper = page.getByRole('dialog', { name: 'Move and scale your photo' });
+  await cropper.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(cropper).toBeHidden();
+  await expect(page.getByText('Profile photo updated')).toBeVisible();
+  // The Storage emulator's URL, on the profile and in the bottom bar
+  const bottomBarPhoto = page.getByRole('navigation', { name: 'Main' }).locator('img');
+  await expect(bottomBarPhoto).toHaveAttribute('src', /^http:\/\/127\.0\.0\.1:9199\/.*profilePhotos%2Ftest-sam%2F/);
+
+  await page.getByRole('button', { name: 'Change profile photo' }).click();
+  await page.getByRole('button', { name: 'Remove photo' }).click();
+  await expect(page.getByRole('button', { name: 'Upload a profile photo' })).toBeVisible();
+  await expect(bottomBarPhoto).toHaveCount(0);
+});

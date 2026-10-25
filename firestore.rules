@@ -23,6 +23,8 @@ rules_version = '2';
 //   - followingIds: list<string> (optional, <= 200 items) - followed friend UIDs/shareIds
 //   - seenFollowerIds: list<string> (optional, <= 500 items) - seen follower UIDs/shareIds for notifications
 //   - friends: list<map> (optional, <= 200 items) - lightweight friend metadata objects
+//   - customPhotoURL: string (optional) - uploaded profile picture: a download URL of the
+//     owner's own `profilePhotos/{uid}/…` file in Storage (see isOwnUploadedPhoto)
 //
 // Collection: users/{userId}/restaurants
 // Document ID: {restaurantId}
@@ -95,7 +97,8 @@ rules_version = '2';
 //   - ownerUid: string (required, immutable, matches request.auth.uid) - creator UID
 //   - ownerName: string (optional, <= 200 chars) - display name of creator
 //   - handle: string (optional, <= 60 chars) - lowercase handle for searching friends
-//   - photoURL: string (optional, <= 1000 chars) - creator avatar URL
+//   - photoURL: string (optional, <= 1000 chars) - creator avatar URL (Google photo or the
+//     owner's uploaded one; see isValidPublicPhoto)
 //   - title: string (optional, <= 300 chars) - shared list title
 //   - restaurants: list (optional, <= 500 items) - snapshot of shared restaurants
 //   - bookmarks: list (optional, <= 500 items) - optional snapshot of bookmarks
@@ -111,7 +114,8 @@ rules_version = '2';
 //   - displayName: string (0..200 chars) - public display name
 //   - nameLower: string (0..200 chars) - accent- and case-insensitive search key for displayName
 //     (rules' lower() only folds A-Z, so the client's key can't be checked against it)
-//   - photoURL: string (0..1000 chars) - avatar URL
+//   - photoURL: string (0..1000 chars) - avatar URL (Google photo or the owner's uploaded one;
+//     see isValidPublicPhoto)
 //   - followingIds: list<string> (<= 2000 items) - followed UIDs
 //   - rankedCount: int (0..100000) - number of ranked spots
 //   - updatedAt: number | timestamp - last update time
@@ -241,11 +245,33 @@ service cloud.firestore {
          (!('creator' in data.media) || (data.media.creator is string && data.media.creator.size() <= 300)));
     }
 
+    // A download URL of `uid`'s own uploaded profile picture (`profilePhotos/{uid}/<name>.webp|jpg`
+    // in the default bucket, see storage.rules and src/lib/profilePhoto.ts). The 127.0.0.1:9199
+    // host is the Storage emulator (`npm run dev:emu`); Firebase uids are alphanumeric (seeded
+    // emulator ones may have a dash), so they are safe inside the pattern.
+    function isOwnUploadedPhoto(url, uid) {
+      return url is string && url.size() <= 1000 &&
+        url.matches('^(https://firebasestorage[.]googleapis[.]com|http://127[.]0[.]0[.]1:9199)' +
+          '/v0/b/ofek-beli-ranker[.]firebasestorage[.]app/o/profilePhotos%2F' + uid +
+          '%2F[A-Za-z0-9_-]{1,64}[.](webp|jpg)[?]alt=media&token=[A-Za-z0-9-]{1,64}$');
+    }
+
+    // The Google account photo (lh3.googleusercontent.com and friends)
+    function isGooglePhoto(url) {
+      return url is string && url.size() <= 1000 &&
+        url.matches('^https://[a-z0-9-]+[.]googleusercontent[.]com/[^ ]*$');
+    }
+
+    // The photo shown on public docs: absent, the Google photo, or the owner's uploaded one
+    function isValidPublicPhoto(data, uid) {
+      return !('photoURL' in data) || isGooglePhoto(data.photoURL) || isOwnUploadedPhoto(data.photoURL, uid);
+    }
+
     // ===============================================================
     // Domain Validators (Used in BOTH create and update rules)
     // ===============================================================
 
-    function isValidUserDoc(data) {
+    function isValidUserDoc(data, userId) {
       return data.keys().size() <= 30 &&
         !('role' in data) &&
         !('isAdmin' in data) &&
@@ -255,6 +281,7 @@ service cloud.firestore {
         isValidOptionalString('photoURL', 0, 1000) &&
         isValidOptionalString('defaultCity', 0, 200) &&
         isValidOptionalString('handle', 0, 60) &&
+        (!('customPhotoURL' in data) || isOwnUploadedPhoto(data.customPhotoURL, userId)) &&
         (!('followingIds' in data) || data.followingIds == null || isValidList(data.followingIds, 200)) &&
         (!('seenFollowerIds' in data) || data.seenFollowerIds == null || isValidList(data.seenFollowerIds, 500)) &&
         (!('friends' in data) || data.friends == null || isValidList(data.friends, 200)) &&
@@ -348,7 +375,7 @@ service cloud.firestore {
         isValidOptionalString('ownerName', 0, 200) &&
         isValidOptionalString('displayName', 0, 200) &&
         isValidOptionalString('handle', 0, 60) &&
-        isValidOptionalString('photoURL', 0, 1000) &&
+        (data.get('photoURL', null) == null || isValidPublicPhoto(data, request.auth.uid)) &&
         isValidOptionalString('title', 0, 300) &&
         isValidOptionalString('categoryFilter', 0, 100) &&
         isValidOptionalString('cityFilter', 0, 200) &&
@@ -363,7 +390,7 @@ service cloud.firestore {
         (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
     }
 
-    function isValidProfile(data) {
+    function isValidProfile(data, uid) {
       return data.keys().hasOnly([
           'handle', 'handleLower', 'displayName', 'nameLower',
           'photoURL', 'followingIds', 'rankedCount', 'updatedAt'
@@ -378,8 +405,7 @@ service cloud.firestore {
           (data.displayName is string && data.displayName.size() <= 200)) &&
         (!('nameLower' in data) ||
           (data.nameLower is string && data.nameLower.size() <= 200)) &&
-        (!('photoURL' in data) ||
-          (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+        isValidPublicPhoto(data, uid) &&
         (!('followingIds' in data) || isValidList(data.followingIds, 2000)) &&
         (!('rankedCount' in data) ||
           (data.rankedCount is int && data.rankedCount >= 0 && data.rankedCount <= 100000)) &&
@@ -434,7 +460,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, delete: if isOwner(userId);
-      allow create, update: if isOwner(userId) && isValidUserDoc(request.resource.data);
+      allow create, update: if isOwner(userId) && isValidUserDoc(request.resource.data, userId);
 
       match /restaurants/{restaurantId} {
         allow read, delete: if isOwner(userId);
@@ -481,7 +507,7 @@ service cloud.firestore {
 
     match /profiles/{uid} {
       allow read: if true;
-      allow create, update: if isOwner(uid) && isValidProfile(request.resource.data);
+      allow create, update: if isOwner(uid) && isValidProfile(request.resource.data, uid);
       allow delete: if isOwner(uid);
 
       match /followers/{followerUid} {

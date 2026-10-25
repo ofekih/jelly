@@ -10,7 +10,7 @@
     "build": "rm -rf lib && tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "test:unit": "vitest run unit",
-    "test:emulator": "npm run build && firebase emulators:exec --project demo-jelly --only firestore,functions \"vitest run\"",
+    "test:emulator": "npm run build && firebase emulators:exec --project demo-jelly --only firestore,functions,storage \"vitest run\"",
     "backfill": "tsx scripts/backfill.ts"
   },
   "dependencies": {

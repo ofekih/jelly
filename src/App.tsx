@@ -132,6 +132,7 @@ import { usePriceBackfill } from './lib/usePriceBackfill';
 import { PublicListTrim } from './lib/publicList';
 import { useFollowers, useFriendListSubscriptions } from './lib/useSocialFeeds';
 import { isSharePath, parseShareUrl, shareIdFromText, shareListUrl } from './lib/shareLinks';
+import { displayPhotoURL, removeProfilePhoto, saveProfilePhoto } from './lib/profilePhoto';
 
 const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
   bookmarkNotes: 'Your list is too big to share in full – friends won’t see your bookmark notes',
@@ -214,6 +215,9 @@ export const App: React.FC = () => {
   const notifiedFollowersRef = useRef<Set<string>>(new Set());
 
   const [userHandle, setUserHandle] = useState<string>(() => readLocalSettings().handle || '');
+  // Uploaded profile picture from users/{uid}; `myPhotoURL` is what everyone sees
+  const [customPhotoURL, setCustomPhotoURL] = useState<string | null>(null);
+  const myPhotoURL = displayPhotoURL(user, customPhotoURL);
 
   const [friendListsMap, setFriendListsMap] = useState<Record<string, SharedListPayload>>({});
 
@@ -430,6 +434,7 @@ export const App: React.FC = () => {
     notifiedFollowersRef.current = new Set();
     setFriendListsMap({});
     setUserHandle('');
+    setCustomPhotoURL(null);
   };
 
   useEffect(() => {
@@ -463,6 +468,7 @@ export const App: React.FC = () => {
         if (cloud.linearRatingScale !== undefined) setLinearRatingScale(cloud.linearRatingScale);
         setUseCurrentLocation(cloud.useCurrentLocation);
         if (cloud.handle) setUserHandle(cloud.handle);
+        setCustomPhotoURL(cloud.customPhotoURL ?? null);
         if (cloud.seenFollowerIds) {
           const seen = cloud.seenFollowerIds;
           setSeenFollowerIds((prev) => {
@@ -571,7 +577,7 @@ export const App: React.FC = () => {
         uid: user.uid,
         displayName: user.displayName,
         email: user.email,
-        photoURL: user.photoURL,
+        photoURL: myPhotoURL,
         handle: overrideHandle || userHandle,
         restaurants,
         bookmarks,
@@ -598,7 +604,7 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
     // Republish only when the published data changes, not on every render's new function
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, restaurants, bookmarks, userHandle, friends]);
+  }, [user, restaurants, bookmarks, userHandle, friends, myPhotoURL]);
 
   // `ordered` may contain every category; each category list is re-scored independently
   // Only docs whose contents changed (plus `deletedId`) are written to Firestore
@@ -835,6 +841,33 @@ export const App: React.FC = () => {
       await handlePublishShareLink(clean);
     }
     showToast(`Saved handle @${clean}`);
+  };
+
+  const handleSaveProfilePhoto = async (photo: Blob): Promise<boolean> => {
+    if (!user) return false;
+    try {
+      const url = await saveProfilePhoto(db, user.uid, photo, customPhotoURL);
+      setCustomPhotoURL(url);
+      trackEvent('upload_profile_photo');
+      showToast('Profile photo updated', { kind: 'success' });
+      return true;
+    } catch (err) {
+      console.error('Profile photo upload failed:', err);
+      showToast('Couldn’t upload your photo – check your connection and try again', { kind: 'error' });
+      return false;
+    }
+  };
+
+  const handleRemoveProfilePhoto = async () => {
+    if (!user) return;
+    try {
+      await removeProfilePhoto(db, user.uid, customPhotoURL);
+      setCustomPhotoURL(null);
+      showToast(user.photoURL ? 'Back to your Google photo' : 'Photo removed', { kind: 'success' });
+    } catch (err) {
+      console.error('Profile photo removal failed:', err);
+      showToast('Couldn’t remove your photo – try again', { kind: 'error' });
+    }
   };
 
   const handleSearchPublicLists = async (rawQuery: string): Promise<SharedListPayload[]> => {
@@ -2464,6 +2497,11 @@ export const App: React.FC = () => {
         onOpenFollowList={(title, users) => setFollowListDialog({ isOpen: true, title, users })}
         onSignIn={handleGoogleSignIn}
         onSignOut={requestSignOut}
+        photoURL={myPhotoURL}
+        hasCustomPhoto={Boolean(customPhotoURL)}
+        onSavePhoto={handleSaveProfilePhoto}
+        onRemovePhoto={handleRemoveProfilePhoto}
+        onPhotoError={(message) => showToast(message, { kind: 'error' })}
       />
 
       {/* Main navigation: Lists · Friends · (+) · Share · Profile */}
@@ -2485,7 +2523,7 @@ export const App: React.FC = () => {
         friendCount={friends.length}
         profileDot={hasUnseenChangelog}
         account={
-          user ? { photoURL: user.photoURL, name: user.displayName, email: user.email } : null
+          user ? { photoURL: myPhotoURL, name: user.displayName, email: user.email } : null
         }
       />
 
