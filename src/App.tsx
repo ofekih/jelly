@@ -158,7 +158,8 @@ const ShareModal = lazyNamed(() => import('./components/ShareModal'), 'ShareModa
 const WhatsNewModal = lazyNamed(() => import('./components/WhatsNewModal'), 'WhatsNewModal');
 const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'SettingsModal');
 const FollowListModal = lazyNamed(() => import('./components/FollowListModal'), 'FollowListModal');
-const DEFERRED_SCREENS = [RestaurantMapView, AddAndRateModal, OrderCheckModal, SxSArenaModal, SpotDetailModal, FriendsModal, EatTogetherModal, ShareModal, WhatsNewModal, SettingsModal, FollowListModal];
+const FeedbackModal = lazyNamed(() => import('./components/FeedbackModal'), 'FeedbackModal');
+const DEFERRED_SCREENS = [RestaurantMapView, AddAndRateModal, OrderCheckModal, SxSArenaModal, SpotDetailModal, FriendsModal, EatTogetherModal, ShareModal, WhatsNewModal, SettingsModal, FollowListModal, FeedbackModal];
 
 /** A local copy that fails to load (corrupt or hand-edited) starts the list empty instead of crashing. */
 function loadStored<T>(load: () => T[]): T[] {
@@ -286,6 +287,18 @@ export const App: React.FC = () => {
   const [eatTogetherFriendUid, setEatTogetherFriendUid] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWhatsNewOpen, setIsWhatsNewOpen] = useState(false);
+  // Feedback sheet; also opened by `/?feedback=1` (linked from the About page)
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(() => new URL(window.location.href).searchParams.has('feedback'));
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('feedback')) return;
+    url.searchParams.delete('feedback');
+    window.history.replaceState(window.history.state, '', url.toString());
+  }, []);
+  const openFeedback = () => {
+    trackEvent('open_feedback');
+    setIsFeedbackOpen(true);
+  };
   // Dot on Settings after a new major/minor release; brand-new visitors start caught up.
   const [hasUnseenChangelog, setHasUnseenChangelog] = useState(() => {
     const settings = readLocalSettings();
@@ -2542,8 +2555,19 @@ export const App: React.FC = () => {
             setHasUnseenChangelog(false);
             updateLocalSettings({ lastSeenVersion: CURRENT_VERSION });
           }}
+          onOpenFeedback={openFeedback}
           email={user ? user.email : undefined}
           onSignOut={requestSignOut}
+        />
+      </MountWhenOpened>
+
+      <MountWhenOpened open={isFeedbackOpen}>
+        <FeedbackModal
+          isOpen={isFeedbackOpen}
+          onClose={() => setIsFeedbackOpen(false)}
+          account={user ? { uid: user.uid, displayName: user.displayName, email: user.email } : null}
+          groupLabel={GROUP_LABEL[selectedGroup]}
+          listLabel={CATEGORY_LABEL[selectedCategory]}
         />
       </MountWhenOpened>
 

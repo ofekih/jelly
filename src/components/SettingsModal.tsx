@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Download, LogOut, MapPin, Navigation, Sparkles } from 'lucide-react';
+import { ChevronRight, Download, LogOut, MapPin, MessageCircleHeart, Navigation, Sparkles } from 'lucide-react';
 import { CURRENT_VERSION, displayVersion } from '../lib/changelog';
 import { spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
 import { RATING_TIERS } from '../lib/ratingTiers';
@@ -20,6 +20,8 @@ interface SettingsModalProps {
   onExport: () => void;
   hasUnseenChangelog: boolean;
   onOpenWhatsNew: () => void;
+  /** Opens the feedback / bug report sheet */
+  onOpenFeedback?: () => void;
   /** The signed-in account's email; undefined when signed out */
   email?: string | null;
   onSignOut: () => void;
@@ -38,6 +40,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onExport,
   hasUnseenChangelog,
   onOpenWhatsNew,
+  onOpenFeedback,
   email,
   onSignOut,
 }) => {
@@ -210,6 +213,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <ChevronRight className="w-3.5 h-3.5" />
               </span>
             </button>
+
+            {onOpenFeedback && (
+              <button
+                type="button"
+                onClick={onOpenFeedback}
+                className="w-full pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2 text-xs text-left group"
+              >
+                <span className="flex items-center gap-2 font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  <MessageCircleHeart className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  Send feedback / Report a bug
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+              </button>
+            )}
 
             {email !== undefined && (
               <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-xs text-zinc-500">

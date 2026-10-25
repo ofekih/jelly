@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 let env: RulesTestEnvironment;
 
@@ -242,5 +242,64 @@ describe('predictionJobs/{uid}', () => {
     await assertFails(getDoc(doc(as('bob'), 'predictionJobs/bob')));
     await assertFails(setDoc(doc(as('bob'), 'predictionJobs/bob'), { dirtyAt: 2 }));
     await assertFails(getDocs(collection(anon(), 'predictionJobs')));
+  });
+});
+
+describe('feedback/{id}', () => {
+  const diagnostics = {
+    appVersion: '3.4.0',
+    build: 'abc',
+    platform: 'iPhone',
+    userAgent: 'Mozilla/5.0',
+    viewport: '390×844',
+    standalone: false,
+    group: 'Eat',
+    list: 'Restaurants',
+  };
+  const valid = () => ({ kind: 'idea', message: 'More lists please', diagnostics, createdAt: serverTimestamp() });
+
+  it('anyone can create a valid one, signed out without a uid and signed in with their own', async () => {
+    await assertSucceeds(addDoc(collection(anon(), 'feedback'), valid()));
+    await assertSucceeds(addDoc(collection(anon(), 'feedback'), { ...valid(), kind: 'bug', contact: 'me@x.com' }));
+    await assertSucceeds(addDoc(collection(as('alice'), 'feedback'), { ...valid(), uid: 'alice' }));
+  });
+
+  it('checks the uid', async () => {
+    await assertFails(addDoc(collection(anon(), 'feedback'), { ...valid(), uid: 'alice' }));
+    await assertFails(addDoc(collection(as('alice'), 'feedback'), valid()));
+    await assertFails(addDoc(collection(as('alice'), 'feedback'), { ...valid(), uid: 'bob' }));
+    await assertFails(addDoc(collection(as('alice'), 'feedback'), { ...valid(), uid: null }));
+  });
+
+  it('rejects bad fields', async () => {
+    const bad: Record<string, unknown>[] = [
+      { ...valid(), kind: 'rant' },
+      { ...valid(), message: '' },
+      { ...valid(), message: 'a'.repeat(4001) },
+      { ...valid(), contact: '' },
+      { ...valid(), contact: null },
+      { ...valid(), contact: 'a'.repeat(201) },
+      { ...valid(), createdAt: Date.now() },
+      { ...valid(), issueNumber: 1 },
+      { ...valid(), diagnostics: { ...diagnostics, extra: 'x' } },
+      { ...valid(), diagnostics: { ...diagnostics, userAgent: 'a'.repeat(501) } },
+      { ...valid(), diagnostics: { ...diagnostics, standalone: 'no' } },
+      { kind: 'idea', message: 'hi', createdAt: serverTimestamp() },
+    ];
+    for (const data of bad) await assertFails(addDoc(collection(anon(), 'feedback'), data));
+    await assertSucceeds(addDoc(collection(anon(), 'feedback'), { ...valid(), message: 'a'.repeat(4000) }));
+  });
+
+  it('cannot be read, updated or deleted, even by its sender', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'feedback/f1'), { ...valid(), uid: 'alice' });
+      await setDoc(doc(ctx.firestore(), 'feedbackLimits/daily'), { day: '2026-10-25', count: 1 });
+    });
+    await assertFails(getDoc(doc(as('alice'), 'feedback/f1')));
+    await assertFails(getDocs(collection(anon(), 'feedback')));
+    await assertFails(updateDoc(doc(as('alice'), 'feedback/f1'), { message: 'edited' }));
+    await assertFails(deleteDoc(doc(as('alice'), 'feedback/f1')));
+    await assertFails(getDoc(doc(anon(), 'feedbackLimits/daily')));
+    await assertFails(setDoc(doc(anon(), 'feedbackLimits/daily'), { day: '2026-10-25', count: 0 }));
   });
 });

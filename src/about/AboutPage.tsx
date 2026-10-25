@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, ArrowRight, Scale, Sparkles, Swords } from 'lucide-react';
+import { ArrowLeft, ArrowRight, MessageCircleHeart, Scale, Sparkles, Swords } from 'lucide-react';
 import { JellyBeanIcon } from '../components/JellyBeanIcon';
 import { RATING_TIERS } from '../lib/ratingTiers';
 import { CATEGORY_EMOJI, CATEGORY_LABEL, GROUP_CATEGORIES } from '../types';
@@ -19,6 +19,7 @@ const TOC = [
   { id: 'friends', label: 'Taste match' },
   { id: 'name', label: 'The name' },
   { id: 'us', label: 'Who we are' },
+  { id: 'feedback', label: 'Feedback' },
 ];
 
 const STEPS = [
@@ -451,6 +452,21 @@ export const AboutPage: React.FC = () => (
           <b>Nicole</b>, his wife and a big foodie, and <b>Koren</b>, his brother, whose critique of rigid buckets
           shaped jelly's premise. It's a small, personal project for
           people who like keeping track of where they've been and what was worth it.
+        </p>
+      </Section>
+
+      <Section id="feedback" eyebrow="Feedback" title="Ask for it, and it might ship tomorrow">
+        <p>
+          Missing a list, found a bug, or wish something worked differently? Send it from{' '}
+          <b>Settings › Send feedback</b> in the app. Ofek reads every message, and most requests ship within 24 hours.
+        </p>
+        <p>
+          <a
+            href="/?feedback=1"
+            className="inline-flex items-center gap-2 rounded-full border border-jade-300 bg-white px-4 py-2 text-sm font-semibold text-jade-700 hover:border-jade-500 dark:border-jade-800 dark:bg-zinc-900 dark:text-jade-300 dark:hover:border-jade-600"
+          >
+            <MessageCircleHeart className="h-4 w-4" /> Send feedback
+          </a>
         </p>
       </Section>
 

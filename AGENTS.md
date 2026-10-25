@@ -52,7 +52,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 | `src/components/RestaurantList.tsx` | Ranked list, drag-to-rerank, swipe actions |
 | `src/components/RestaurantMapView.tsx` | Google Map with custom score pins (light/dark styles) |
 | `src/lib/shareLinks.ts`, `shareCard.ts` | Share links (`/l/<uid>?c=`, older `/?list=<uid>` still opens; parsing pasted links) and the top-10 card drawing shared by `ShareModal` (portrait PNG) and `sharePage` (landscape link preview) |
-| `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx`, `SettingsModal.tsx` | Feature modals; `Toast.tsx` (`useToast`) is the one-at-a-time toast |
+| `src/components/FriendsModal.tsx`, `ShareModal.tsx`, `EatTogetherModal.tsx`, `BookmarkList.tsx`, `SpotDetailModal.tsx`, `ConfirmModal.tsx`, `SettingsModal.tsx`, `FeedbackModal.tsx` (also opened by `/?feedback=1`) | Feature modals; `Toast.tsx` (`useToast`) is the one-at-a-time toast |
 | `src/dev/emulator.ts`, `scripts/emulator/seed.ts`, `e2e/` | Emulator mode (`IS_EMULATOR` in `firebase.ts`, compiled out of production): test-user sign-in + "Emulator" badge; the seed data; Playwright flows |
 | `firestore.rules` | Security rules with per-field validators (`isValidUserDoc`, `isValidSharedList`, …) |
 | `public/` | `jelly-icon-512/192.png` + `apple-touch-icon.png` (the original artwork cropped so the beans fill ~3/4 of the frame, inside the maskable safe zone), `favicon.png` (tighter crop), `jelly-logo.png` (transparent crop used by `JellyBeanIcon`, the share card and `functions/assets/`) |
@@ -67,6 +67,7 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 - `placeStats/{placeId}__{category}` – community `{sum, count, avg}` per spot per list, written only by the Cloud Function from stored `magicScore`s
 - `users/{uid}/private/predictions` – `{spots: {[placeId__category]: {score, confidence, basis, raters}}, updatedAt}`, owner-read only, written only by the prediction functions
 - `predictionJobs/{uid}` – `{dirtyAt}` debounce marker for prediction recomputes (server-only)
+- `feedback/{id}` – feedback / bug reports from `FeedbackModal` (shape in `src/lib/feedback.ts`); create-only for clients, signed in or out. `onFeedbackCreated` (`functions/src/feedback.ts`, secret `GITHUB_FEEDBACK_TOKEN`) opens a GitHub issue in the **public** repo (message + diagnostics only, never contact or uid; untrusted-content note; message fenced) and writes back `status`/`issueNumber`/`issueUrl`; `feedbackLimits/daily` caps it at 30 issues a day (server-only)
 - Signed-out users persist to `localStorage` (keys defined at top of `App.tsx`); signed-in users sync to Firestore.
 
 ## Conventions & gotchas
