@@ -68,6 +68,11 @@ test('re-ranking with side-by-side moves the spot and keeps its notes', async ({
     await page.waitForTimeout(250);
   }
 
+  // The optional public review step: skipping it shows the usual toast
+  const reviewStep = page.getByTestId('review-prompt');
+  await expect(reviewStep.getByText('Leave a review?')).toBeVisible();
+  await reviewStep.getByRole('button', { name: 'Skip' }).click();
+  await expect(reviewStep).toBeHidden();
   await expect(page.getByText('Ranked Golden Dumpling House #1 in Restaurants')).toBeVisible();
   await page.reload();
   await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
@@ -124,4 +129,60 @@ test('the profile page shows your stats and closes with Back', async ({ page }) 
   await page.goBack();
   await expect(profile).toBeHidden();
   await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
+});
+
+test('a review posted after ranking shows on the spot sheet, and is edited when re-ranking again', async ({ page }) => {
+  const rerankTrattoria = async () => {
+    await page.getByText('Trattoria Sole').first().click();
+    await page.getByRole('button', { name: 'Re-rank Trattoria Sole' }).click();
+    await page.getByRole('button', { name: 'Good', exact: true }).click();
+    const prompt = page.getByText(/which do you prefer/i);
+    await expect(prompt).toBeVisible();
+    while (await prompt.isVisible()) {
+      await page.getByRole('button', { name: /Tap to pick/ }).last().click();
+      await page.waitForTimeout(250);
+    }
+  };
+
+  await rerankTrattoria();
+  const reviewStep = page.getByTestId('review-prompt');
+  await expect(reviewStep.getByText('Leave a review?')).toBeVisible();
+  await expect(reviewStep.getByRole('button', { name: 'Post' })).toBeDisabled();
+  await reviewStep.getByRole('textbox').fill('Handmade pasta, lovely patio');
+  await reviewStep.getByRole('button', { name: 'Post' }).click();
+  await expect(page.getByText('Posted your review of Trattoria Sole')).toBeVisible();
+
+  await page.getByText('Trattoria Sole').first().click();
+  const review = page.getByTestId('place-review').filter({ hasText: 'Handmade pasta, lovely patio' });
+  await expect(review).toBeVisible();
+  await expect(review.getByText('You', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
+
+  await rerankTrattoria();
+  await expect(reviewStep.getByText('Update your review?')).toBeVisible();
+  await expect(reviewStep.getByRole('textbox')).toHaveValue('Handmade pasta, lovely patio');
+  await reviewStep.getByRole('button', { name: 'Skip' }).click();
+  await expect(reviewStep).toBeHidden();
+});
+
+test("friends' reviews show on a spot, and removing the spot takes your review with it until Undo", async ({ page }) => {
+  await page.getByText('Casa Verde').first().click();
+  const reviews = page.getByTestId('place-review');
+  await expect(reviews).toHaveCount(2);
+  await expect(reviews.first()).toContainText('Great patio');
+  await expect(reviews.nth(1)).toContainText('Riley Friend');
+  await expect(reviews.nth(1).getByText('Friend', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove Spot' }).click();
+  await expect(page.getByText('Removed Casa Verde')).toBeVisible();
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Restored Casa Verde')).toBeVisible();
+
+  await page.waitForTimeout(1000);
+  await page.reload();
+  await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
+  await page.getByText('Casa Verde').first().click();
+  await expect(page.getByTestId('place-review').filter({ hasText: 'Great patio' })).toBeVisible();
 });

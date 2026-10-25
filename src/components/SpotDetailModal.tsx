@@ -18,6 +18,7 @@ import {
   PriceRange,
   RankedHistoryEvent,
   RestaurantEntry,
+  SpotCategory,
 } from '../types';
 import { SpotSocialMetrics } from '../lib/friendsService';
 import { GROUP_COPY, showsPrice, spotPrice, wantLabel } from '../lib/groups';
@@ -59,6 +60,8 @@ interface SpotDetailModalProps {
     }
   ) => void;
   onDelete: (id: string) => void;
+  /** Public reviews of the spot (`PlaceReviews`), rendered by App with the viewer's context */
+  renderReviews?: (placeId: string | undefined, category: SpotCategory, spotName?: string) => React.ReactNode;
 }
 
 export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
@@ -73,6 +76,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   onReRank,
   onSaveEdits,
   onDelete,
+  renderReviews,
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isEditingNoteInline, setIsEditingNoteInline] = useState(false);
@@ -579,6 +583,10 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     </a>
                   </div>
                 </div>
+              )}
+
+              {renderReviews && (
+                <div className="pt-2">{renderReviews(restaurant.placeId, restaurant.category, restaurant.name)}</div>
               )}
             </div>
           ) : (

@@ -132,6 +132,16 @@ import { usePriceBackfill } from './lib/usePriceBackfill';
 import { PublicListTrim } from './lib/publicList';
 import { useFollowers, useFriendListSubscriptions } from './lib/useSocialFeeds';
 import { isSharePath, parseShareUrl, shareIdFromText, shareListUrl } from './lib/shareLinks';
+import {
+  deleteMyReview,
+  fetchMyReview,
+  getCachedReviews,
+  PlaceReview,
+  reviewKey,
+  reviewKeyForEntry,
+  saveMyReview,
+  setCachedMyReview,
+} from './lib/reviews';
 
 const PUBLIC_TRIM_MESSAGE: Record<Exclude<PublicListTrim, 'none'>, string> = {
   bookmarkNotes: 'Your list is too big to share in full – friends won’t see your bookmark notes',
@@ -157,7 +167,9 @@ const FollowListModal = lazyNamed(() => import('./components/FollowListModal'), 
 // Only new users (or a replay) ever need the welcome tour, so it isn't preloaded
 const OnboardingTour = lazyNamed(() => import('./components/onboarding/OnboardingTour'), 'OnboardingTour');
 const FeedbackModal = lazyNamed(() => import('./components/FeedbackModal'), 'FeedbackModal');
-const DEFERRED_SCREENS = [RestaurantMapView, AddAndRateModal, OrderCheckModal, SxSArenaModal, SpotDetailModal, FriendsModal, EatTogetherModal, ShareModal, WhatsNewModal, SettingsModal, FollowListModal, FeedbackModal];
+const ReviewPromptSheet = lazyNamed(() => import('./components/ReviewPromptSheet'), 'ReviewPromptSheet');
+const PlaceReviews = lazyNamed(() => import('./components/PlaceReviews'), 'PlaceReviews');
+const DEFERRED_SCREENS = [RestaurantMapView, AddAndRateModal, OrderCheckModal, SxSArenaModal, SpotDetailModal, FriendsModal, EatTogetherModal, ShareModal, WhatsNewModal, SettingsModal, FollowListModal, FeedbackModal, ReviewPromptSheet, PlaceReviews];
 
 /** A local copy that fails to load (corrupt or hand-edited) starts the list empty instead of crashing. */
 function loadStored<T>(load: () => T[]): T[] {
@@ -283,6 +295,15 @@ export const App: React.FC = () => {
   const [isOrderCheckOpen, setIsOrderCheckOpen] = useState(false);
   const [orderCheckSnoozed, setOrderCheckSnoozed] = useState<Set<SpotCategory>>(new Set());
   const [activeDetailSpot, setActiveDetailSpot] = useState<RestaurantEntry | null>(null);
+  // The optional public review step after a side-by-side (signed in only)
+  const [reviewPrompt, setReviewPrompt] = useState<{
+    entry: RestaurantEntry;
+    position: number;
+    rankedMessage: string;
+    /** Your earlier review (undefined while loading, null when there's none); `here` is false for
+     * one carried over as a draft from the list the spot was re-ranked out of */
+    existing: { text: string; createdAt: number; here: boolean } | null | undefined;
+  } | null>(null);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isFriendsOpen, setIsFriendsOpen] = useState(false);
   const [isEatTogetherOpen, setIsEatTogetherOpen] = useState(false);
@@ -1144,6 +1165,7 @@ export const App: React.FC = () => {
 
   const finishPlacement = async (placement: PendingPlacement, result: PlacementResult) => {
     const placed = placeSpot(restaurants, placement, result, Date.now());
+    const movedFrom = placed.removedId ? restaurants.find((r) => r.id === placed.removedId) : undefined;
     await persistOrderedRestaurants(placed.restaurants, placed.removedId);
     setSelectedCategory(placement.category);
     await cleanupBookmarkIfRanked(placement.candidate.placeId, placement.candidate.name);
@@ -1157,9 +1179,74 @@ export const App: React.FC = () => {
       comparisons_count: result.comparisonsDone,
       is_rerank: Boolean(placement.existingIdToReplace),
     });
-    showToast(
-      `Ranked ${placed.entry.name} #${placed.position} in ${CATEGORY_LABEL[placed.entry.category]} · ${placed.entry.magicScore.toFixed(1)}`
+    const rankedMessage = `Ranked ${placed.entry.name} #${placed.position} in ${CATEGORY_LABEL[placed.entry.category]} · ${placed.entry.magicScore.toFixed(1)}`;
+    const key = user ? reviewKeyForEntry(placed.entry) : null;
+    if (!user || !key) {
+      showToast(rankedMessage);
+      return;
+    }
+    // Offer a public review (prefilled with the one they wrote before, if any)
+    const cachedMine = getCachedReviews(key)?.reviews.find((r) => r.uid === user.uid);
+    setReviewPrompt({
+      entry: placed.entry,
+      position: placed.position,
+      rankedMessage,
+      existing: cachedMine ? { text: cachedMine.text, createdAt: cachedMine.createdAt, here: true } : undefined,
+    });
+    const uid = user.uid;
+    const oldKey = movedFrom ? reviewKeyForEntry(movedFrom) : null;
+    (async () => {
+      const here = await fetchMyReview(db, key, uid);
+      let existing = here ? { text: here.text, createdAt: here.createdAt, here: true } : null;
+      // Re-ranked into another list: carry the old list's review over as a draft, and drop it there
+      // (the onRestaurantWritten function would too, now that the old entry is gone)
+      if (!existing && oldKey && oldKey !== key) {
+        const moved = await fetchMyReview(db, oldKey, uid);
+        if (moved) {
+          existing = { text: moved.text, createdAt: moved.createdAt, here: false };
+          deleteMyReview(db, oldKey, uid)
+            .then(() => setCachedMyReview(oldKey, uid, null))
+            .catch(logWriteError('delete moved review'));
+        }
+      }
+      setReviewPrompt((prev) => (prev && prev.entry.id === placed.entry.id ? { ...prev, existing } : prev));
+    })().catch((err) => {
+      console.error('Failed to load your review:', err);
+      setReviewPrompt((prev) => (prev && prev.entry.id === placed.entry.id ? { ...prev, existing: null } : prev));
+    });
+  };
+
+  const handlePostReview = async (text: string) => {
+    if (!user || !reviewPrompt) return;
+    // The rules check the review's score against the stored entry, so read the latest one
+    const current = restaurantsRef.current.find((r) => r.id === reviewPrompt.entry.id);
+    const key = current ? reviewKeyForEntry(current) : null;
+    if (!current || !key) throw new Error('That spot is no longer ranked');
+    const existsHere = Boolean(reviewPrompt.existing?.here);
+    const saved = await saveMyReview(db, key, user.uid, text, current.magicScore, existsHere);
+    setCachedMyReview(
+      key,
+      user.uid,
+      { ...saved, createdAt: existsHere && reviewPrompt.existing ? reviewPrompt.existing.createdAt : saved.createdAt },
+      { name: user.displayName || 'You', handle: userHandle || undefined, photoURL: user.photoURL || undefined }
     );
+    trackEvent(existsHere ? 'edit_review' : 'post_review', {
+      category: current.category,
+      length: saved.text.length,
+      from: 'after_ranking',
+    });
+    setReviewPrompt(null);
+    showToast(existsHere ? `Updated your review of ${current.name}` : `Posted your review of ${current.name}`, {
+      kind: 'success',
+    });
+  };
+
+  const handleSkipReview = () => {
+    if (!reviewPrompt) return;
+    trackEvent('skip_review', { category: reviewPrompt.entry.category });
+    const { rankedMessage } = reviewPrompt;
+    setReviewPrompt(null);
+    showToast(rankedMessage);
   };
 
   // Drag-and-drop reorder
@@ -1236,14 +1323,39 @@ export const App: React.FC = () => {
       restaurant_name: target.name,
       category: target.category,
     });
+    // Your public review of it goes too (kept here so Undo can put it back)
+    const key = user ? reviewKeyForEntry(target) : null;
+    const uid = user?.uid;
+    const removedReview: Promise<PlaceReview | null> =
+      key && uid
+        ? fetchMyReview(db, key, uid)
+            .then(async (review) => {
+              if (review) {
+                await deleteMyReview(db, key, uid);
+                setCachedMyReview(key, uid, null);
+              }
+              return review;
+            })
+            .catch((err) => {
+              logWriteError('delete review')(err);
+              return null;
+            })
+        : Promise.resolve(null);
     await persistOrderedRestaurants(remaining, id);
     showToast(`Removed ${target.name}`, {
       kind: 'removed',
       action: {
         label: 'Undo',
-        onClick: () => {
-          persistOrderedRestaurants(restoreSpot(restaurantsRef.current, target));
+        onClick: async () => {
+          await persistOrderedRestaurants(restoreSpot(restaurantsRef.current, target));
           showToast(`Restored ${target.name}`, { kind: 'restored' });
+          const review = await removedReview;
+          const restored = restaurantsRef.current.find((r) => r.id === target.id);
+          if (!review || !restored || !key || !uid || auth.currentUser?.uid !== uid) return;
+          // A fresh copy: same words and author, dated now
+          saveMyReview(db, key, uid, review.text, restored.magicScore, false)
+            .then((saved) => setCachedMyReview(key, uid, saved))
+            .catch(logWriteError('restore review'));
         },
       },
     });
@@ -1261,6 +1373,26 @@ export const App: React.FC = () => {
   };
 
   const isReadOnly = Boolean(sharedList);
+
+  // Public reviews of a spot, for any sheet or page that shows one (spot sheet, place page)
+  const friendIds = useMemo(() => friends.map((f) => f.uid), [friends]);
+  const renderPlaceReviews = (placeId: string | undefined, category: SpotCategory, spotName?: string) => {
+    const key = reviewKey(placeId, category);
+    // Your own score for it, when you've ranked it under that key (needed to write a review)
+    const mine = key ? restaurants.find((r) => r.id === key) : undefined;
+    return (
+      <Suspense fallback={null}>
+        <PlaceReviews
+          placeId={placeId}
+          category={category}
+          spotName={spotName}
+          viewer={user ? { uid: user.uid, name: user.displayName, handle: userHandle, photoURL: user.photoURL } : null}
+          myScore={mine && reviewKeyForEntry(mine) === key ? mine.magicScore : undefined}
+          friendIds={friendIds}
+        />
+      </Suspense>
+    );
+  };
   // Spots saved before price ranges were stored get theirs once, when their sheet opens
   usePriceBackfill(activeDetailSpot, !isReadOnly, (id, price) => {
     const current = restaurantsRef.current;
@@ -2243,7 +2375,23 @@ export const App: React.FC = () => {
           }}
           onSaveEdits={handleSaveSpotEdits}
           onDelete={handleDeleteRestaurant}
+          renderReviews={renderPlaceReviews}
         />
+      </MountWhenOpened>
+
+      {/* Optional public review after a side-by-side */}
+      <MountWhenOpened open={Boolean(reviewPrompt)}>
+        {reviewPrompt && (
+          <ReviewPromptSheet
+            key={reviewPrompt.entry.id}
+            entry={reviewPrompt.entry}
+            position={reviewPrompt.position}
+            existingText={reviewPrompt.existing === undefined ? undefined : reviewPrompt.existing?.text ?? null}
+            alreadyPosted={reviewPrompt.existing?.here ?? false}
+            onPost={handlePostReview}
+            onSkip={handleSkipReview}
+          />
+        )}
       </MountWhenOpened>
 
       {/* Friends Directory & @Handle Modal */}

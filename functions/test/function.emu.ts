@@ -95,4 +95,23 @@ describe('onRestaurantWritten (Functions emulator)', () => {
     );
     await expectStatsConverge();
   });
+
+  it('keeps a public review in step with its spot: score follows, deleting the spot removes it', async () => {
+    const spot = db.doc('users/dana/restaurants/p9__bars');
+    const review = db.doc('placeReviews/p9__bars/reviews/dana');
+    const waitFor = async (check: () => Promise<boolean>) => {
+      const deadline = Date.now() + 20000;
+      while (!(await check()) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 250));
+      expect(await check()).toBe(true);
+    };
+
+    await spot.set(entry('p9', 'bars', 8));
+    await review.set({ text: 'Lovely', score: 8, createdAt: 1, updatedAt: 1 });
+    await spot.update({ magicScore: 7.2 });
+    await waitFor(async () => (await review.get()).get('score') === 7.2);
+    expect((await review.get()).get('updatedAt')).toBe(1);
+
+    await spot.delete();
+    await waitFor(async () => !(await review.get()).exists);
+  });
 });

@@ -124,6 +124,20 @@ rules_version = '2';
 // Collection: placeStats (publicly readable/listable; written only by Cloud Functions / Admin SDK)
 // Document ID: {statId}
 //
+// Collection: placeReviews/{placeKey}/reviews (publicly readable/listable)
+// placeKey = {placeId}__{category}, the same key as placeStats and the author's own
+// users/{uid}/restaurants/{placeKey}; the parent placeReviews/{placeKey} doc is never written.
+// Document ID: {uid} (the author's Auth UID; one review per person per spot per list)
+// Fields (exactly these, no nulls; see src/lib/reviews.ts):
+//   - text: string (required, 1..2000 chars, already trimmed)
+//   - score: number (required, 0..10, == the author's users/{uid}/restaurants/{placeKey}.magicScore)
+//   - createdAt: timestamp (required, == request.time on create, unchanged on update)
+//   - updatedAt: timestamp (required, == request.time on every write)
+// Only the author may write, and only for a spot they have ranked (not manual_ spots). The name
+// and photo shown come from profiles/{uid}. onRestaurantWritten (Admin SDK) keeps score in step
+// and deletes the review when the spot leaves the author's list. Moderation: delete the doc in
+// the Firebase console.
+//
 // Collection: feedback (create-only for clients, signed in or out; never read, updated or deleted)
 // Document ID: auto
 // Fields (no other fields, no nulls; see src/lib/feedback.ts):
@@ -422,6 +436,21 @@ service cloud.firestore {
         data.createdAt == request.time;
     }
 
+    function isValidReview(placeKey, data) {
+      let entryPath = /databases/$(database)/documents/users/$(request.auth.uid)/restaurants/$(placeKey);
+      return data.keys().hasOnly(['text', 'score', 'createdAt', 'updatedAt']) &&
+        data.keys().hasAll(['text', 'score', 'createdAt', 'updatedAt']) &&
+        !placeKey.matches('^manual_.*') &&
+        data.text is string &&
+        data.text.size() >= 1 && data.text.size() <= 2000 &&
+        data.text == data.text.trim() &&
+        data.score is number && data.score >= 0 && data.score <= 10 &&
+        data.createdAt is timestamp &&
+        data.updatedAt == request.time &&
+        exists(entryPath) &&
+        get(entryPath).data.magicScore == data.score;
+    }
+
     function isDocIdUnchanged() {
       return !('id' in resource.data) ||
         !('id' in request.resource.data) ||
@@ -496,6 +525,18 @@ service cloud.firestore {
     match /placeStats/{statId} {
       allow read: if true;
       allow write: if false;
+    }
+
+    // Public reviews: anyone reads; only the author writes, for a spot they have ranked
+    match /placeReviews/{placeKey}/reviews/{reviewerUid} {
+      allow read: if true;
+      allow create: if isOwner(reviewerUid) &&
+        isValidReview(placeKey, request.resource.data) &&
+        request.resource.data.createdAt == request.time;
+      allow update: if isOwner(reviewerUid) &&
+        isValidReview(placeKey, request.resource.data) &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(reviewerUid);
     }
 
     // Feedback and bug reports: anyone may send one; only the Cloud Function (Admin SDK) reads them
