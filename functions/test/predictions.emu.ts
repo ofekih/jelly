@@ -107,12 +107,16 @@ describe('profile changes queue prediction recomputes (Functions emulator)', () 
   const jobIds = async () => (await db.collection('predictionJobs').get()).docs.map((d) => d.id).sort();
   const settle = () => new Promise((r) => setTimeout(r, 3000));
 
-  // Clearing deletes ranked spots, whose triggers queue jobs: let them land, then drop them
+  // Clearing deletes ranked spots, whose triggers queue jobs: let them land, then drop them, until
+  // a quiet wait leaves nothing behind (slow triggers can land after a single wait)
   beforeAll(async () => {
     await clearProject(PROJECT);
-    await settle();
-    await clearProject(PROJECT);
-  });
+    for (let i = 0; i < 5; i++) {
+      await settle();
+      if ((await jobIds()).length === 0) break;
+      await clearProject(PROJECT);
+    }
+  }, 30000);
 
   it('follow changes mark me dirty; other profile fields do not', async () => {
     await db.doc('profiles/me').set({ followingIds: [], rankedCount: 0 });
