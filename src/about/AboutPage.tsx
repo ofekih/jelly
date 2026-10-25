@@ -19,7 +19,14 @@ const TOC = [
   { id: 'friends', label: 'Taste match' },
   { id: 'name', label: 'The name' },
   { id: 'us', label: 'Who we are' },
+  { id: 'free', label: 'Why it’s free' },
   { id: 'feedback', label: 'Feedback' },
+];
+
+const FREE_STATS = [
+  { value: '$0', label: 'for you' },
+  { value: '<$50', label: 'a year to run' },
+  { value: '0', label: 'ads or data sold' },
 ];
 
 const STEPS = [
@@ -453,6 +460,33 @@ export const AboutPage: React.FC = () => (
           shaped jelly's premise. It's a small, personal project for
           people who like keeping track of where they've been and what was worth it.
         </p>
+      </Section>
+
+      <Section id="free" eyebrow="Free, no ads" title="Here’s why it’s free">
+        <div className="grid grid-cols-3 gap-2">
+          {FREE_STATS.map((s) => (
+            <div
+              key={s.label}
+              className="rounded-2xl border border-zinc-200 bg-white px-2 py-4 text-center dark:border-zinc-800 dark:bg-zinc-900/70"
+            >
+              <div className="font-display text-2xl font-extrabold tabular-nums text-jade-700 sm:text-3xl dark:text-jade-300">
+                {s.value}
+              </div>
+              <div className="mt-1 text-[12px] leading-tight text-zinc-500 dark:text-zinc-400">{s.label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-3xl border border-zinc-200/80 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">
+          <p>
+            jelly is a pet project I built for family & friends. It costs me under $50 a year to run, so it's free –
+            no ads, no subscriptions, no premium tier, and your data is never sold.
+          </p>
+          <p className="mt-3">
+            If usage and costs ever grow a lot, I might have to charge something. I don't expect that to happen, but
+            if it ever does, you'll hear about it clearly, well in advance – nothing will quietly change under you.
+          </p>
+          <p className="mt-3 text-right font-semibold text-zinc-800 dark:text-zinc-100">– Ofek</p>
+        </div>
       </Section>
 
       <Section id="feedback" eyebrow="Feedback" title="Ask for it, and it might ship tomorrow">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Download, LogOut, MapPin, MessageCircleHeart, Navigation, Sparkles } from 'lucide-react';
+import { ChevronRight, Download, LogOut, MapPin, MessageCircleHeart, CirclePlay, Navigation, Sparkles } from 'lucide-react';
 import { CURRENT_VERSION, displayVersion } from '../lib/changelog';
 import { spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
 import { RATING_TIERS } from '../lib/ratingTiers';
@@ -25,6 +25,8 @@ interface SettingsModalProps {
   /** The signed-in account's email; undefined when signed out */
   email?: string | null;
   onSignOut: () => void;
+  /** Reopens the welcome tour */
+  onReplayTour: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -43,6 +45,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenFeedback,
   email,
   onSignOut,
+  onReplayTour,
 }) => {
   if (!isOpen) return null;
 
@@ -214,6 +217,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </span>
             </button>
 
+            <button
+              type="button"
+              onClick={onReplayTour}
+              className="w-full pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2 text-xs text-left group"
+            >
+              <span className="flex items-center gap-2 font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                <CirclePlay className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                Replay intro
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+            </button>
             {onOpenFeedback && (
               <button
                 type="button"
