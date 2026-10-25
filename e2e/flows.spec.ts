@@ -168,6 +168,8 @@ test('search finds a title, opens its page, goes back, then saves and ranks it f
     await page.getByRole('button', { name: /Tap to pick/ }).filter({ hasNotText: 'Dune' }).first().click();
     await page.waitForTimeout(250);
   }
+  const reviewStep = page.getByTestId('review-prompt');
+  await reviewStep.getByRole('button', { name: 'Skip' }).click();
   await expect(page.getByText('Ranked Dune #4 in Movies')).toBeVisible();
   await expect(search).toBeHidden();
   await expect(page.locator('main').getByText('Dune')).toBeVisible();
