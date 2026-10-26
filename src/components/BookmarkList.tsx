@@ -72,7 +72,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   const distLabel = formatDistanceMiles(rawMiles);
   const subtitleParts = [
     primaryCuisine,
-    spotPrice(item, item.category, { compact: true }),
+    spotPrice(item, item.category),
     locationLabel,
     distLabel,
   ].filter(Boolean);

@@ -248,9 +248,9 @@ export function showsPrice(category: SpotCategory): boolean {
   return category === 'stays' || GROUP_COPY[CATEGORY_GROUP[category]].showPrice;
 }
 
-/** A spot's price line (`$$ · $20–30`, or the tier alone when `compact`), '' where lists show no price. */
-export function spotPrice(spot: PriceInfo, category: SpotCategory, options?: { compact?: boolean }): string {
-  return showsPrice(category) ? formatPrice(spot, options) : '';
+/** A spot's price (`$20–30`, else the tier `$$`), '' where lists show no price. */
+export function spotPrice(spot: PriceInfo, category: SpotCategory): string {
+  return showsPrice(category) ? formatPrice(spot) : '';
 }
 
 /** Name of the bookmarked ("want to") list a category's spots are saved to */

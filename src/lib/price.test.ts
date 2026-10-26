@@ -96,17 +96,13 @@ describe('formatPriceRange', () => {
 
 describe('formatPrice', () => {
   const range = { currency: 'USD', start: 20, end: 30 };
-  it('joins tier and range', () => {
-    expect(formatPrice({ priceLevel: 2, priceRange: range }, { locale: 'en-US' })).toBe('$$ · $20–30');
-  });
-  it('shows whichever part is known', () => {
-    expect(formatPrice({ priceLevel: 2 })).toBe('$$');
+  it('shows the range alone when Google knows it', () => {
+    expect(formatPrice({ priceLevel: 2, priceRange: range }, { locale: 'en-US' })).toBe('$20–30');
     expect(formatPrice({ priceRange: { currency: 'USD', start: 100 } }, { locale: 'en-US' })).toBe('$100+');
-    expect(formatPrice({})).toBe('');
   });
-  it('compact gives the tier alone, else the range', () => {
-    expect(formatPrice({ priceLevel: 3, priceRange: range }, { compact: true })).toBe('$$$');
-    expect(formatPrice({ priceRange: range }, { compact: true, locale: 'en-US' })).toBe('$20–30');
+  it('falls back to the tier', () => {
+    expect(formatPrice({ priceLevel: 2 })).toBe('$$');
+    expect(formatPrice({})).toBe('');
   });
   it('never shows a spend for a free spot', () => {
     expect(formatPrice({ priceLevel: 0, priceRange: range })).toBe('Free');

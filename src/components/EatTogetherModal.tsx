@@ -326,7 +326,7 @@ export const EatTogetherModal: React.FC<EatTogetherModalProps> = ({
                     const distLabel = formatDistanceMiles(getItemDistanceMiles(item, userLocation));
                     const subParts = [
                       primaryCuisine,
-                      spotPrice(item, item.category, { compact: true }),
+                      spotPrice(item, item.category),
                       locationShort,
                       distLabel,
                     ].filter(Boolean);

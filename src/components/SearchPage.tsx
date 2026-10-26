@@ -647,7 +647,7 @@ const ResultRow: React.FC<ResultRowProps> = ({
             <ChevronRight className="w-3.5 h-3.5 shrink-0 text-zinc-300 dark:text-zinc-600" aria-hidden="true" />
           </span>
           <span className="block text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-            {[type, spotPrice(item, bestCategory, { compact: true }), where, distance].filter(Boolean).join(' · ')}
+            {[type, spotPrice(item, bestCategory), where, distance].filter(Boolean).join(' · ')}
           </span>
           {(ranked ||
             isBookmarked ||

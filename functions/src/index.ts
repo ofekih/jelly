@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { onDocumentDeleted, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -9,7 +9,7 @@ import { affectedPlaceKeys, placeStatId } from './placeStats';
 import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from './predictionJobs';
 import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
-import { syncPlaceReview } from './reviews';
+import { recountReviewVotes, syncPlaceReview } from './reviews';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
 import { searchBoardGames, searchVideoGames } from './games';
@@ -49,6 +49,23 @@ export const onRestaurantWritten = onDocumentWritten(
     if (keys.length > 0) logger.debug('placeStats recomputed', { keys: keys.map(placeStatId) });
   }
 );
+
+/** Thumbs up / down on a public review: keeps the review's `up` / `down` counts current. */
+export const onReviewVoteWritten = onDocumentWritten(
+  'placeReviews/{placeKey}/reviews/{authorUid}/votes/{voterUid}',
+  async (event) => {
+    const before = event.data?.before.get('value');
+    const after = event.data?.after.get('value');
+    if (before === after) return;
+    await recountReviewVotes(getFirestore(), event.params.placeKey, event.params.authorUid);
+  }
+);
+
+/** A deleted review takes its votes with it, so a later review by the same person starts at zero. */
+export const onReviewDeleted = onDocumentDeleted('placeReviews/{placeKey}/reviews/{authorUid}', async (event) => {
+  const db = getFirestore();
+  await db.recursiveDelete(db.collection(`placeReviews/${event.params.placeKey}/reviews/${event.params.authorUid}/votes`));
+});
 
 /** Bookmarks get predictions too, so adding or moving one queues a recompute. */
 export const onBookmarkWritten = onDocumentWritten('users/{uid}/bookmarks/{id}', async (event) => {

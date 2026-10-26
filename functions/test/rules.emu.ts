@@ -455,4 +455,54 @@ describe('placeReviews/{placeKey}/reviews/{uid}', () => {
     await assertFails(setDoc(ref, review()));
     await assertFails(updateDoc(ref, { text: 'edit' }));
   });
+  it('keeps vote counts server-only: not on create, untouched by edits', async () => {
+    const ref = doc(as('alice'), `placeReviews/${KEY}/reviews/alice`);
+    await assertFails(setDoc(ref, { ...review(), up: 5, down: 0 }));
+    await assertSucceeds(setDoc(ref, review()));
+    await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), `placeReviews/${KEY}/reviews/alice`), { up: 2, down: 1 }));
+    await assertSucceeds(updateDoc(ref, { text: 'Edited', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { text: 'Edited', up: 99, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { text: 'Edited', down: 0, updatedAt: serverTimestamp() }));
+  });
+});
+
+describe('placeReviews/{placeKey}/reviews/{author}/votes/{voter}', () => {
+  const KEY = 'p1__bars';
+  const vote = (value: unknown = 1) => ({ value, updatedAt: serverTimestamp() });
+  const ref = (who: string, author = 'bob', voter = who) => doc(as(who), `placeReviews/${KEY}/reviews/${author}/votes/${voter}`);
+
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, `placeReviews/${KEY}/reviews/bob`), { text: 'Fine', score: 6, createdAt: 1, updatedAt: 1 });
+      await setDoc(doc(db, `placeReviews/${KEY}/reviews/bob/votes/carol`), { value: 1, updatedAt: 1 });
+    });
+  });
+
+  it('a signed-in voter can vote, switch, and take it back', async () => {
+    await assertSucceeds(setDoc(ref('alice'), vote(1)));
+    await assertSucceeds(setDoc(ref('alice'), vote(-1)));
+    await assertSucceeds(getDoc(ref('alice')));
+    await assertSucceeds(deleteDoc(ref('alice')));
+  });
+
+  it('votes are private and only your own', async () => {
+    await assertFails(getDoc(ref('alice', 'bob', 'carol')));
+    await assertFails(getDocs(collection(as('alice'), `placeReviews/${KEY}/reviews/bob/votes`)));
+    await assertFails(getDoc(doc(anon(), `placeReviews/${KEY}/reviews/bob/votes/carol`)));
+    await assertFails(setDoc(ref('alice', 'bob', 'carol'), vote()));
+    await assertFails(deleteDoc(ref('alice', 'bob', 'carol')));
+    await assertFails(setDoc(doc(anon(), `placeReviews/${KEY}/reviews/bob/votes/anon`), vote()));
+  });
+
+  it('not on your own review, nor on a review that does not exist', async () => {
+    await assertFails(setDoc(ref('bob'), vote()));
+    await assertFails(setDoc(ref('alice', 'nobody'), vote()));
+  });
+
+  it('rejects bad values and fields', async () => {
+    for (const data of [vote(2), vote(0), vote('1'), { value: 1 }, { value: 1, updatedAt: Date.now() }, { ...vote(), extra: true }]) {
+      await assertFails(setDoc(ref('alice'), data));
+    }
+  });
 });

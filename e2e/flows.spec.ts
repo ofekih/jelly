@@ -259,3 +259,30 @@ test("friends' reviews show on a spot, and removing the spot takes your review w
   await page.getByText('Casa Verde').first().click();
   await expect(page.getByTestId('place-review').filter({ hasText: 'Great patio' })).toBeVisible();
 });
+
+test('thumbs up / down on a review shows at once, toggles off, and is remembered', async ({ page }) => {
+  await page.getByText('Noodle Bar Uno').first().click();
+  const review = page.getByTestId('place-review').filter({ hasText: 'best in Orange County' });
+  const up = review.getByTestId('review-vote-up');
+  const down = review.getByTestId('review-vote-down');
+  await expect(up).toHaveAttribute('aria-label', 'Helpful (4)');
+  await expect(review).toContainText('2 days ago');
+
+  await up.click();
+  await expect(up).toHaveAttribute('aria-pressed', 'true');
+  await expect(up).toHaveAttribute('aria-label', 'Helpful (5)');
+  // Switching moves the vote
+  await down.click();
+  await expect(up).toHaveAttribute('aria-label', 'Helpful (4)');
+  await expect(down).toHaveAttribute('aria-pressed', 'true');
+  await expect(down).toHaveAttribute('aria-label', 'Not helpful (1)');
+
+  await page.waitForTimeout(800);
+  await page.reload();
+  await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
+  await page.getByText('Noodle Bar Uno').first().click();
+  await expect(down).toHaveAttribute('aria-pressed', 'true');
+  // Tapping it again takes the vote back
+  await down.click();
+  await expect(down).toHaveAttribute('aria-pressed', 'false');
+});

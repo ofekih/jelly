@@ -114,4 +114,35 @@ describe('onRestaurantWritten (Functions emulator)', () => {
     await spot.delete();
     await waitFor(async () => !(await review.get()).exists);
   });
+
+  it('counts thumbs up / down on a review, and deleting the review drops its votes', async () => {
+    const review = db.doc('placeReviews/p8__bars/reviews/erin');
+    const votes = review.collection('votes');
+    const waitFor = async (check: () => Promise<boolean>) => {
+      const deadline = Date.now() + 20000;
+      while (!(await check()) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 250));
+      expect(await check()).toBe(true);
+    };
+    const counts = async () => {
+      const snap = await review.get();
+      return `${snap.get('up') ?? 0}/${snap.get('down') ?? 0}`;
+    };
+
+    await review.set({ text: 'Solid', score: 7, createdAt: 1, updatedAt: 1 });
+    await Promise.all([
+      votes.doc('v1').set({ value: 1, updatedAt: 1 }),
+      votes.doc('v2').set({ value: 1, updatedAt: 1 }),
+      votes.doc('v3').set({ value: -1, updatedAt: 1 }),
+    ]);
+    await waitFor(async () => (await counts()) === '2/1');
+
+    await votes.doc('v2').set({ value: -1, updatedAt: 2 });
+    await votes.doc('v1').delete();
+    await waitFor(async () => (await counts()) === '0/2');
+    expect((await review.get()).get('updatedAt')).toBe(1);
+
+    await review.delete();
+    await waitFor(async () => (await votes.get()).empty);
+    expect((await review.get()).exists).toBe(false);
+  });
 });

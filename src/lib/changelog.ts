@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.2.0',
+    date: '2026-10-25',
+    title: 'Helpful reviews',
+    highlights: [
+      'Give reviews a thumbs up or down, and see how many people found each one helpful',
+      'Prices show the typical spend per person from Google Maps (like $20–30) wherever it’s known',
+      'More room for names in your list on phones – the drag handle is gone, just press and hold a row (or drag its number) to move it',
+    ],
+  },
+  {
     version: '4.1.0',
     date: '2026-10-25',
     title: 'Search, look up, review',

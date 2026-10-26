@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { MessageSquareText, Pencil, Trash2 } from 'lucide-react';
+import { MessageSquareText, Pencil, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react';
 import { db, trackEvent } from '../firebase';
 import { SpotCategory } from '../types';
 import {
@@ -9,9 +9,11 @@ import {
   PlaceReview,
   reviewKey,
   ReviewAuthor,
+  ReviewVote,
   saveMyReview,
   setCachedMyReview,
   sortReviews,
+  voteOnReview,
 } from '../lib/reviews';
 import { usePlaceReviews } from '../lib/usePlaceReviews';
 import { Avatar } from './Avatar';
@@ -60,7 +62,7 @@ export const PlaceReviews: React.FC<PlaceReviewsProps> = ({
 }) => {
   const key = reviewKey(placeId, category);
   const myUid = viewer?.uid ?? null;
-  const { reviews, failed, author } = usePlaceReviews(key, myUid);
+  const { reviews, failed, author, myVote } = usePlaceReviews(key, myUid);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -98,6 +100,18 @@ export const PlaceReviews: React.FC<PlaceReviewsProps> = ({
     } finally {
       setSaving(false);
     }
+  };
+
+  const vote = (authorUid: string, value: ReviewVote) => {
+    if (!viewer) return;
+    const next = myVote(authorUid) === value ? 0 : value;
+    setError(null);
+    voteOnReview(db, key, authorUid, viewer.uid, next)
+      .then(() => trackEvent('vote_review', { category, vote: next }))
+      .catch((err) => {
+        console.error('Failed to vote on review:', err);
+        setError('Couldn’t save your vote – try again');
+      });
   };
 
   const remove = async () => {
@@ -179,6 +193,8 @@ export const PlaceReviews: React.FC<PlaceReviewsProps> = ({
                 author={review.uid === myUid ? viewerAuthor() ?? author(review.uid) : author(review.uid)}
                 isMine={review.uid === myUid}
                 isFriend={friendSet.has(review.uid)}
+                vote={myVote(review.uid)}
+                onVote={viewer && review.uid !== myUid ? (value) => vote(review.uid, value) : undefined}
                 onEdit={review.uid === myUid && canWrite ? startEditing : undefined}
                 onDelete={review.uid === myUid ? () => setConfirmDelete(true) : undefined}
               />
@@ -205,9 +221,13 @@ const ReviewRow: React.FC<{
   author: ReviewAuthor | null | undefined;
   isMine: boolean;
   isFriend: boolean;
+  /** The viewer's vote on it */
+  vote: ReviewVote;
+  /** Unset on your own review, and when signed out (counts still show) */
+  onVote?: (value: 1 | -1) => void;
   onEdit?: () => void;
   onDelete?: () => void;
-}> = ({ review, author, isMine, isFriend, onEdit, onDelete }) => {
+}> = ({ review, author, isMine, isFriend, vote, onVote, onEdit, onDelete }) => {
   const [expanded, setExpanded] = useState(false);
   const long = review.text.length > CLAMP_CHARS || review.text.split('\n').length > 5;
   const name = author?.name || 'jelly member';
@@ -253,8 +273,10 @@ const ReviewRow: React.FC<{
               {expanded ? 'Less' : 'More'}
             </button>
           )}
-          {(onEdit || onDelete) && (
-            <div className="mt-1.5 flex items-center gap-1 -ml-2">
+          <div className="mt-1.5 flex items-center gap-1 -ml-2">
+            <VoteButton kind="up" count={review.up} active={vote === 1} isMine={isMine} onClick={onVote && (() => onVote(1))} />
+            <VoteButton kind="down" count={review.down} active={vote === -1} isMine={isMine} onClick={onVote && (() => onVote(-1))} />
+            {(onEdit || onDelete) && <span className="w-px h-4 mx-1 bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />}
               {onEdit && (
                 <button
                   type="button"
@@ -275,11 +297,46 @@ const ReviewRow: React.FC<{
                   Delete
                 </button>
               )}
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </li>
+  );
+};
+
+/** Thumbs up / down with its count: a toggle for others' reviews, just the count on yours or signed out. */
+const VoteButton: React.FC<{ kind: 'up' | 'down'; count: number; active: boolean; isMine: boolean; onClick?: () => void }> = ({
+  kind,
+  count,
+  active,
+  isMine,
+  onClick,
+}) => {
+  const Icon = kind === 'up' ? ThumbsUp : ThumbsDown;
+  const word = kind === 'up' ? 'Helpful' : 'Not helpful';
+  const label = `${word}${count > 0 ? ` (${count})` : ''}`;
+  const activeClass =
+    kind === 'up'
+      ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10'
+      : 'text-rose-600 dark:text-rose-400 bg-rose-500/10';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      aria-pressed={onClick ? active : undefined}
+      aria-label={label}
+      title={onClick ? word : isMine ? `${word} votes on your review` : 'Sign in to vote'}
+      data-testid={`review-vote-${kind}`}
+      className={`min-w-11 h-8 px-2 rounded-lg text-[11px] font-semibold tabular-nums flex items-center justify-center gap-1 transition-colors disabled:cursor-default ${
+        active
+          ? activeClass
+          : `text-zinc-400 dark:text-zinc-500 ${onClick ? 'hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-95' : ''}`
+      }`}
+    >
+      <Icon className={`w-3.5 h-3.5 ${active ? 'fill-current/20' : ''}`} aria-hidden="true" />
+      {count > 0 && <span>{count}</span>}
+    </button>
   );
 };
 

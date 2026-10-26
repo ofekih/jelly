@@ -47,7 +47,7 @@ const ForYouRow: React.FC<ForYouRowProps> = ({
   const { prediction } = item;
   const subtitleParts = [
     item.cuisines[0],
-    spotPrice(item, item.category, { compact: true }),
+    spotPrice(item, item.category),
     spotPlaceLabel(item),
     formatDistanceMiles(getItemDistanceMiles(item, userLocation)),
   ].filter(Boolean);

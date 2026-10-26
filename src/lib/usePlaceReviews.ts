@@ -6,6 +6,7 @@ import {
   getCachedReviews,
   loadReviews,
   ReviewAuthor,
+  ReviewVote,
   subscribeReviewCache,
 } from './reviews';
 
@@ -36,5 +37,6 @@ export function usePlaceReviews(key: string | null, myUid?: string | null) {
   // A cache entry written only by your own post (at 0) hasn't loaded everyone else's yet
   const reviews = cached && cached.at > 0 ? cached.reviews : undefined;
   const author = useCallback((uid: string): ReviewAuthor | null | undefined => getCachedAuthor(uid), []);
-  return { reviews, failed, author };
+  const myVote = (authorUid: string): ReviewVote => cached?.myVotes[authorUid] ?? 0;
+  return { reviews, failed, author, myVote };
 }

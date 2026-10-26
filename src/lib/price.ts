@@ -1,6 +1,7 @@
 /**
  * Prices: Google's tier (`priceLevel`: 0 = free, 1 = $ … 4 = $$$$) and, when Google knows it, the
- * typical spend per person (`priceRange`, e.g. USD 20–30, or USD 100+ with no end).
+ * typical spend per person (`priceRange`, e.g. USD 20–30, or USD 100+ with no end). The range is
+ * shown when it's known, the tier only when it isn't.
  *
  * The tier is always drawn with `$` whatever the local currency: it's a relative scale (Google
  * Maps uses it the same way), it can be set by hand for spots that have no currency at all, and a
@@ -131,15 +132,13 @@ export function formatPriceRange(range: PriceRange | undefined, locale?: string)
 }
 
 /**
- * The price as one short line: `$$`, `$$ · $20–30`, `$100+`, `Free`. `compact` gives the tier
- * alone when there is one (list rows), falling back to the range.
+ * The price as one short line: Google's per-person range when it's known (`$20–30`, `$100+`, like
+ * Google Maps shows it), else the tier (`$$`), or `Free`.
  */
-export function formatPrice(info: PriceInfo, options: { compact?: boolean; locale?: string } = {}): string {
-  const tier = priceTierLabel(info.priceLevel);
-  if (options.compact && tier) return tier;
+export function formatPrice(info: PriceInfo, options: { locale?: string } = {}): string {
   // A free spot has no spend to show
-  const range = info.priceLevel === 0 ? '' : formatPriceRange(info.priceRange, options.locale);
-  return [tier, range].filter(Boolean).join(' · ');
+  if (info.priceLevel === 0) return 'Free';
+  return formatPriceRange(info.priceRange, options.locale) || priceTierLabel(info.priceLevel);
 }
 
 /**

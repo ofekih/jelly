@@ -149,7 +149,7 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
 
   const subtitleParts = [
     primaryCuisine,
-    spotPrice(restaurant, restaurant.category, { compact: true }),
+    spotPrice(restaurant, restaurant.category),
     locationLabel,
     distLabel,
   ].filter(Boolean);
@@ -367,9 +367,11 @@ const SortableRestaurantRow: React.FC<SortableRestaurantRowProps> = ({
               !isDragDisabled ? 'touch-none' : ''
             }`}
           >
+            {/* Phones drag from the rank number (or a press-and-hold anywhere), so the grip only
+                shows for a mouse, where it hints the row can be dragged */}
             {!isDragDisabled && (
               <span
-                className="p-1 -ml-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 group-hover:text-zinc-400 dark:group-hover:text-zinc-500 transition-colors pointer-events-none"
+                className="pointer-coarse:hidden p-1 -ml-1.5 rounded-lg text-zinc-300 dark:text-zinc-700 group-hover:text-zinc-400 dark:group-hover:text-zinc-500 transition-colors pointer-events-none"
                 aria-hidden="true"
               >
                 <GripVertical className="w-4 h-4" />

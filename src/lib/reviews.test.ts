@@ -1,6 +1,7 @@
 import { Timestamp } from 'firebase/firestore';
 import { describe, expect, it } from 'vitest';
 import {
+  applyVote,
   cleanReviewText,
   formatReviewDate,
   parseReview,
@@ -41,7 +42,9 @@ describe('cleanReviewText', () => {
 describe('parseReview', () => {
   it('reads timestamps and rejects malformed docs', () => {
     const r = parseReview('u1', { text: 'Hi', score: 8, createdAt: Timestamp.fromMillis(5), updatedAt: 9 });
-    expect(r).toEqual({ uid: 'u1', text: 'Hi', score: 8, createdAt: 5, updatedAt: 9 });
+    expect(r).toEqual({ uid: 'u1', text: 'Hi', score: 8, createdAt: 5, updatedAt: 9, up: 0, down: 0 });
+    expect(parseReview('u1', { text: 'Hi', score: 8, up: 3, down: 1 })).toMatchObject({ up: 3, down: 1 });
+    expect(parseReview('u1', { text: 'Hi', score: 8, up: -2, down: 'x' })).toMatchObject({ up: 0, down: 0 });
     expect(parseReview('u1', { text: '', score: 8 })).toBeNull();
     expect(parseReview('u1', { text: 'Hi' })).toBeNull();
     expect(parseReview('u1', undefined)).toBeNull();
@@ -49,7 +52,7 @@ describe('parseReview', () => {
 });
 
 describe('sortReviews', () => {
-  const r = (uid: string, updatedAt: number): PlaceReview => ({ uid, text: uid, score: 7, createdAt: 0, updatedAt });
+  const r = (uid: string, updatedAt: number): PlaceReview => ({ uid, text: uid, score: 7, createdAt: 0, updatedAt, up: 0, down: 0 });
 
   it('puts yours first, then friends, newest first within each', () => {
     const sorted = sortReviews([r('a', 5), r('friend1', 1), r('me', 0), r('b', 9), r('friend2', 3)], 'me', new Set(['friend1', 'friend2']));
@@ -76,5 +79,17 @@ describe('formatReviewDate', () => {
   it('shows a date for older ones, with the year only when it differs', () => {
     expect(formatReviewDate(new Date(2026, 8, 1).getTime(), now)).toBe('Sep 1');
     expect(formatReviewDate(new Date(2025, 8, 1).getTime(), now)).toBe('Sep 2025');
+  });
+});
+
+describe('applyVote', () => {
+  const r: PlaceReview = { uid: 'a', text: 'x', score: 7, createdAt: 0, updatedAt: 0, up: 2, down: 1 };
+  it('adds, switches and removes a vote', () => {
+    expect(applyVote(r, 0, 1)).toMatchObject({ up: 3, down: 1 });
+    expect(applyVote(r, 1, -1)).toMatchObject({ up: 1, down: 2 });
+    expect(applyVote(r, -1, 0)).toMatchObject({ up: 2, down: 0 });
+  });
+  it('never goes below zero', () => {
+    expect(applyVote({ ...r, up: 0 }, 1, 0)).toMatchObject({ up: 0 });
   });
 });

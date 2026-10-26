@@ -33,3 +33,22 @@ export async function syncPlaceReview(db: Firestore, uid: string, key: PlaceKey)
     else if (action !== 'none') tx.update(reviewRef, { score: action.score });
   });
 }
+
+/**
+ * Recounts a review's thumbs up / down from its `votes` (a recount, not an increment, so retried
+ * or concurrent triggers still land on the right numbers). Skipped once the review is gone.
+ */
+export async function recountReviewVotes(db: Firestore, placeKey: string, authorUid: string): Promise<void> {
+  const reviewRef = db.doc(`placeReviews/${placeKey}/reviews/${authorUid}`);
+  const votes = reviewRef.collection('votes');
+  const [up, down] = await Promise.all([
+    votes.where('value', '==', 1).count().get(),
+    votes.where('value', '==', -1).count().get(),
+  ]);
+  try {
+    await reviewRef.update({ up: up.data().count, down: down.data().count });
+  } catch (err: any) {
+    // NOT_FOUND: the review was deleted meanwhile
+    if (err?.code !== 5) throw err;
+  }
+}

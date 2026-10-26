@@ -26,6 +26,10 @@ import { fetchProfiles, placeStatKey } from './socialService';
  * review at once. The rules only accept a review for a spot the author has ranked, with its
  * current score; the `onRestaurantWritten` function keeps `score` in step as the list shifts and
  * deletes the review when the spot leaves their list.
+ *
+ * Anyone signed in can give someone else's review a thumbs up or down: one private doc per voter
+ * at `…/reviews/{author}/votes/{voterUid}`; the `onReviewVoteWritten` function recounts the
+ * review's `up` / `down` from them.
  */
 
 export const REVIEW_MAX_LENGTH = 2000;
@@ -38,7 +42,13 @@ export interface PlaceReview {
   score: number;
   createdAt: number;
   updatedAt: number;
+  /** Thumbs up / down counts (kept by the server) */
+  up: number;
+  down: number;
 }
+
+/** 1 = thumbs up, -1 = thumbs down, 0 = no vote */
+export type ReviewVote = 1 | -1 | 0;
 
 export interface ReviewAuthor {
   name: string;
@@ -66,6 +76,8 @@ export function cleanReviewText(text: string): string | null {
   return clean.length >= 1 && clean.length <= REVIEW_MAX_LENGTH ? clean : null;
 }
 
+const toCount = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+
 function toMillis(value: unknown): number {
   if (value instanceof Timestamp) return value.toMillis();
   if (typeof value === 'number') return value;
@@ -80,6 +92,8 @@ export function parseReview(uid: string, data: DocumentData | undefined): PlaceR
     score: data.score,
     createdAt: toMillis(data.createdAt),
     updatedAt: toMillis(data.updatedAt),
+    up: toCount(data.up),
+    down: toCount(data.down),
   };
 }
 
@@ -188,7 +202,44 @@ export async function saveMyReview(
     }
   }
   const now = Date.now();
-  return { uid, text: clean, score, createdAt: now, updatedAt: now };
+  return { uid, text: clean, score, createdAt: now, updatedAt: now, up: 0, down: 0 };
+}
+
+const voteRef = (db: Firestore, key: string, authorUid: string, voterUid: string) =>
+  doc(db, 'placeReviews', key, 'reviews', authorUid, 'votes', voterUid);
+
+/** Your votes on the given reviews (only your own vote docs are readable). */
+export async function fetchMyVotes(
+  db: Firestore,
+  key: string,
+  authorUids: string[],
+  voterUid: string
+): Promise<Record<string, ReviewVote>> {
+  const out: Record<string, ReviewVote> = {};
+  await Promise.all(
+    authorUids
+      .filter((author) => author !== voterUid)
+      .map(async (author) => {
+        const snap = await getDoc(voteRef(db, key, author, voterUid)).catch(() => null);
+        const value = snap?.exists() ? snap.get('value') : 0;
+        if (value === 1 || value === -1) out[author] = value;
+      })
+  );
+  return out;
+}
+
+/** Sets (or with 0, removes) your vote on someone else's review. */
+export async function saveMyVote(db: Firestore, key: string, authorUid: string, voterUid: string, vote: ReviewVote): Promise<void> {
+  const ref = voteRef(db, key, authorUid, voterUid);
+  if (vote === 0) await deleteDoc(ref);
+  else await setDoc(ref, { value: vote, updatedAt: serverTimestamp() });
+}
+
+/** A review's counts after your vote changes from `from` to `to` (shown before the server recounts). */
+export function applyVote(review: PlaceReview, from: ReviewVote, to: ReviewVote): PlaceReview {
+  const up = review.up - (from === 1 ? 1 : 0) + (to === 1 ? 1 : 0);
+  const down = review.down - (from === -1 ? 1 : 0) + (to === -1 ? 1 : 0);
+  return { ...review, up: Math.max(0, up), down: Math.max(0, down) };
 }
 
 export async function deleteMyReview(db: Firestore, key: string, uid: string): Promise<void> {
@@ -202,6 +253,8 @@ export async function deleteMyReview(db: Firestore, key: string, uid: string): P
 export interface CachedReviews {
   reviews: PlaceReview[];
   at: number;
+  /** The viewer's votes, by review author */
+  myVotes: Record<string, ReviewVote>;
 }
 
 const STALE_MS = 3 * 60 * 1000;
@@ -233,20 +286,52 @@ export async function loadReviews(db: Firestore, key: string, myUid?: string | n
   const cached = reviewCache.get(key);
   if (!force && cached && Date.now() - cached.at < STALE_MS) return;
   const reviews = await fetchPlaceReviews(db, key, myUid);
+  const myVotes = myUid && reviews.length > 0 ? await fetchMyVotes(db, key, reviews.map((r) => r.uid), myUid) : {};
   const missing = reviews.map((r) => r.uid).filter((uid) => !authorCache.has(uid));
   if (missing.length > 0) {
     const authors = await fetchReviewAuthors(db, missing).catch(() => ({}) as Record<string, ReviewAuthor>);
     for (const uid of missing) authorCache.set(uid, authors[uid] ?? null);
   }
-  reviewCache.set(key, { reviews, at: Date.now() });
+  reviewCache.set(key, { reviews, at: Date.now(), myVotes });
   notify();
 }
 
-/** Puts (or with `null`, removes) your own review in the cache after a write. */
+/** Puts (or with `null`, removes) your own review in the cache after a write; an edit keeps its vote counts. */
 export function setCachedMyReview(key: string, uid: string, review: PlaceReview | null, author?: ReviewAuthor): void {
   const cached = reviewCache.get(key);
+  const prev = cached?.reviews.find((r) => r.uid === uid);
   const others = (cached?.reviews ?? []).filter((r) => r.uid !== uid);
-  reviewCache.set(key, { reviews: review ? [review, ...others] : others, at: cached?.at ?? 0 });
+  // An edit keeps the votes the review already had
+  const next = review && prev ? { ...review, up: prev.up, down: prev.down } : review;
+  reviewCache.set(key, { reviews: next ? [next, ...others] : others, at: cached?.at ?? 0, myVotes: cached?.myVotes ?? {} });
   if (author) authorCache.set(uid, author);
   notify();
+}
+
+/**
+ * Votes on a review: updates the cache at once (your vote and the counts), then saves; on failure
+ * puts both back and rethrows.
+ */
+export async function voteOnReview(db: Firestore, key: string, authorUid: string, voterUid: string, vote: ReviewVote): Promise<void> {
+  const cached = reviewCache.get(key);
+  if (!cached || authorUid === voterUid) return;
+  const from = cached.myVotes[authorUid] ?? 0;
+  if (from === vote) return;
+  const setVote = (prev: ReviewVote, next: ReviewVote) => {
+    const current = reviewCache.get(key);
+    if (!current) return;
+    const myVotes = { ...current.myVotes };
+    if (next === 0) delete myVotes[authorUid];
+    else myVotes[authorUid] = next;
+    const reviews = current.reviews.map((r) => (r.uid === authorUid ? applyVote(r, prev, next) : r));
+    reviewCache.set(key, { ...current, reviews, myVotes });
+    notify();
+  };
+  setVote(from, vote);
+  try {
+    await saveMyVote(db, key, authorUid, voterUid, vote);
+  } catch (err) {
+    setVote(vote, from);
+    throw err;
+  }
 }
