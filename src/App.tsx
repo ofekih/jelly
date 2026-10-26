@@ -82,7 +82,7 @@ import {
   getSpotSocialMetrics,
   sanitizeHandle,
 } from './lib/friendsService';
-import { isMediaPlaceId } from './lib/tasteModel';
+import { isMediaPlaceId, isSameSpot } from './lib/tasteModel';
 import { isFilterActive, matchesSpotFilters, sortByDistance, SpotFilters } from './lib/spotFilters';
 import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './components/GameNightSelect';
 import { BookmarkList } from './components/BookmarkList';
@@ -1017,8 +1017,11 @@ export const App: React.FC = () => {
     openRankFor(bookmark);
   };
 
-  /** Opens the rank flow for a spot that isn't in your list yet (a bookmark or a "For you" pick). */
-  const openRankFor = (bookmark: BookmarkEntry) => {
+  /**
+   * Opens the rank flow for a spot that isn't in your list yet (a bookmark, a "For you" pick, or a
+   * spot on someone else's list). Only the place facts come along, never their notes or scores.
+   */
+  const openRankFor = (bookmark: BookmarkEntry | RestaurantEntry) => {
     const pseudoEntry: RestaurantEntry = {
       id: buildEntryId(bookmark.placeId || bookmark.id, bookmark.category),
       placeId: bookmark.placeId || bookmark.id,
@@ -1554,6 +1557,12 @@ export const App: React.FC = () => {
       serverPrediction: predictionFor(activeDetailSpot),
     });
   }, [activeDetailSpot, user, restaurants, friendLists, detailStatFor, detailStatKey, predictionFor]);
+
+  // On someone else's list: your own entry for the open spot in the same list, if you've ranked it
+  const myEntryForDetailSpot = useMemo(() => {
+    if (!sharedList || !activeDetailSpot) return null;
+    return restaurants.find((r) => r.category === activeDetailSpot.category && isSameSpot(r, activeDetailSpot)) ?? null;
+  }, [sharedList, activeDetailSpot, restaurants]);
 
   const isDetailSpotBookmarkedByMe = useMemo(() => {
     if (!activeDetailSpot) return false;
@@ -2404,6 +2413,16 @@ export const App: React.FC = () => {
                     sharedList.ownerName,
                     sharedList.ownerUid || sharedList.id
                   )
+              : undefined
+          }
+          myEntry={myEntryForDetailSpot}
+          onRankForMe={
+            sharedList
+              ? (spot: RestaurantEntry) => {
+                  trackEvent('rank_from_friend_list', { category: spot.category });
+                  setRankingBookmark(null);
+                  openRankFor(spot);
+                }
               : undefined
           }
           onClose={() => setActiveDetailSpot(null)}

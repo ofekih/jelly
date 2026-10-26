@@ -286,3 +286,33 @@ test('thumbs up / down on a review shows at once, toggles off, and is remembered
   await down.click();
   await expect(down).toHaveAttribute('aria-pressed', 'false');
 });
+
+test("a spot on a friend's list can be ranked straight into your own list", async ({ page }) => {
+  await page.getByRole('button', { name: 'Riley' }).click();
+  await page.getByText('Taqueria Luna').click();
+  await page.getByRole('button', { name: 'Been here – rank it' }).click();
+  await page.getByRole('button', { name: 'Incredible', exact: true }).click();
+
+  const prompt = page.getByText(/which do you prefer/i);
+  await expect(prompt).toBeVisible();
+  while (await prompt.isVisible()) {
+    await page.getByRole('button', { name: /Taqueria Luna.*Tap to pick/ }).click();
+    await page.waitForTimeout(250);
+  }
+  await page.getByTestId('review-prompt').getByRole('button', { name: 'Skip' }).click();
+  await expect(page.getByText('Ranked Taqueria Luna #1 in Restaurants')).toBeVisible();
+
+  // Still on Riley's list: the sheet now shows your own rank instead
+  await page.getByText('Taqueria Luna', { exact: true }).click();
+  await expect(page.getByText('#1 in your Restaurants')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Been here – rank it' })).toBeHidden();
+
+  await page.reload();
+  await expect(page.getByText('Noodle Bar Uno')).toBeVisible();
+  expect(await page.locator('main').innerText()).toContain('Taqueria Luna');
+  // Riley's note stays theirs (quoted under Friends, not copied into your notes)
+  await page.getByText('Taqueria Luna').first().click();
+  await expect(page.getByRole('button', { name: 'Re-rank Taqueria Luna' })).toBeVisible();
+  await expect(page.getByText('“Al pastor tacos”')).toBeVisible();
+  await expect(page.getByText('Al pastor tacos', { exact: true })).toBeHidden();
+});

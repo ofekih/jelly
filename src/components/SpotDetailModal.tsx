@@ -48,6 +48,10 @@ interface SpotDetailModalProps {
   socialMetrics?: SpotSocialMetrics | null;
   isBookmarkedInMyList?: boolean;
   onSaveFromFriendToBookmark?: (restaurant: RestaurantEntry) => void;
+  /** On someone else's list: your own entry for the same spot in the same list, if you've ranked it */
+  myEntry?: RestaurantEntry | null;
+  /** On someone else's list: rank their spot in your own list ("Been here – rank it") */
+  onRankForMe?: (restaurant: RestaurantEntry) => void;
   onClose: () => void;
   onReRank: (restaurant: RestaurantEntry) => void;
   onSaveEdits: (
@@ -72,6 +76,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   socialMetrics = null,
   isBookmarkedInMyList = false,
   onSaveFromFriendToBookmark,
+  myEntry = null,
+  onRankForMe,
   onClose,
   onReRank,
   onSaveEdits,
@@ -386,22 +392,25 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                         </div>
                       </div>
 
+                      {/* On someone else's list, a spot you've ranked shows your real score, not a guess */}
                       <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 p-2">
                         <div className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                          For You
+                          {myEntry ? 'You' : 'For You'}
                         </div>
                         <div className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300 mt-0.5 tabular-nums">
-                          {socialMetrics.predictedScore !== null
-                            ? `~${socialMetrics.predictedScore.toFixed(1)}`
-                            : '—'}
+                          {myEntry
+                            ? myEntry.magicScore.toFixed(1)
+                            : socialMetrics.predictedScore !== null
+                              ? `~${socialMetrics.predictedScore.toFixed(1)}`
+                              : '—'}
                         </div>
                         <div className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80">
-                          Predicted
+                          {myEntry ? 'Your score' : 'Predicted'}
                         </div>
                       </div>
                     </div>
 
-                    {socialMetrics.predictionBasis && socialMetrics.predictedScore !== null && (
+                    {!myEntry && socialMetrics.predictionBasis && socialMetrics.predictedScore !== null && (
                       <div className="text-[11px] text-zinc-500 dark:text-zinc-400 text-center">
                         {socialMetrics.predictionBasis}
                       </div>
@@ -527,7 +536,44 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-2 pt-1">
-                  {onSaveFromFriendToBookmark && (
+                  {myEntry ? (
+                    // Already in your list: your own rank and score, and a way to re-rank it
+                    <div className="flex items-center gap-3 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 p-2.5 pl-3.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">You ranked it</p>
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                          #{myEntry.rankIndex + 1} in your {CATEGORY_LABEL[myEntry.category]}
+                        </p>
+                      </div>
+                      <ScoreBadge score={myEntry.magicScore} size="sm" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onReRank(myEntry);
+                        }}
+                        className="shrink-0 py-2.5 px-3.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Re-rank
+                      </button>
+                    </div>
+                  ) : (
+                    onRankForMe && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onRankForMe(restaurant);
+                        }}
+                        className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Check className="w-4 h-4" strokeWidth={2.5} />
+                        <span>{copy.done} – rank it</span>
+                      </button>
+                    )
+                  )}
+                  {onSaveFromFriendToBookmark && !myEntry && (
                     <button
                       type="button"
                       onClick={() => {
@@ -537,7 +583,9 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       className={`w-full py-3 px-4 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-colors ${
                         isBookmarkedInMyList
                           ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                          : onRankForMe
+                            ? 'bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200'
+                            : 'bg-emerald-600 hover:bg-emerald-500 text-white'
                       }`}
                     >
                       <Bookmark

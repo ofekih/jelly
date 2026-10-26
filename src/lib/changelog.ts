@@ -17,6 +17,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.3.0',
+    date: '2026-10-25',
+    title: 'Been there too?',
+    highlights: [
+      'On a friend’s list, tap a spot and “Been here – rank it” to rank it in your own list right away',
+      'Spots you’ve already ranked show your own rank and score there instead, with a quick Re-rank',
+    ],
+  },
+  {
     version: '4.2.0',
     date: '2026-10-25',
     title: 'Helpful reviews',
