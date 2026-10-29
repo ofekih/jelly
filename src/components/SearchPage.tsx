@@ -713,14 +713,14 @@ const ResultRow: React.FC<ResultRowProps> = ({
         <button
           type="button"
           onClick={onRank}
-          aria-label={`${ranked ? 'Re-rank' : 'Rank'} ${item.name}`}
+          aria-label={`${ranked ? 'Rank again' : 'Rank'} ${item.name}`}
           className={`h-9 px-3.5 rounded-full text-[13px] font-bold transition-colors active:scale-95 ${
             ranked
               ? 'bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200'
               : 'bg-emerald-500 text-white dark:text-zinc-950 hover:bg-emerald-600 dark:hover:bg-emerald-400'
           }`}
         >
-          {ranked ? 'Re-rank' : 'Rank'}
+          {ranked ? 'Rank again' : 'Rank'}
         </button>
       </div>
     </div>

@@ -57,7 +57,7 @@ test('shows the seeded account with friends and community scores', async ({ page
 
 test('re-ranking with side-by-side moves the spot and keeps its notes', async ({ page }) => {
   await page.getByText('Golden Dumpling House').click();
-  await page.getByRole('button', { name: 'Re-rank Golden Dumpling House' }).click();
+  await page.getByRole('button', { name: 'Re-rank in Restaurants' }).click();
   await page.getByRole('button', { name: 'Incredible', exact: true }).click();
 
   // Prefer it every time: it should end up #1
@@ -207,7 +207,7 @@ test('uploading a profile photo shows it everywhere, and removing it goes back',
 test('a review posted after ranking shows on the spot sheet, and is edited when re-ranking again', async ({ page }) => {
   const rerankTrattoria = async () => {
     await page.getByText('Trattoria Sole').first().click();
-    await page.getByRole('button', { name: 'Re-rank Trattoria Sole' }).click();
+    await page.getByRole('button', { name: 'Re-rank in Restaurants' }).click();
     await page.getByRole('button', { name: 'Good', exact: true }).click();
     const prompt = page.getByText(/which do you prefer/i);
     await expect(prompt).toBeVisible();
@@ -312,7 +312,7 @@ test("a spot on a friend's list can be ranked straight into your own list", asyn
   expect(await page.locator('main').innerText()).toContain('Taqueria Luna');
   // Riley's note stays theirs (quoted under Friends, not copied into your notes)
   await page.getByText('Taqueria Luna').first().click();
-  await expect(page.getByRole('button', { name: 'Re-rank Taqueria Luna' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Re-rank in Restaurants' })).toBeVisible();
   await expect(page.getByText('“Al pastor tacos”')).toBeVisible();
   await expect(page.getByText('Al pastor tacos', { exact: true })).toBeHidden();
 });

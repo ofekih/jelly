@@ -17,6 +17,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.5.1',
+    date: '2026-10-28',
+    title: 'Pick the list first',
+    highlights: [
+      'Ranking a place that fits more than one list? Choose the list first, then tap how you feel—and if it\'s already in that list, you\'ll see your old rating on the line',
+      'The button on a place you\'ve already ranked now says "Rank again", and its sheet says which list you\'re ranking in',
+    ],
+  },
+  {
     version: '4.5.0',
     date: '2026-10-28',
     title: 'Move a spot to another list',

@@ -512,7 +512,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    <span>Re-rank {restaurant.name}</span>
+                    <span>Re-rank in {CATEGORY_LABEL[restaurant.category]}</span>
                   </button>
 
                   {onMove && moveTargets.length > 0 && (

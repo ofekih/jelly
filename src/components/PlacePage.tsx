@@ -339,7 +339,7 @@ const PlaceScreen: React.FC<PlacePageProps & { candidate: PlaceCandidate; visibl
                 onClick={onRank}
                 className="flex-[1.4] h-12 px-4 rounded-2xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 shadow-sm active:scale-[0.98] transition"
               >
-                {ranked ? 'Re-rank' : `${copy.done} – rank it`}
+                {ranked ? 'Rank again' : `${copy.done} – rank it`}
               </button>
             )}
           </div>
