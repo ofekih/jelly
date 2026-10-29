@@ -21,7 +21,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: '2026-10-28',
     title: 'Move a spot to another list',
     highlights: [
-      'Ranked something as a bakery that belongs in coffee & tea? Open it and tap "Move to another list"—your rating, notes and history come along, and you just place it against the new list',
+      'Ranked something as a bakery that belongs in coffee & tea? Open it and tap "Move to another list"—you re-rate it, then place it against the new list, and your notes and history come along',
     ],
   },
   {

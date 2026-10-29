@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Bookmark, MapPin, X } from 'lucide-react';
-import { BackIcon } from './PlatformIcons';
 import {
   CATEGORY_EMOJI,
   CATEGORY_GROUP,
@@ -61,38 +60,34 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
   const isTitles = !copy.hasLocation;
   useBodyScrollLock();
   const swipe = useSwipeDownDismiss({ onClose });
-  const previous = reRankingEntry ? Math.round(reRankingEntry.initialRating * 10) / 10 : null;
-  const [step, setStep] = useState<'q1_rating' | 'q2_category'>('q1_rating');
-  const [selectedRating, setSelectedRating] = useState<number>(previous ?? 8);
+  const candidateCategories = reRankingEntry ? [reRankingEntry.category] : categoryOptions(candidate, searchCategory);
+  const [category, setCategory] = useState<SpotCategory>(candidateCategories[0]);
+  // The entry this rating replaces: the one being re-ranked, or your entry in the chosen list
+  const existingInCategory = reRankingEntry ?? findExistingInCategory(candidate, category, existingRestaurants);
+  const previous = existingInCategory ? Math.round(existingInCategory.initialRating * 10) / 10 : null;
   const [previewRating, setPreviewRating] = useState<number | null>(previous);
   const [isDraggingLine, setIsDraggingLine] = useState(false);
   const [showAllCategories, setShowAllCategories] = useState(false);
-
-  const candidateCategories = reRankingEntry ? [reRankingEntry.category] : categoryOptions(candidate, searchCategory);
   const displayedCategories = showAllCategories
     ? Array.from(new Set([...candidateCategories, ...GROUP_CATEGORIES[group]]))
     : candidateCategories;
 
-  const finishWithCategory = (rating: number, category: SpotCategory) => {
-    // This exact (placeId + list) or (name + address + list) may already be ranked: replace it
-    const existingMatch = reRankingEntry || findExistingInCategory(candidate, category, existingRestaurants);
-    onComplete(candidate, rating, category, existingMatch?.id);
+  const pickCategory = (next: SpotCategory) => {
+    setCategory(next);
+    // Show what you rated it in that list (if anything) on the line
+    const entry = findExistingInCategory(candidate, next, existingRestaurants);
+    setPreviewRating(entry ? Math.round(entry.initialRating * 10) / 10 : null);
   };
 
   const handlePickRating = (rawRating: number) => {
     const rating = Math.max(1.0, Math.min(10.0, Math.round(rawRating * 10) / 10));
-    setSelectedRating(rating);
     trackEvent('rate_initial_score', {
       restaurant_name: candidate.name,
       initial_rating: rating,
       is_rerank: Boolean(reRankingEntry),
     });
-    // One list fits (always when re-ranking): straight to the side-by-side
-    if (candidateCategories.length === 1) {
-      finishWithCategory(rating, candidateCategories[0]);
-      return;
-    }
-    setStep('q2_category');
+    // This exact (placeId + list) or (name + address + list) may already be ranked: replace it
+    onComplete(candidate, rating, category, existingInCategory?.id);
   };
 
   const computeRatingFromClientX = (clientX: number, rect: DOMRect): number => {
@@ -132,31 +127,9 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
           {...swipe.bindHandleTouch}
           className="px-5 pt-1 sm:pt-4 pb-2 flex items-center justify-between shrink-0 touch-none select-none"
         >
-          {step === 'q2_category' ? (
-            <button
-              type="button"
-              onClick={() => setStep('q1_rating')}
-              className="p-1.5 -ml-1.5 rounded-full text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              aria-label="Back"
-            >
-              <BackIcon className="w-5 h-5" />
-            </button>
-          ) : (
-            <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-              {reRankingEntry
-                ? `${existingRestaurants.some((r) => r.id === reRankingEntry.id) ? 'Re-rank' : 'Rank'} · ${
-                    CATEGORY_LABEL[reRankingEntry.category]
-                  }`
-                : candidateCategories.length > 1
-                ? 'Step 1 of 2'
-                : `Rank · ${CATEGORY_LABEL[candidateCategories[0]]}`}
-            </span>
-          )}
-          {step === 'q2_category' && (
-            <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-              Step 2 of 2
-            </span>
-          )}
+          <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+            {existingInCategory ? 'Re-rank' : 'Rank'} in {CATEGORY_LABEL[category]}
+          </span>
           <button
             type="button"
             onClick={onClose}
@@ -168,7 +141,7 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
         </div>
 
         <div className="px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:pb-6 overflow-y-auto flex-1">
-          {step === 'q1_rating' && (
+          {(
             <div className="py-2 space-y-5">
               <div className="text-center space-y-1">
                 {candidate.media?.poster && (
@@ -186,6 +159,51 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
                   </p>
                 )}
               </div>
+
+              {displayedCategories.length > 1 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100 text-center">
+                    Which list does this go in?
+                  </p>
+                  <div role="radiogroup" aria-label="List" className="flex flex-wrap justify-center gap-2">
+                    {displayedCategories.map((c) => {
+                      const existing = findExistingInCategory(candidate, c, existingRestaurants);
+                      const selected = c === category;
+                      return (
+                        <button
+                          key={c}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => pickCategory(c)}
+                          className={`py-2 px-3 rounded-full border text-sm font-semibold flex items-center gap-1.5 transition-colors active:scale-[0.98] ${
+                            selected
+                              ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300'
+                              : 'border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60 text-zinc-700 dark:text-zinc-200'
+                          }`}
+                        >
+                          <span>{CATEGORY_EMOJI[c]}</span>
+                          <span>{CATEGORY_LABEL[c]}</span>
+                          {existing && (
+                            <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+                              {existing.magicScore.toFixed(1)}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!showAllCategories && displayedCategories.length < GROUP_CATEGORIES[group].length && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllCategories(true)}
+                      className="block mx-auto text-xs font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                    >
+                      Show other lists...
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-3.5 pt-1">
                 <div className="text-center space-y-1">
@@ -207,7 +225,7 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
                   >
                     {previewRating === null
                       ? 'Slide or tap anywhere on the line'
-                      : getVibeLabel(previewRating, group, reRankingEntry?.category ?? candidateCategories[0])}
+                      : getVibeLabel(previewRating, group, category)}
                   </span>
                 </div>
 
@@ -218,7 +236,7 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
                     aria-label="Gut feeling spectrum"
                     aria-valuemin={1}
                     aria-valuemax={10}
-                    aria-valuenow={previewRating ?? selectedRating}
+                    aria-valuenow={previewRating ?? previous ?? 8}
                     tabIndex={0}
                     onPointerDown={(e) => {
                       e.currentTarget.setPointerCapture(e.pointerId);
@@ -303,48 +321,6 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
             </div>
           )}
 
-          {step === 'q2_category' && (
-            <div className="py-2 space-y-5">
-              <div className="text-center space-y-1">
-                <h2 className="text-xl font-bold">{candidate.name}</h2>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">Which list does this go in?</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2">
-                {displayedCategories.map((category) => {
-                  const existing = findExistingInCategory(candidate, category, existingRestaurants);
-                  return (
-                    <button
-                      key={category}
-                      type="button"
-                      onClick={() => finishWithCategory(selectedRating, category)}
-                      className="w-full py-3.5 px-4 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/60 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/30 hover:border-emerald-500/60 dark:hover:border-emerald-500/60 font-semibold text-sm flex items-center justify-between transition-all active:scale-[0.99]"
-                    >
-                      <span className="flex items-center gap-2.5">
-                        <span className="text-base">{CATEGORY_EMOJI[category]}</span>
-                        <span>{CATEGORY_LABEL[category]}</span>
-                      </span>
-                      {existing && (
-                        <span className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                          Already ranked ({existing.magicScore.toFixed(1)}) · Re-rank
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {!showAllCategories && displayedCategories.length < GROUP_CATEGORIES[group].length && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllCategories(true)}
-                  className="w-full text-center text-xs font-medium text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 pt-1"
-                >
-                  Show other lists...
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>

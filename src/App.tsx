@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { entryToCandidate, moveTargetsFor } from './lib/addFlow';
+import { moveTargetsFor } from './lib/addFlow';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -1168,6 +1168,9 @@ export const App: React.FC = () => {
   ) => {
     setIsAddModalOpen(false);
     setReRankingEntry(null);
+    const move = moveRef.current;
+    moveRef.current = null;
+    if (move && existingIdToReplace === move.toId) existingIdToReplace = move.fromId;
 
     const placement: PendingPlacement = {
       candidate,
@@ -1196,16 +1199,16 @@ export const App: React.FC = () => {
     setIsSxSOpen(true);
   };
 
-  // Moves a ranked spot to another list: keeps its gut rating, notes and history, and goes straight
-  // to side-by-side there (placeSpot replaces the old entry and the review follows as a draft)
+  // Moves a ranked spot to another list: the rating sheet opens on the new list with the old rating
+  // on the slider, then side-by-side there. placeSpot replaces the old entry, keeping its notes and
+  // history (the review follows as a draft). `moveRef` ties the old entry to the sheet's stand-in.
+  const moveRef = useRef<{ fromId: string; toId: string } | null>(null);
   const handleMoveSpot = (spot: RestaurantEntry, category: SpotCategory) => {
     trackEvent('move_spot', { from: spot.category, to: category });
-    return handleCompleteQuestions(
-      entryToCandidate({ ...spot, categories: [category, ...(spot.categories || [])] }),
-      spot.initialRating,
-      category,
-      spot.id
-    );
+    const toId = buildEntryId(spot.placeId || spot.id, category);
+    moveRef.current = { fromId: spot.id, toId };
+    setReRankingEntry({ ...spot, id: toId, category, categories: [category, ...(spot.categories || [])] });
+    setIsAddModalOpen(true);
   };
 
   const handleFinishPlacement = (placement: PendingPlacement, result: PlacementResult) => {
