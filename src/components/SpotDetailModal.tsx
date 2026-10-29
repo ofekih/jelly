@@ -62,6 +62,8 @@ interface SpotDetailModalProps {
   moveTargets?: SpotCategory[];
   /** Moves the spot to another list, keeping its gut rating, notes and history; then side-by-side there */
   onMove?: (restaurant: RestaurantEntry, category: SpotCategory) => void;
+  /** Opens with the "Move to" list picker already expanded (from the right-click menu) */
+  startMoving?: boolean;
   onSaveEdits: (
     id: string,
     updates: {
@@ -90,6 +92,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   onReRank,
   moveTargets = [],
   onMove,
+  startMoving = false,
   onSaveEdits,
   onDelete,
   renderReviews,
@@ -104,6 +107,11 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
 
   const priceOf = usePrices([restaurant?.placeId]);
   const itemPrice = priceOf(restaurant?.placeId);
+
+  const restaurantId = restaurant?.id;
+  useEffect(() => {
+    setIsMoving(startMoving);
+  }, [restaurantId, startMoving]);
 
   useEffect(() => {
     if (!restaurant) return;

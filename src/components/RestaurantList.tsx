@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowRightLeft, Bookmark, Copy, ExternalLink, Eye, GripVertical, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { hasLocation, spotPrice, wantLabel } from '../lib/groups';
 import { CommunityStat, getFriendMatchesForSpot, getSpotSocialMetrics, isSameSpot } from '../lib/friendsService';
@@ -476,6 +476,9 @@ interface RestaurantListProps {
   onReorderDragEnd: (activeId: string, overId: string) => void;
   onSelectSpot: (restaurant: RestaurantEntry) => void;
   onReRankSpot?: (restaurant: RestaurantEntry) => void;
+  /** Opens the spot with its "Move to" picker; only offered for spots `canMoveSpot` allows */
+  onMoveSpot?: (restaurant: RestaurantEntry) => void;
+  canMoveSpot?: (restaurant: RestaurantEntry) => boolean;
   onDeleteSpot?: (id: string) => void;
   onOpenAddModal: () => void;
 }
@@ -496,6 +499,8 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
   onReorderDragEnd,
   onSelectSpot,
   onReRankSpot,
+  onMoveSpot,
+  canMoveSpot,
   onDeleteSpot,
   onOpenAddModal,
 }) => {
@@ -537,6 +542,15 @@ export const RestaurantList: React.FC<RestaurantListProps> = ({
                 label: 'Re-rank Spot',
                 icon: <RefreshCw className="w-4 h-4 text-emerald-500" />,
                 onClick: () => onReRankSpot(contextMenu.restaurant!),
+              },
+            ]
+          : []),
+        ...(!readOnly && onMoveSpot && canMoveSpot?.(contextMenu.restaurant)
+          ? [
+              {
+                label: 'Move to another list',
+                icon: <ArrowRightLeft className="w-4 h-4 text-emerald-500" />,
+                onClick: () => onMoveSpot(contextMenu.restaurant!),
               },
             ]
           : []),

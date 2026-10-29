@@ -303,6 +303,7 @@ export const App: React.FC = () => {
   const [isOrderCheckOpen, setIsOrderCheckOpen] = useState(false);
   const [orderCheckSnoozed, setOrderCheckSnoozed] = useState<Set<SpotCategory>>(new Set());
   const [activeDetailSpot, setActiveDetailSpot] = useState<RestaurantEntry | null>(null);
+  const [detailStartsMoving, setDetailStartsMoving] = useState(false);
   // The optional public review step after a side-by-side (signed in only)
   const [reviewPrompt, setReviewPrompt] = useState<{
     entry: RestaurantEntry;
@@ -2322,8 +2323,14 @@ export const App: React.FC = () => {
                 magic_score: spot.magicScore,
                 rank_position: spot.rankIndex + 1,
               });
+              setDetailStartsMoving(false);
               setActiveDetailSpot(spot);
             }}
+            onMoveSpot={(spot) => {
+              setDetailStartsMoving(true);
+              setActiveDetailSpot(spot);
+            }}
+            canMoveSpot={(spot) => moveTargetsFor(spot, restaurants).length > 0}
             onReRankSpot={(spot) => {
               trackEvent('open_rerank_modal', {
                 restaurant_name: spot.name,
@@ -2468,7 +2475,10 @@ export const App: React.FC = () => {
                 }
               : undefined
           }
-          onClose={() => setActiveDetailSpot(null)}
+          onClose={() => {
+            setActiveDetailSpot(null);
+            setDetailStartsMoving(false);
+          }}
           onReRank={(spot) => {
             trackEvent('open_rerank_modal', {
               restaurant_name: spot.name,
@@ -2479,6 +2489,7 @@ export const App: React.FC = () => {
           }}
           moveTargets={isReadOnly || !activeDetailSpot ? [] : moveTargetsFor(activeDetailSpot, restaurants)}
           onMove={handleMoveSpot}
+          startMoving={detailStartsMoving}
           onSaveEdits={handleSaveSpotEdits}
           onDelete={handleDeleteRestaurant}
           renderReviews={renderPlaceReviews}
