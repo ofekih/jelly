@@ -12,6 +12,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import type { ItemPrice } from '../../src/types';
+import { bookPrice } from './books';
 import { boardGamePrice } from './gamePrice';
 import { videoGamePrice } from './steamPrice';
 
@@ -24,20 +25,40 @@ const MAX_ATTEMPTS = 5;
 export interface PriceContext {
   twitchClientId: string;
   twitchClientSecret: string;
+  googleBooksKey: string;
 }
 
-type Provider = (id: string, ctx: PriceContext) => Promise<ItemPrice | null>;
+/** What a provider may need beyond the ID: books have no ID of their own, so it's looked up by name */
+export interface PriceHint {
+  name?: string;
+  creator?: string;
+}
+
+/** The hint, from a ranked or saved spot's `name` and `media.creator` (undefined when it has neither) */
+export function priceHint(spot: any): PriceHint | undefined {
+  const name = typeof spot?.name === 'string' ? spot.name : undefined;
+  const creator = typeof spot?.media?.creator === 'string' ? spot.media.creator : undefined;
+  return name || creator ? { ...(name ? { name } : {}), ...(creator ? { creator } : {}) } : undefined;
+}
+
+type Provider = (id: string, ctx: PriceContext, hint: PriceHint, placeId: string) => Promise<ItemPrice | null>;
 
 /** Place ID prefix → where its price comes from */
 export const PROVIDERS: Record<string, Provider> = {
   bgg: (id) => boardGamePrice(id),
   igdb: (id, ctx) => videoGamePrice(id, ctx.twitchClientId, ctx.twitchClientSecret),
+  book: (_id, ctx, hint, placeId) =>
+    hint.name && hint.creator ? bookPrice(placeId, hint.name, hint.creator, ctx.googleBooksKey) : Promise.resolve(null),
 };
+
+/** Prefixes whose IDs are the source's own numbers; the rest (books) are made from title and author */
+const NUMERIC = new Set(['bgg', 'igdb']);
 
 /** `bgg:174430` → `{ prefix: 'bgg', id: '174430' }`, undefined for places and titles with no provider */
 export function parsePriceId(placeId: unknown): { prefix: string; id: string } | undefined {
-  const match = typeof placeId === 'string' ? placeId.match(/^([a-z]+):(\d+)$/) : null;
-  return match && match[1] in PROVIDERS ? { prefix: match[1], id: match[2] } : undefined;
+  const match = typeof placeId === 'string' ? placeId.match(/^([a-z]+):([^/]{1,200})$/) : null;
+  if (!match || !(match[1] in PROVIDERS)) return undefined;
+  return !NUMERIC.has(match[1]) || /^\d+$/.test(match[2]) ? { prefix: match[1], id: match[2] } : undefined;
 }
 
 const pricesDoc = (db: Firestore, placeId: string) => db.doc(`prices/${placeId}`);
@@ -50,15 +71,18 @@ export function isStale(price: { fetchedAt?: unknown; new?: unknown; used?: unkn
 }
 
 /** Queues a lookup when the title has a provider and its price is missing or stale. */
-export async function queuePrice(db: Firestore, placeId: unknown, now = Date.now()): Promise<boolean> {
+export async function queuePrice(db: Firestore, placeId: unknown, hint?: PriceHint, now = Date.now()): Promise<boolean> {
   if (!parsePriceId(placeId)) return false;
   const id = placeId as string;
   const stored = await pricesDoc(db, id).get();
   if (!isStale(stored.data(), now)) return false;
-  // create() keeps an existing job's retry count
-  await jobDoc(db, id).create({ queuedAt: now, attempts: 0 }).catch(() => undefined);
+  await enqueue(db, id, hint, now);
   return true;
 }
+
+/** create() keeps an existing job's retry count */
+const enqueue = (db: Firestore, placeId: string, hint: PriceHint | undefined, now: number) =>
+  jobDoc(db, placeId).create({ queuedAt: now, attempts: 0, ...(hint ? { hint } : {}) }).catch(() => undefined);
 
 /** Looks up the next queued prices; returns how many it stored. */
 export async function runPriceJobs(
@@ -78,8 +102,10 @@ export async function runPriceJobs(
           return;
         }
         try {
-          const price = await providers[parsed.prefix](parsed.id, ctx);
-          await pricesDoc(db, job.id).set({ ...(price ?? {}), fetchedAt: now });
+          const hint: PriceHint = job.get('hint') ?? {};
+          const price = await providers[parsed.prefix](parsed.id, ctx, hint, job.id);
+          // The hint stays with the price, so the weekly refresh can look it up again
+          await pricesDoc(db, job.id).set({ ...(price ?? {}), ...(job.get('hint') ? { hint } : {}), fetchedAt: now });
           await job.ref.delete();
           stored += 1;
         } catch (err) {
@@ -94,29 +120,30 @@ export async function runPriceJobs(
   return stored;
 }
 
-/** Every distinct place ID in anyone's ranked or saved spots that a provider knows. */
-async function listedPriceIds(db: Firestore): Promise<Set<string>> {
-  const ids = new Set<string>();
+/** Every distinct place ID in anyone's ranked or saved spots that a provider knows, with its hint. */
+async function listedPrices(db: Firestore): Promise<Map<string, PriceHint | undefined>> {
+  const listed = new Map<string, PriceHint | undefined>();
   for (const group of ['restaurants', 'bookmarks']) {
-    const snap = await db.collectionGroup(group).select('placeId').get();
+    const snap = await db.collectionGroup(group).select('placeId', 'name', 'media').get();
     for (const d of snap.docs) {
       if (d.ref.parent.parent?.parent.id !== 'users') continue;
       const placeId = d.get('placeId');
-      if (parsePriceId(placeId)) ids.add(placeId);
+      if (parsePriceId(placeId) && !listed.get(placeId)) listed.set(placeId, priceHint(d.data()));
     }
   }
-  return ids;
+  return listed;
 }
 
 /** Queues listed titles that have no price doc at all; returns how many were queued. */
 export async function queueMissingPrices(db: Firestore, now = Date.now()): Promise<number> {
-  const ids = [...(await listedPriceIds(db))];
+  const listed = await listedPrices(db);
+  const ids = [...listed.keys()];
   let queued = 0;
   for (let i = 0; i < ids.length; i += 100) {
     const docs = await db.getAll(...ids.slice(i, i + 100).map((id) => pricesDoc(db, id)));
     for (const doc of docs) {
       if (doc.exists) continue;
-      await jobDoc(db, doc.id).create({ queuedAt: now, attempts: 0 }).catch(() => undefined);
+      await enqueue(db, doc.id, listed.get(doc.id), now);
       queued += 1;
     }
   }
@@ -129,7 +156,7 @@ export async function queueStalePrices(db: Firestore, now = Date.now(), limit = 
   let queued = 0;
   for (const doc of old.docs) {
     if (!isStale(doc.data(), now) || !parsePriceId(doc.id)) continue;
-    await jobDoc(db, doc.id).create({ queuedAt: now, attempts: 0 }).catch(() => undefined);
+    await enqueue(db, doc.id, doc.get('hint'), now);
     queued += 1;
   }
   return queued;

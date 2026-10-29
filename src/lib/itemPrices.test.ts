@@ -5,7 +5,8 @@ describe('itemPrices', () => {
   it('knows which place IDs can have a price doc', () => {
     expect(hasPriceDoc('bgg:174430')).toBe(true);
     expect(hasPriceDoc('igdb:12')).toBe(true);
-    for (const id of ['tmdb:movie:5', 'book:a:b', 'ChIJabc', undefined]) expect(hasPriceDoc(id)).toBe(false);
+    expect(hasPriceDoc('book:weir:project-hail-mary')).toBe(true);
+    for (const id of ['tmdb:movie:5', 'ChIJabc', 'book:a/b', undefined]) expect(hasPriceDoc(id)).toBe(false);
   });
 
   it('reads stored docs and treats "nothing found" as no price', () => {
@@ -30,6 +31,12 @@ describe('itemPrices', () => {
   it('shows free and sale prices', () => {
     expect(priceParts({ new: { amount: 0, currency: 'USD' } })).toEqual([{ label: 'New', text: 'Free' }]);
     expect(priceParts({ new: { amount: 20, currency: 'USD', was: 40 } })).toEqual([{ label: 'New', text: '$20 (was $40)' }]);
+  });
+
+  it('calls a book\'s only price the ebook', () => {
+    const book = { source: 'google_books' as const, new: { amount: 9.99, currency: 'USD', was: 14.99 } };
+    expect(priceParts(book)).toEqual([{ label: 'Ebook', text: '$10 (was $15)' }]);
+    expect(priceLine(book)).toBe('Ebook $10');
   });
 
   it('gives list rows one short line and filters one number', () => {

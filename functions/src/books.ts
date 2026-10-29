@@ -6,7 +6,7 @@
  * surname and its title (`book:<surname>:<title>`): every edition of it is one book, however the
  * author's name is spelled ("J.R.R. Tolkien", "John Ronald Reuel Tolkien").
  */
-import type { BookResult } from '../../src/types';
+import type { BookResult, ItemPrice } from '../../src/types';
 
 const API = 'https://www.googleapis.com/books/v1/volumes';
 const MAX_RESULTS = 10;
@@ -145,4 +145,49 @@ export async function searchBooks(query: string, key: string, fetchFn: Fetch = f
   const data = await res.json();
   const books = (Array.isArray(data?.items) ? data.items : []).map(toBook).filter((b: BookResult | null): b is BookResult => b !== null);
   return mergeEditions(books).slice(0, MAX_RESULTS);
+}
+
+/** "Andy Weir, Someone Else & Third" → "Andy Weir" */
+export function firstAuthor(creator: string): string {
+  return creator.split(/,|&|\band\b/)[0].trim();
+}
+
+/**
+ * The cheapest ebook edition's price (Google Play Books, in dollars) of the book `placeId` names,
+ * or null when no edition is for sale or free. Google Books has no print prices.
+ */
+export async function bookPrice(
+  placeId: string,
+  title: string,
+  creator: string,
+  key: string,
+  fetchFn: Fetch = fetch
+): Promise<ItemPrice | null> {
+  const author = firstAuthor(creator);
+  const params = new URLSearchParams({
+    // Plain words: quoted `intitle:"…"` phrases come back empty for most books
+    q: `${cleanTitle(title)} ${author}`,
+    printType: 'books',
+    country: 'US',
+    maxResults: '30',
+    fields: 'items(volumeInfo(title,authors),saleInfo(saleability,isEbook,listPrice,retailPrice))',
+    key,
+  });
+  const res = await fetchFn(`${API}?${params}`);
+  if (!res.ok) throw new Error(`Google Books ${res.status}`);
+  const items: any[] = (await res.json())?.items ?? [];
+  let best: { amount: number; was?: number } | undefined;
+  for (const item of items) {
+    const sale = item?.saleInfo;
+    const authors: string[] = item?.volumeInfo?.authors ?? [];
+    if (!sale?.isEbook || !item?.volumeInfo?.title || authors.length === 0) continue;
+    // Other editions and companions of the search are a different book
+    if (bookPlaceId(item.volumeInfo.title, cleanAuthor(authors[0])) !== placeId) continue;
+    const amount = sale.saleability === 'FREE' ? 0 : sale.saleability === 'FOR_SALE' ? Number(sale.retailPrice?.amount) : NaN;
+    if (!Number.isFinite(amount) || amount < 0 || (amount > 0 && sale.retailPrice?.currencyCode !== 'USD')) continue;
+    if (best && best.amount <= amount) continue;
+    const list = Number(sale.listPrice?.amount);
+    best = { amount, ...(list > amount && sale.listPrice?.currencyCode === 'USD' ? { was: list } : {}) };
+  }
+  return best ? { source: 'google_books', new: { currency: 'USD', ...best } } : null;
 }

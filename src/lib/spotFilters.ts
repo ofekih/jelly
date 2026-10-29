@@ -18,7 +18,8 @@ export interface SpotFilters {
 }
 
 /** The lists whose titles have prices to filter by */
-export const hasPriceFilter = (category: SpotCategory): boolean => category === 'board_games' || category === 'video_games';
+export const hasPriceFilter = (category: SpotCategory): boolean =>
+  category === 'board_games' || category === 'video_games' || category === 'fiction' || category === 'nonfiction';
 
 /** A title's price: undefined while loading, null when unknown (see `usePrices`) */
 export type PriceLookup = (placeId: string | undefined) => ItemPrice | null | undefined;

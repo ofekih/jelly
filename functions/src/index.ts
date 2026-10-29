@@ -13,7 +13,7 @@ import { recountReviewVotes, syncPlaceReview } from './reviews';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
 import { searchBoardGames, searchVideoGames } from './games';
-import { queueMissingPrices, queuePrice, queueStalePrices, runPriceJobs } from './itemPrices';
+import { priceHint, queueMissingPrices, queuePrice, queueStalePrices, runPriceJobs } from './itemPrices';
 import { appHtml, cardHeading, listPreview, parseSharePath, previewMeta, siteOrigin, withShareMeta } from './sharePage';
 
 initializeApp();
@@ -42,7 +42,7 @@ export const onRestaurantWritten = onDocumentWritten(
     const keys = affectedPlaceKeys(before, after);
     const db = getFirestore();
     await Promise.all([
-      queuePrice(db, after?.placeId),
+      queuePrice(db, after?.placeId, priceHint(after)),
       ...keys.map((key) => recomputePlaceStat(db, key)),
       // Public reviews carry the author's score and only live while the spot is ranked
       ...keys.map((key) => syncPlaceReview(db, event.params.uid, key)),
@@ -75,7 +75,7 @@ export const onBookmarkWritten = onDocumentWritten('users/{uid}/bookmarks/{id}',
   const after = event.data?.after.data();
   if (before && after && before.placeId === after.placeId && before.category === after.category) return;
   const db = getFirestore();
-  await Promise.all([queuePrice(db, after?.placeId), markPredictionsDirty(db, event.params.uid)]);
+  await Promise.all([queuePrice(db, after?.placeId, priceHint(after)), markPredictionsDirty(db, event.params.uid)]);
 });
 
 /**
@@ -115,15 +115,20 @@ export const nightlyPredictions = onSchedule(
 );
 
 const tmdbReadToken = defineSecret('TMDB_READ_TOKEN');
+const googleBooksKey = defineSecret('GOOGLE_BOOKS_API_KEY');
 const bggToken = defineSecret('BGG_API_TOKEN');
 const twitchClientId = defineSecret('TWITCH_CLIENT_ID');
 const twitchClientSecret = defineSecret('TWITCH_CLIENT_SECRET');
 
 /** Looks up the prices that spots in anyone's lists are waiting on (queued by the triggers above). */
 export const processPriceJobs = onSchedule(
-  { schedule: 'every 1 minutes', secrets: [twitchClientId, twitchClientSecret], timeoutSeconds: 300, memory: '256MiB', retryCount: 0 },
+  { schedule: 'every 1 minutes', secrets: [twitchClientId, twitchClientSecret, googleBooksKey], timeoutSeconds: 300, memory: '256MiB', retryCount: 0 },
   async () => {
-    const done = await runPriceJobs(getFirestore(), { twitchClientId: twitchClientId.value(), twitchClientSecret: twitchClientSecret.value() });
+    const done = await runPriceJobs(getFirestore(), {
+      twitchClientId: twitchClientId.value(),
+      twitchClientSecret: twitchClientSecret.value(),
+      googleBooksKey: googleBooksKey.value(),
+    });
     if (done > 0) logger.info('prices fetched', { count: done });
   }
 );
@@ -161,8 +166,6 @@ export const tmdb = onRequest(
     }
   }
 );
-
-const googleBooksKey = defineSecret('GOOGLE_BOOKS_API_KEY');
 
 /** Book search for the Read lists, served at `/api/books/search?q=` like `tmdb` above. */
 export const books = onRequest(

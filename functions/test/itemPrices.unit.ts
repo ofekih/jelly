@@ -5,7 +5,8 @@ describe('item prices', () => {
   it('knows which place IDs have a price provider', () => {
     expect(parsePriceId('bgg:174430')).toEqual({ prefix: 'bgg', id: '174430' });
     expect(parsePriceId('igdb:1942')).toEqual({ prefix: 'igdb', id: '1942' });
-    for (const id of ['tmdb:movie:5', 'book:x:y', 'ChIJabcdefghij', 'bgg:abc', 'xyz:5', undefined, 5]) {
+    expect(parsePriceId('book:weir:project-hail-mary')).toEqual({ prefix: 'book', id: 'weir:project-hail-mary' });
+    for (const id of ['tmdb:movie:5', 'ChIJabcdefghij', 'bgg:abc', 'xyz:5', 'book:a/b', undefined, 5]) {
       expect(parsePriceId(id)).toBeUndefined();
     }
   });

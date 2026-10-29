@@ -206,7 +206,7 @@ export interface GameResult {
  * secondhand listings' typical range. A doc with neither means "checked, nothing found".
  */
 export interface ItemPrice {
-  source?: 'amazon' | 'steam';
+  source?: 'amazon' | 'steam' | 'google_books'; // google_books: the ebook
   fetchedAt?: number; // ms; when the providers were last asked
   new?: { amount: number; currency: string; was?: number }; // `was`: the list price while on sale; amount 0 = free
   used?: { low: number; high: number; count: number; currency: string };

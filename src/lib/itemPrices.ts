@@ -7,8 +7,8 @@ import { formatPriceRange } from './price';
  * caching and the hook are in `usePrices.ts`.
  */
 
-/** Whether a place ID could have a price doc: `<source>:<number>` (`bgg:174430`), not a place or a TMDB / book ID */
-export const hasPriceDoc = (placeId?: string): placeId is string => /^[a-z]+:\d+$/.test(placeId ?? '');
+/** Whether a place ID could have a price doc: board games, video games and books (the sources `functions/src/itemPrices.ts` has providers for) */
+export const hasPriceDoc = (placeId?: string): placeId is string => /^(bgg|igdb|book):[^/]+$/.test(placeId ?? '');
 
 const isAmount = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 
@@ -17,7 +17,7 @@ export function parseItemPrice(raw: unknown): ItemPrice | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, any>;
   const price: ItemPrice = {};
-  if (r.source === 'amazon' || r.source === 'steam') price.source = r.source;
+  if (r.source === 'amazon' || r.source === 'steam' || r.source === 'google_books') price.source = r.source;
   if (isAmount(r.new?.amount) && typeof r.new.currency === 'string') {
     price.new = { amount: r.new.amount, currency: r.new.currency, ...(isAmount(r.new.was) ? { was: r.new.was } : {}) };
   }
@@ -27,13 +27,17 @@ export function parseItemPrice(raw: unknown): ItemPrice | null {
   return price.new || price.used ? price : null;
 }
 
+/** What `new` is called: Google Books only knows the ebook's price */
+export const priceLabel = (price: ItemPrice | null | undefined): string => (price?.source === 'google_books' ? 'Ebook' : 'New');
+
 /** `{ label: 'New', text: '$40' }`, `{ label: 'Used', text: '$15–27' }`, in the order shown */
 export function priceParts(price: ItemPrice | null | undefined): { label: string; text: string }[] {
   const parts: { label: string; text: string }[] = [];
   if (price?.new) {
+    const label = priceLabel(price);
     const { amount, currency, was } = price.new;
     const at = (value: number) => formatPriceRange({ currency, start: value, end: value });
-    parts.push({ label: 'New', text: amount === 0 ? 'Free' : was ? `${at(amount)} (was ${at(was)})` : at(amount) });
+    parts.push({ label, text: amount === 0 ? 'Free' : was ? `${at(amount)} (was ${at(was)})` : at(amount) });
   }
   if (price?.used) {
     const { low, high, currency } = price.used;
@@ -46,7 +50,8 @@ export function priceParts(price: ItemPrice | null | undefined): { label: string
 export function priceLine(price: ItemPrice | null | undefined): string {
   if (price?.new) {
     const { amount, currency } = price.new;
-    return amount === 0 ? 'Free' : formatPriceRange({ currency, start: amount, end: amount });
+    const text = amount === 0 ? 'Free' : formatPriceRange({ currency, start: amount, end: amount });
+    return price.source === 'google_books' && amount > 0 ? `Ebook ${text}` : text;
   }
   const used = priceParts(price).find((p) => p.label === 'Used');
   return used ? `Used ${used.text}` : '';

@@ -24,7 +24,8 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Board games show what a new copy costs and what used ones go for',
       'Video games show their current Steam price, with the original price when on sale',
       'Games on your Want to Play list show their price right in the list',
-      'Filter any game list by price, like “Under $30”',
+      'Books show their ebook price where there is one',
+      'Filter game and book lists by price, like “Under $30”',
     ],
   },
   {

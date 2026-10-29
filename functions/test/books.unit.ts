@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookList, bookPlaceId, bookTags, cleanTitle, mergeEditions, searchBooks, slug, toBook } from '../src/books';
+import { bookList, bookPlaceId, bookPrice, firstAuthor, bookTags, cleanTitle, mergeEditions, searchBooks, slug, toBook } from '../src/books';
 
 describe('book identity', () => {
   it('is the same for every edition of a book', () => {
@@ -105,5 +105,49 @@ describe('searchBooks', () => {
     expect(url).toContain('printType=books');
     expect(url).toContain('key=k');
     await expect(searchBooks('x', 'k', async () => ({ ok: false, status: 429, json: async () => ({}) }))).rejects.toThrow('Google Books 429');
+  });
+});
+
+describe('book price', () => {
+  const sale = (title: string, amount: number, extra: object = {}) => ({
+    volumeInfo: { title, authors: ['Andy Weir'] },
+    saleInfo: { saleability: 'FOR_SALE', isEbook: true, retailPrice: { amount, currencyCode: 'USD' }, ...extra },
+  });
+  const reply = (items: unknown[]) => async () => ({ ok: true, status: 200, json: async () => ({ items }) });
+  const id = 'book:weir:project-hail-mary';
+
+  it('takes the cheapest ebook edition of that exact book (not subtitled ones, which are other entries)', async () => {
+    const price = await bookPrice(
+      id, 'Project Hail Mary', 'Andy Weir', 'k',
+      reply([
+        sale('Project Hail Mary', 14.99, { listPrice: { amount: 19.99, currencyCode: 'USD' } }),
+        sale('Project Hail Mary', 11.99),
+        sale('Project Hail Mary: A Novel', 8.99),
+        sale('Project Hail Mary Summary', 2.99),
+        sale('The Martian', 5),
+        { ...sale('Project Hail Mary', 1), saleInfo: { saleability: 'NOT_FOR_SALE', isEbook: true } },
+        sale('Project Hail Mary', 3, { isEbook: false }),
+      ])
+    );
+    expect(price).toEqual({ source: 'google_books', new: { currency: 'USD', amount: 11.99 } });
+  });
+
+  it('shows the list price as "was" and free books as free', async () => {
+    expect(await bookPrice(id, 'Project Hail Mary', 'Andy Weir', 'k', reply([sale('Project Hail Mary', 9.99, { listPrice: { amount: 14.99, currencyCode: 'USD' } })]))).toEqual({
+      source: 'google_books',
+      new: { currency: 'USD', amount: 9.99, was: 14.99 },
+    });
+    expect((await bookPrice(id, 'Project Hail Mary', 'Andy Weir', 'k', reply([sale('Project Hail Mary', 0, { saleability: 'FREE' })])))?.new?.amount).toBe(0);
+  });
+
+  it('is null when nothing is for sale, and throws on API errors', async () => {
+    expect(await bookPrice(id, 'Project Hail Mary', 'Andy Weir', 'k', reply([]))).toBeNull();
+    expect(await bookPrice(id, 'Project Hail Mary', 'Andy Weir', 'k', reply([sale('Project Hail Mary', 5, { retailPrice: { amount: 5, currencyCode: 'EUR' } })]))).toBeNull();
+    await expect(bookPrice(id, 'x', 'y', 'k', async () => ({ ok: false, status: 429, json: async () => ({}) }))).rejects.toThrow('429');
+  });
+
+  it('keeps the first author', () => {
+    expect(firstAuthor('Andy Weir, Someone & Third')).toBe('Andy Weir');
+    expect(firstAuthor('Terry Pratchett & Neil Gaiman')).toBe('Terry Pratchett');
   });
 });
