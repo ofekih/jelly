@@ -240,7 +240,11 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                   <span
                     key={label}
                     className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-700 dark:text-zinc-300"
-                    title={label === 'New' ? 'Retail price on Amazon' : 'Typical price of used copies on BoardGameGeek Marketplace'}
+                    title={
+                      label === 'New'
+                        ? gamePrice?.source === 'steam' ? 'Current price on Steam' : 'Retail price on Amazon'
+                        : 'Typical price of used copies on BoardGameGeek Marketplace'
+                    }
                   >
                     {label} {text}
                   </span>

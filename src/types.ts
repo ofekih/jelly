@@ -203,7 +203,8 @@ export interface GameResult {
 
 /** What a game costs: the new retail price (Amazon) and/or secondhand listings' typical range (BGG Marketplace). */
 export interface GamePrice {
-  new?: { amount: number; currency: string };
+  source?: 'amazon' | 'steam';
+  new?: { amount: number; currency: string; was?: number }; // `was`: the list price while on sale; amount 0 = free
   used?: { low: number; high: number; count: number; currency: string };
 }
 

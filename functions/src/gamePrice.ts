@@ -60,6 +60,7 @@ export async function boardGamePrice(bggId: string, fetchFn: Fetch = fetch): Pro
   ]);
   if (ad.status === 'rejected' && market.status === 'rejected') throw ad.reason;
   const price: GamePrice = {
+    source: 'amazon',
     new: ad.status === 'fulfilled' ? newPrice(ad.value) : undefined,
     used: market.status === 'fulfilled' ? usedPrice(market.value) : undefined,
   };

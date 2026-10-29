@@ -9,7 +9,8 @@
  * query sorted by rating count.
  */
 import { XMLParser } from 'fast-xml-parser';
-import type { GameResult } from '../../src/types';
+import type { GamePrice, GameResult } from '../../src/types';
+import { steamAppId, steamPrice } from './steamPrice';
 
 const MAX_RESULTS = 10;
 
@@ -300,4 +301,26 @@ export async function searchVideoGames(
     .sort((a, b) => relevance(b.title, query, b.ratings) - relevance(a.title, query, a.ratings))
     .slice(0, MAX_RESULTS)
     .map(({ ratings: _ratings, ...game }) => game);
+}
+
+/** A video game's Steam price via its IGDB entry's Steam link, or null when it isn't on Steam. */
+export async function videoGamePrice(
+  igdbId: string,
+  clientId: string,
+  clientSecret: string,
+  fetchFn: Fetch = fetch
+): Promise<GamePrice | null> {
+  const token = await igdbToken(clientId, clientSecret, fetchFn);
+  const res = await fetchFn('https://api.igdb.com/v4/games', {
+    method: 'POST',
+    headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    body: `fields external_games.uid,external_games.external_game_source,external_games.category,websites.url; where id = ${Number(igdbId)};`,
+  });
+  if (res.status === 401) resetIgdbToken();
+  if (!res.ok) throw new Error(`IGDB ${res.status}`);
+  const appId = steamAppId((await res.json())[0]);
+  if (!appId) return null;
+  const steam = await fetchFn(`https://store.steampowered.com/api/appdetails?appids=${appId}&cc=us&filters=basic,price_overview`);
+  if (!steam.ok) throw new Error(`Steam ${steam.status}`);
+  return steamPrice(appId, await steam.json()) ?? null;
 }

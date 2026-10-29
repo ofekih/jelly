@@ -1,4 +1,5 @@
 import { boardGamePrice, newPrice, usedPrice } from '../src/gamePrice';
+import { steamAppId, steamPrice } from '../src/steamPrice';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   bestPlayers,
@@ -185,13 +186,33 @@ describe('board game price', () => {
         : { ok: true, status: 200, json: async () => urls[hit] };
     };
     expect(await boardGamePrice('13', respond({ 'amazon/': ad, 'market/': { products } }))).toEqual({
+      source: 'amazon',
       new: { amount: 39.99, currency: 'USD' },
       used: { low: 15, high: 25, count: 3, currency: 'USD' },
     });
     expect(await boardGamePrice('13', respond({ 'amazon/': new Error(), 'market/': { products } }))).toEqual({
+      source: 'amazon',
       used: { low: 15, high: 25, count: 3, currency: 'USD' },
     });
     expect(await boardGamePrice('13', respond({ 'amazon/': [], 'market/': { products: [] } }))).toBeNull();
     await expect(boardGamePrice('13', respond({ 'amazon/': new Error(), 'market/': new Error() }))).rejects.toThrow();
+  });
+});
+
+describe('video game price (Steam)', () => {
+  it('finds the Steam app id from external games or the store link', () => {
+    expect(steamAppId({ external_games: [{ uid: '9', external_game_source: 5 }, { uid: '1091500', external_game_source: 1 }] })).toBe('1091500');
+    expect(steamAppId({ external_games: [{ uid: '620', category: 1 }] })).toBe('620');
+    expect(steamAppId({ websites: [{ url: 'https://store.steampowered.com/app/413150/Stardew_Valley/' }] })).toBe('413150');
+    expect(steamAppId({ external_games: [{ uid: '7', external_game_source: 26 }] })).toBeUndefined();
+  });
+
+  it('reads the current price, a sale and free games', () => {
+    const app = (data: object) => ({ '10': { success: true, data } });
+    expect(steamPrice('10', app({ price_overview: { currency: 'USD', initial: 3999, final: 3999 } }))?.new).toEqual({ amount: 39.99, currency: 'USD' });
+    expect(steamPrice('10', app({ price_overview: { currency: 'USD', initial: 2000, final: 1000 } }))?.new).toEqual({ amount: 10, currency: 'USD', was: 20 });
+    expect(steamPrice('10', app({ is_free: true }))?.new?.amount).toBe(0);
+    expect(steamPrice('10', app({ price_overview: { currency: 'EUR', initial: 1, final: 1 } }))).toBeUndefined();
+    expect(steamPrice('10', { '10': { success: false } })).toBeUndefined();
   });
 });

@@ -36,7 +36,7 @@
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
       },
       {
-        "source": "/api/@(tmdb|books|igdb)/**",
+        "source": "/api/@(tmdb|books)/**",
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=604800" }]
       },
       {
@@ -44,7 +44,11 @@
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=604800" }]
       },
       {
-        "source": "/api/bgg/price",
+        "source": "/api/igdb/search",
+        "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=604800" }]
+      },
+      {
+        "source": "/api/@(bgg|igdb)/price",
         "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=86400" }]
       }
     ],

@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { bggIdOf, gamePriceParts } from './gamePrice';
+import { gamePriceParts, priceTarget } from './gamePrice';
 
 describe('gamePrice', () => {
-  it('reads BGG ids only', () => {
-    expect(bggIdOf('bgg:174430')).toBe('174430');
-    expect(bggIdOf('igdb:12')).toBeUndefined();
-    expect(bggIdOf('ChIJabc')).toBeUndefined();
-    expect(bggIdOf(undefined)).toBeUndefined();
+  it('finds the endpoint for BGG and IGDB games only', () => {
+    expect(priceTarget('bgg:174430')).toEqual({ api: 'bgg', id: '174430' });
+    expect(priceTarget('igdb:12')).toEqual({ api: 'igdb', id: '12' });
+    expect(priceTarget('tmdb:movie:5')).toBeUndefined();
+    expect(priceTarget('ChIJabc')).toBeUndefined();
+    expect(priceTarget(undefined)).toBeUndefined();
+  });
+
+  it('shows free and sale prices', () => {
+    expect(gamePriceParts({ new: { amount: 0, currency: 'USD' } })).toEqual([{ label: 'New', text: 'Free' }]);
+    expect(gamePriceParts({ new: { amount: 20, currency: 'USD', was: 40 } })).toEqual([{ label: 'New', text: '$20 (was $40)' }]);
   });
 
   it('formats new and used prices', () => {

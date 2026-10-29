@@ -13,7 +13,7 @@ import { recountReviewVotes, syncPlaceReview } from './reviews';
 import { boardGamePrice } from './gamePrice';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
-import { searchBoardGames, searchVideoGames } from './games';
+import { searchBoardGames, searchVideoGames, videoGamePrice } from './games';
 import { appHtml, cardHeading, listPreview, parseSharePath, previewMeta, siteOrigin, withShareMeta } from './sharePage';
 
 initializeApp();
@@ -215,10 +215,31 @@ export const bgg = onRequest(
   }
 );
 
-/** Video game search for the Play lists, served at `/api/igdb/search?q=`. */
+const igdbSearch = titleSearch('igdb', (q) => searchVideoGames(q, twitchClientId.value(), twitchClientSecret.value()));
+
+/** Video games for the Play lists: search at `/api/igdb/search?q=` and the Steam price at `/api/igdb/price?id=`. */
 export const igdb = onRequest(
   { secrets: [twitchClientId, twitchClientSecret], memory: '256MiB', maxInstances: 5, timeoutSeconds: 20 },
-  titleSearch('igdb', (q) => searchVideoGames(q, twitchClientId.value(), twitchClientSecret.value()))
+  async (req, res) => {
+    if (!req.path.endsWith('/price')) {
+      await igdbSearch(req, res);
+      return;
+    }
+    const id = typeof req.query.id === 'string' ? req.query.id : '';
+    if (req.method !== 'GET' || !/^\d{1,9}$/.test(id)) {
+      res.status(400).json({ error: 'Expected GET /api/igdb/price?id=<IGDB game id>' });
+      return;
+    }
+    try {
+      const price = await videoGamePrice(id, twitchClientId.value(), twitchClientSecret.value());
+      res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
+      res.json({ price });
+    } catch (err) {
+      logger.warn('igdb price failed', { id, err: String(err) });
+      res.set('Cache-Control', 'no-store');
+      res.status(502).json({ error: 'Prices are unavailable right now' });
+    }
+  }
 );
 
 /**
