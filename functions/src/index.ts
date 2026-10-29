@@ -10,6 +10,7 @@ import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from
 import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
 import { recountReviewVotes, syncPlaceReview } from './reviews';
+import { boardGamePrice } from './gamePrice';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
 import { searchBoardGames, searchVideoGames } from './games';
@@ -184,10 +185,34 @@ function titleSearch(name: string, search: (query: string) => Promise<unknown[]>
   };
 }
 
-/** Board & card game search for the Play lists, served at `/api/bgg/search?q=` like `tmdb` above. */
+const bggSearch = titleSearch('bgg', (q) => searchBoardGames(q, bggToken.value()));
+
+/**
+ * Board & card games for the Play lists: search at `/api/bgg/search?q=` (like `tmdb` above) and a
+ * game's price at `/api/bgg/price?id=`, cached for a day since prices move.
+ */
 export const bgg = onRequest(
   { secrets: [bggToken], memory: '256MiB', maxInstances: 5, timeoutSeconds: 30 },
-  titleSearch('bgg', (q) => searchBoardGames(q, bggToken.value()))
+  async (req, res) => {
+    if (!req.path.endsWith('/price')) {
+      await bggSearch(req, res);
+      return;
+    }
+    const id = typeof req.query.id === 'string' ? req.query.id : '';
+    if (req.method !== 'GET' || !/^\d{1,9}$/.test(id)) {
+      res.status(400).json({ error: 'Expected GET /api/bgg/price?id=<BGG game id>' });
+      return;
+    }
+    try {
+      const price = await boardGamePrice(id);
+      res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
+      res.json({ price });
+    } catch (err) {
+      logger.warn('bgg price failed', { id, err: String(err) });
+      res.set('Cache-Control', 'no-store');
+      res.status(502).json({ error: 'Prices are unavailable right now' });
+    }
+  }
 );
 
 /** Video game search for the Play lists, served at `/api/igdb/search?q=`. */

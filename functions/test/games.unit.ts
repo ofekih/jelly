@@ -1,3 +1,4 @@
+import { boardGamePrice, newPrice, usedPrice } from '../src/gamePrice';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   bestPlayers,
@@ -155,5 +156,42 @@ describe('video games (IGDB)', () => {
 
   it('scores names: exact over prefix over contains', () => {
     expect([nameScore('Hades', 'hades'), nameScore('Hades II', 'hades'), nameScore('Into Hades', 'hades'), nameScore('X', 'hades')]).toEqual([3, 2, 1, 0]);
+  });
+});
+
+describe('board game price', () => {
+  const listing = (price: number, extra: object = {}) => ({ price: String(price), currency: 'USD', productstate: 'active', ...extra });
+  const ad = { us: { newPriceWithoutSymbol: '39.99', newPriceCurrency: 'USD' } };
+
+  it('takes the new price from the Amazon ad, none when there is no ad', () => {
+    expect(newPrice(ad)).toEqual({ amount: 39.99, currency: 'USD' });
+    expect(newPrice([])).toBeUndefined();
+    expect(newPrice({ us: { newPriceWithoutSymbol: '0', newPriceCurrency: 'USD' } })).toBeUndefined();
+  });
+
+  it('uses the middle half of active dollar listings and needs a few', () => {
+    const products = [10, 15, 20, 25, 100, 5].map((p) => listing(p));
+    products.push(listing(900, { currency: 'EUR' }), listing(1, { productstate: 'sold' }));
+    expect(usedPrice({ products })).toEqual({ low: 11, high: 24, count: 6, currency: 'USD' });
+    expect(usedPrice({ products: [listing(10), listing(20)] })).toBeUndefined();
+  });
+
+  it('combines both, keeps one when the other fails, throws when both do', async () => {
+    const products = [10, 20, 30].map((p) => listing(p));
+    const respond = (urls: Record<string, any>) => async (url: string) => {
+      const hit = Object.keys(urls).find((k) => url.includes(k))!;
+      return urls[hit] instanceof Error
+        ? { ok: false, status: 500, json: async () => ({}) }
+        : { ok: true, status: 200, json: async () => urls[hit] };
+    };
+    expect(await boardGamePrice('13', respond({ 'amazon/': ad, 'market/': { products } }))).toEqual({
+      new: { amount: 39.99, currency: 'USD' },
+      used: { low: 15, high: 25, count: 3, currency: 'USD' },
+    });
+    expect(await boardGamePrice('13', respond({ 'amazon/': new Error(), 'market/': { products } }))).toEqual({
+      used: { low: 15, high: 25, count: 3, currency: 'USD' },
+    });
+    expect(await boardGamePrice('13', respond({ 'amazon/': [], 'market/': { products: [] } }))).toBeNull();
+    await expect(boardGamePrice('13', respond({ 'amazon/': new Error(), 'market/': new Error() }))).rejects.toThrow();
   });
 });

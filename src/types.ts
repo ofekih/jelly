@@ -201,6 +201,12 @@ export interface GameResult {
   weight?: number;
 }
 
+/** What a game costs: the new retail price (Amazon) and/or secondhand listings' typical range (BGG Marketplace). */
+export interface GamePrice {
+  new?: { amount: number; currency: string };
+  used?: { low: number; high: number; count: number; currency: string };
+}
+
 /**
  * Typical spend per person from Google Places (`priceRange`): `start` inclusive, `end` exclusive and
  * missing for "100+"; whole units of `currency` (ISO 4217). Formatting lives in `lib/price.ts`.

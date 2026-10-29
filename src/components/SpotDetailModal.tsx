@@ -22,6 +22,7 @@ import {
 } from '../types';
 import { SpotSocialMetrics } from '../lib/friendsService';
 import { GROUP_COPY, showsPrice, spotPrice, wantLabel } from '../lib/groups';
+import { gamePriceParts, useGamePrice } from '../lib/gamePrice';
 import { priceTierLabel } from '../lib/price';
 import { CloseButton, Sheet } from './Sheet';
 import { ScoreBadge } from './ScoreBadge';
@@ -90,6 +91,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   const [priceLevel, setPriceLevel] = useState<number | undefined>(undefined);
   const [notes, setNotes] = useState('');
   const [copiedSpotShare, setCopiedSpotShare] = useState(false);
+
+  const gamePrice = useGamePrice(restaurant?.placeId);
 
   useEffect(() => {
     if (!restaurant) return;
@@ -233,6 +236,15 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     {price}
                   </span>
                 )}
+                {gamePriceParts(gamePrice).map(({ label, text }) => (
+                  <span
+                    key={label}
+                    className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 font-semibold text-zinc-700 dark:text-zinc-300"
+                    title={label === 'New' ? 'Retail price on Amazon' : 'Typical price of used copies on BoardGameGeek Marketplace'}
+                  >
+                    {label} {text}
+                  </span>
+                ))}
                 {restaurant.cuisines.map((c) => (
                   <span
                     key={c}

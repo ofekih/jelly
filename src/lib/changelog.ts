@@ -17,6 +17,12 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.4.0',
+    date: '2026-10-28',
+    title: 'What does it cost?',
+    highlights: ['Board games show what a new copy costs and what used ones go for'],
+  },
+  {
     version: '4.3.0',
     date: '2026-10-25',
     title: 'Been there too?',
