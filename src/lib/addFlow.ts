@@ -109,3 +109,16 @@ export function entryToCandidate(
     source: isMediaPlaceId(placeId) ? 'tmdb' : 'google_places',
   };
 }
+
+/**
+ * Lists a ranked spot can move to: the others in its group that don't already hold it. A title
+ * keeps its ID across lists, so only Read (fiction ⇄ nonfiction) allows it; a movie is not a show
+ * and a board game is not a video game.
+ */
+export function moveTargetsFor(spot: RestaurantEntry, restaurants: RestaurantEntry[]): SpotCategory[] {
+  const group = CATEGORY_GROUP[spot.category];
+  if (isMediaPlaceId(spot.placeId) && group !== 'read') return [];
+  return GROUP_CATEGORIES[group].filter(
+    (c) => c !== spot.category && !restaurants.some((r) => r.category === c && r.placeId === spot.placeId)
+  );
+}

@@ -6,12 +6,14 @@ import {
   ExternalLink,
   MapPin,
   Pencil,
+  ArrowRightLeft,
   RefreshCw,
   Trash2,
   Users,
 } from 'lucide-react';
 import { ShareIcon } from './PlatformIcons';
 import {
+  CATEGORY_EMOJI,
   CATEGORY_GROUP,
   CATEGORY_LABEL,
   FriendSpotMatch,
@@ -56,6 +58,10 @@ interface SpotDetailModalProps {
   onRankForMe?: (restaurant: RestaurantEntry) => void;
   onClose: () => void;
   onReRank: (restaurant: RestaurantEntry) => void;
+  /** Lists in the same group the spot could move to (not already holding it); empty hides "Move to…" */
+  moveTargets?: SpotCategory[];
+  /** Moves the spot to another list, keeping its gut rating, notes and history; then side-by-side there */
+  onMove?: (restaurant: RestaurantEntry, category: SpotCategory) => void;
   onSaveEdits: (
     id: string,
     updates: {
@@ -82,11 +88,14 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   onRankForMe,
   onClose,
   onReRank,
+  moveTargets = [],
+  onMove,
   onSaveEdits,
   onDelete,
   renderReviews,
 }) => {
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
   const [isEditingNoteInline, setIsEditingNoteInline] = useState(false);
   const [cuisines, setCuisines] = useState<string[]>([]);
   const [priceLevel, setPriceLevel] = useState<number | undefined>(undefined);
@@ -505,6 +514,36 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                     <RefreshCw className="w-4 h-4" />
                     <span>Re-rank {restaurant.name}</span>
                   </button>
+
+                  {onMove && moveTargets.length > 0 && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => setIsMoving((v) => !v)}
+                        className="w-full py-2.5 px-4 rounded-2xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <ArrowRightLeft className="w-4 h-4" />
+                        <span>Move to another list</span>
+                      </button>
+                      {isMoving && (
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {moveTargets.map((c) => (
+                            <button
+                              key={c}
+                              type="button"
+                              onClick={() => {
+                                onClose();
+                                onMove(restaurant, c);
+                              }}
+                              className="px-3 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 hover:border-emerald-500 text-xs font-medium text-zinc-700 dark:text-zinc-200 transition-colors"
+                            >
+                              {CATEGORY_EMOJI[c]} {CATEGORY_LABEL[c]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-4 gap-1.5 pt-1">
                     <button

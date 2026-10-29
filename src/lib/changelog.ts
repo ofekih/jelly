@@ -17,6 +17,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.5.0',
+    date: '2026-10-28',
+    title: 'Move a spot to another list',
+    highlights: [
+      'Ranked something as a bakery that belongs in coffee & tea? Open it and tap "Move to another list"—your rating, notes and history come along, and you just place it against the new list',
+    ],
+  },
+  {
     version: '4.4.0',
     date: '2026-10-28',
     title: 'What does it cost?',

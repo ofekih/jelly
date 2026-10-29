@@ -1,4 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { entryToCandidate, moveTargetsFor } from './lib/addFlow';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -1193,6 +1194,18 @@ export const App: React.FC = () => {
     // Otherwise launch Q3+ (SxS comparisons)
     setPendingPlacement(placement);
     setIsSxSOpen(true);
+  };
+
+  // Moves a ranked spot to another list: keeps its gut rating, notes and history, and goes straight
+  // to side-by-side there (placeSpot replaces the old entry and the review follows as a draft)
+  const handleMoveSpot = (spot: RestaurantEntry, category: SpotCategory) => {
+    trackEvent('move_spot', { from: spot.category, to: category });
+    return handleCompleteQuestions(
+      entryToCandidate({ ...spot, categories: [category, ...(spot.categories || [])] }),
+      spot.initialRating,
+      category,
+      spot.id
+    );
   };
 
   const handleFinishPlacement = (placement: PendingPlacement, result: PlacementResult) => {
@@ -2461,6 +2474,8 @@ export const App: React.FC = () => {
             setReRankingEntry(spot);
             setIsAddModalOpen(true);
           }}
+          moveTargets={isReadOnly || !activeDetailSpot ? [] : moveTargetsFor(activeDetailSpot, restaurants)}
+          onMove={handleMoveSpot}
           onSaveEdits={handleSaveSpotEdits}
           onDelete={handleDeleteRestaurant}
           renderReviews={renderPlaceReviews}

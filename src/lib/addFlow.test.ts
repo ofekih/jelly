@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
-import { categoryOptions, entryToCandidate, findRankedInGroup, searchCategoryFor } from './addFlow';
+import { categoryOptions, entryToCandidate, findRankedInGroup, moveTargetsFor, searchCategoryFor } from './addFlow';
 
 const place = (over: Partial<PlaceCandidate> = {}): PlaceCandidate => ({
   placeId: 'gp1',
@@ -52,5 +52,20 @@ describe('addFlow', () => {
     const c = entryToCandidate({ ...entry('bars', 0, 9), categories: ['restaurants', 'bars'] });
     expect(c.categories).toEqual(['bars', 'restaurants']);
     expect(c.source).toBe('google_places');
+  });
+
+  it('offers the other lists of the group that do not hold the spot yet', () => {
+    const targets = moveTargetsFor(entry('bakeries', 0, 8), [entry('bakeries', 0, 8), entry('brunch', 0, 7)]);
+    expect(targets).toContain('coffee_tea');
+    expect(targets).not.toContain('bakeries');
+    expect(targets).not.toContain('brunch');
+    expect(targets).not.toContain('museums');
+  });
+
+  it('only lets books move between lists, not movies, shows or games', () => {
+    const book = entry('fiction', 0, 8, { id: 'book:x:y__fiction', placeId: 'book:x:y' });
+    expect(moveTargetsFor(book, [book])).toEqual(['nonfiction']);
+    const movie = entry('movies', 0, 8, { id: 'tmdb:movie:1__movies', placeId: 'tmdb:movie:1' });
+    expect(moveTargetsFor(movie, [movie])).toEqual([]);
   });
 });
