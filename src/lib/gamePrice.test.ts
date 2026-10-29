@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gamePriceParts, priceTarget } from './gamePrice';
+import { gamePriceLine, gamePriceParts, priceTarget } from './gamePrice';
 
 describe('gamePrice', () => {
   it('finds the endpoint for BGG and IGDB games only', () => {
@@ -24,5 +24,11 @@ describe('gamePrice', () => {
     ]);
     expect(gamePriceParts({ used: { low: 20, high: 20, count: 5, currency: 'USD' } })).toEqual([{ label: 'Used', text: '$20' }]);
     expect(gamePriceParts(null)).toEqual([]);
+  });
+
+  it('gives list rows one short line', () => {
+    expect(gamePriceLine({ new: { amount: 20, currency: 'USD', was: 40 }, used: { low: 5, high: 9, count: 4, currency: 'USD' } })).toBe('$20');
+    expect(gamePriceLine({ used: { low: 15, high: 27, count: 9, currency: 'USD' } })).toBe('Used $15–27');
+    expect(gamePriceLine(null)).toBe('');
   });
 });

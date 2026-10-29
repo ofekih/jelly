@@ -28,6 +28,16 @@ export function gamePriceParts(price: GamePrice | null | undefined): { label: st
   return parts.filter((p) => p.text);
 }
 
+/** One short line for a list row: `$40` (new, or the sale price), else `Used $15–27`; '' when unknown */
+export function gamePriceLine(price: GamePrice | null | undefined): string {
+  if (price?.new) {
+    const { amount, currency } = price.new;
+    return amount === 0 ? 'Free' : formatPriceRange({ currency, start: amount, end: amount });
+  }
+  const used = gamePriceParts(price).find((p) => p.label === 'Used');
+  return used ? `Used ${used.text}` : '';
+}
+
 const cache = new Map<string, Promise<GamePrice | null>>();
 
 /** One request per game per page load; a failure is forgotten so the next open tries again. */
@@ -49,8 +59,8 @@ export function fetchGamePrice(placeId: string): Promise<GamePrice | null> {
 }
 
 /** A board game's price: undefined while loading, null when unknown (or the request failed). */
-export function useGamePrice(placeId: string | undefined): GamePrice | null | undefined {
-  const id = priceTarget(placeId) ? placeId : undefined;
+export function useGamePrice(placeId: string | undefined, enabled = true): GamePrice | null | undefined {
+  const id = enabled && priceTarget(placeId) ? placeId : undefined;
   const [state, setState] = useState<{ id?: string; price: GamePrice | null }>({ price: null });
   useEffect(() => {
     if (!id) return;
@@ -62,6 +72,6 @@ export function useGamePrice(placeId: string | undefined): GamePrice | null | un
       live = false;
     };
   }, [id]);
-  if (!id) return null;
+  if (!id) return enabled ? null : undefined;
   return state.id === id ? state.price : undefined;
 }

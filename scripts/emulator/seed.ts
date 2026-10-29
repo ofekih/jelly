@@ -161,6 +161,7 @@ const BOOKMARKS: Record<keyof typeof USERS, BookmarkEntry[]> = {
   me: [
     bookmark('restaurants', { ...SUSHI, gut: 0 }, 'Jordan (8.6)'),
     bookmark('bakeries', { name: 'Kettle & Crumb', city: 'Costa Mesa', lat: 33.6603, lng: -117.9001, tags: ['Bakery'], gut: 0 }),
+    bookmark('board_games', game(230802, 'Azul', 0, [2, 4], [30, 45], 1.8)),
   ],
   riley: [],
   jordan: [],

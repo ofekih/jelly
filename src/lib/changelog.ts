@@ -23,6 +23,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     highlights: [
       'Board games show what a new copy costs and what used ones go for',
       'Video games show their current Steam price, with the original price when on sale',
+      'Games on your Want to Play list show their price right in the list',
     ],
   },
   {
