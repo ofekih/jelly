@@ -17,6 +17,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.6.1',
+    date: '2026-10-29',
+    title: 'Search is search',
+    highlights: [
+      'The magnifier at the top now opens search, the same page as Add, instead of filtering your list by typing',
+    ],
+  },
+  {
     version: '4.6.0',
     date: '2026-10-29',
     title: 'Your rankings, all in one place',

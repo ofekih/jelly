@@ -14,7 +14,6 @@ export interface SpotFilters {
   maxMinutes: number | 'ALL';
   /** Lists whose titles have prices: dollars, from the shared `prices` docs */
   maxPrice: number | 'ALL';
-  query: string;
 }
 
 /** The lists whose titles have prices to filter by */
@@ -58,11 +57,6 @@ export function matchesSpotFilters(spot: FilterableSpot, filters: SpotFilters, p
   if (filters.cuisine !== 'ALL' && !spot.cuisines.includes(filters.cuisine)) return false;
   if (!fitsGameNight(spot.media, filters)) return false;
   if (hasPriceFilter(filters.category) && !fitsBudget(spot.placeId, filters.maxPrice, priceOf)) return false;
-  const q = filters.query.trim().toLowerCase();
-  if (q) {
-    const hay = `${spot.name} ${spot.formattedAddress} ${spot.city || ''} ${spot.cuisines.join(' ')}`;
-    if (!hay.toLowerCase().includes(q)) return false;
-  }
   return true;
 }
 
@@ -72,8 +66,7 @@ export function isFilterActive(filters: SpotFilters): boolean {
     filters.city !== 'ALL' ||
     filters.cuisine !== 'ALL' ||
     (filters.category === 'board_games' && (filters.players !== 'ALL' || filters.maxMinutes !== 'ALL')) ||
-    (hasPriceFilter(filters.category) && filters.maxPrice !== 'ALL') ||
-    filters.query.trim().length > 0
+    (hasPriceFilter(filters.category) && filters.maxPrice !== 'ALL')
   );
 }
 

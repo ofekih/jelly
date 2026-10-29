@@ -9,10 +9,9 @@ interface AppHeaderProps {
   onSelectGroup: (group: SpotGroup) => void;
   /** Tapping the wordmark: back to the top (and to your own list) */
   onWordmark: () => void;
-  /** Offer the list filter (only once there's something to filter) */
+  /** Offer the search button (opens the search page) */
   showSearch: boolean;
-  searchActive: boolean;
-  onToggleSearch: () => void;
+  onSearch: () => void;
   /** Covered by a full-screen page: out of the tab order and the accessibility tree */
   inert?: boolean;
 }
@@ -28,8 +27,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onSelectGroup,
   onWordmark,
   showSearch,
-  searchActive,
-  onToggleSearch,
+  onSearch,
   inert,
 }) => {
   const { hidden, scrolled } = useScrollChrome();
@@ -93,15 +91,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {showSearch && (
             <button
               type="button"
-              onClick={onToggleSearch}
-              className={`ml-auto sm:ml-0 w-11 h-11 -mr-2 rounded-full flex items-center justify-center transition-colors ${
-                searchActive
-                  ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100'
-                  : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/60 dark:hover:bg-zinc-900'
-              }`}
-              aria-label="Filter list"
-              aria-pressed={searchActive}
-              title="Filter list"
+              onClick={onSearch}
+              className="ml-auto sm:ml-0 w-11 h-11 -mr-2 rounded-full flex items-center justify-center transition-colors text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 hover:bg-zinc-200/60 dark:hover:bg-zinc-900"
+              aria-label="Search"
+              title="Search"
             >
               <Search className="w-5 h-5" />
             </button>

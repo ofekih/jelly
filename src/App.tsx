@@ -20,10 +20,8 @@ import {
   Map as MapIcon,
   MapPin,
   Navigation,
-  Search,
   Sparkles,
   UserPlus,
-  X,
 } from 'lucide-react';
 import { AppHeader } from './components/AppHeader';
 import { BottomNav } from './components/BottomNav';
@@ -291,8 +289,6 @@ export const App: React.FC = () => {
   const [sortByNearestSetting, setSortByNearest] = useState<boolean>(false);
   // Movies and shows have no location to sort by
   const sortByNearest = sortByNearestSetting && groupCopy.hasLocation;
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
-  const [listSearchQuery, setListSearchQuery] = useState('');
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -1698,9 +1694,8 @@ export const App: React.FC = () => {
       players: selectedPlayers,
       maxMinutes,
       maxPrice,
-      query: listSearchQuery,
     }),
-    [selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, maxPrice, listSearchQuery]
+    [selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, maxPrice]
   );
 
   // Prices of the titles in the open list (one shared read), for the price filter
@@ -1808,14 +1803,8 @@ export const App: React.FC = () => {
         }}
         onWordmark={() => scrollToTop()}
         inert={isProfileOpen || searchCovers}
-        showSearch={activeRestaurants.length > 0 || activeBookmarks.length > 0}
-        searchActive={isSearchExpanded || Boolean(listSearchQuery)}
-        onToggleSearch={() => {
-          setIsSearchExpanded((prev) => {
-            if (prev) setListSearchQuery('');
-            return !prev;
-          });
-        }}
+        showSearch={!isReadOnly}
+        onSearch={openAddModal}
       />
 
       {/* Main Centered Feed */}
@@ -2033,36 +2022,6 @@ export const App: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* Expandable Search Input */}
-        {isSearchExpanded && (
-          <div className="relative">
-            <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              value={listSearchQuery}
-              onChange={(e) => setListSearchQuery(e.target.value)}
-              placeholder={
-                activeTab === 'ranked'
-                  ? 'Filter your ranked list...'
-                  : activeTab === 'for_you'
-                  ? 'Filter your picks...'
-                  : `Filter your ${groupCopy.want.toLowerCase()} list...`
-              }
-              autoFocus
-              className="w-full pl-9 pr-8 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none"
-            />
-            {listSearchQuery && (
-              <button
-                type="button"
-                onClick={() => setListSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Category Lists: single-select tabs (each list is ranked completely separately) */}
         <div
