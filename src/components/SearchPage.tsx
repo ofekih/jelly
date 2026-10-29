@@ -16,7 +16,7 @@ import { takePrimedText } from '../lib/keyboardPrime';
 import { createManualPlaceCandidate, searchPlaces } from '../lib/placesService';
 import { hasSquareCover, posterUrl, searchTitles, spotPlaceLabel } from '../lib/media';
 import { GROUP_COPY, searchPlaceholder, spotPrice, wantLabel } from '../lib/groups';
-import { SEARCH_SCOPES, categoryOptions, findRankedInGroup, searchCategoryFor } from '../lib/addFlow';
+import { SEARCH_SCOPES, categoryOptions, rankingsInGroup, searchCategoryFor } from '../lib/addFlow';
 import { addRecentSearch, clearRecentSearches, recentSearches } from '../lib/recentSearches';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
@@ -621,7 +621,8 @@ const ResultRow: React.FC<ResultRowProps> = ({
   onToggleBookmark,
 }) => {
   const bestCategory = categoryOptions(item, searchCategory)[0];
-  const ranked = findRankedInGroup(item, searchCategory, existingRestaurants);
+  const rankings = rankingsInGroup(item, CATEGORY_GROUP[searchCategory], existingRestaurants);
+  const ranked = rankings.length > 0;
   const type = item.cuisines[0] || item.primaryTypeDisplay || '';
   const where = item.media
     ? spotPlaceLabel(item)
@@ -656,7 +657,9 @@ const ResultRow: React.FC<ResultRowProps> = ({
             <span className="flex flex-wrap items-center gap-1 mt-1">
               {ranked && (
                 <span className="px-1.5 py-0.5 rounded-md bg-jade-500/12 text-jade-700 dark:text-jade-300 text-[10px] font-semibold">
-                  Ranked #{ranked.rankIndex + 1} · {ranked.magicScore.toFixed(1)}
+                  {rankings.length > 1
+                    ? `Ranked in ${rankings.length} lists`
+                    : `Ranked #${rankings[0].rankIndex + 1} · ${rankings[0].magicScore.toFixed(1)}`}
                 </span>
               )}
               {isBookmarked && (
@@ -710,18 +713,17 @@ const ResultRow: React.FC<ResultRowProps> = ({
             <Bookmark className={`w-[18px] h-[18px] ${isBookmarked ? 'fill-rose-500' : ''}`} />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onRank}
-          aria-label={`${ranked ? 'Rank again' : 'Rank'} ${item.name}`}
-          className={`h-9 px-3.5 rounded-full text-[13px] font-bold transition-colors active:scale-95 ${
-            ranked
-              ? 'bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200'
-              : 'bg-emerald-500 text-white dark:text-zinc-950 hover:bg-emerald-600 dark:hover:bg-emerald-400'
-          }`}
-        >
-          {ranked ? 'Rank again' : 'Rank'}
-        </button>
+        {/* Already ranked: its page has the rankings (re-rank, or add to another list) */}
+        {!ranked && (
+          <button
+            type="button"
+            onClick={onRank}
+            aria-label={`Rank ${item.name}`}
+            className="h-9 px-3.5 rounded-full text-[13px] font-bold transition-colors active:scale-95 bg-emerald-500 text-white dark:text-zinc-950 hover:bg-emerald-600 dark:hover:bg-emerald-400"
+          >
+            Rank
+          </button>
+        )}
       </div>
     </div>
   );

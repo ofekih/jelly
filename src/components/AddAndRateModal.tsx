@@ -49,7 +49,7 @@ interface AddAndRateModalProps {
 
 /**
  * The add flow: a full-screen search page (pick a group, search, where, results), a place page for
- * looking a result up, and the rating sheet (gut feeling, then which list) on top of either.
+ * looking a result up, and the rating sheet (which list, then the gut feeling) on top of either.
  * Re-ranking skips straight to the rating sheet. Each layer is a browser-history entry, so the
  * phone's Back closes the top one; App closes the whole flow when rating finishes.
  */
@@ -75,7 +75,10 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
   const [placeOpen, showPlace, hidePlace] = useHistoryPage('jellyPlace');
   const [rateOpen, showRate, hideRate] = useHistoryPage('jellyRate');
   const [place, setPlace] = useState<{ candidate: PlaceCandidate; category: SpotCategory } | null>(null);
-  const [rating, setRating] = useState<{ candidate: PlaceCandidate; category: SpotCategory } | null>(null);
+  // `locked`: rank in exactly this list (re-rank one of your rankings, or add one) instead of offering a choice
+  const [rating, setRating] = useState<{ candidate: PlaceCandidate; category: SpotCategory; locked?: boolean } | null>(
+    null
+  );
   // Bumped per open so the search page starts fresh (query, group) every time
   const [session, setSession] = useState(0);
 
@@ -129,13 +132,13 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
 
   const search = usePresence(isOpen && !reRankingEntry && searchOpen, SEARCH_EXIT_MS);
 
-  const startRating = (candidate: PlaceCandidate, category: SpotCategory) => {
+  const startRating = (candidate: PlaceCandidate, category: SpotCategory, locked = false) => {
     trackEvent('select_search_result', {
       restaurant_name: candidate.name,
       city: candidate.city || '',
       source: candidate.source,
     });
-    setRating({ candidate, category });
+    setRating({ candidate, category, locked });
     showRate();
   };
 
@@ -186,6 +189,8 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
         isBookmarked={Boolean(place && bookmarkedPlaceIds?.has(place.candidate.placeId))}
         onClose={hidePlace}
         onRank={place ? () => startRating(place.candidate, place.category) : undefined}
+        onReRank={(entry) => place && startRating(place.candidate, entry.category, true)}
+        onAddTo={(category) => place && startRating(place.candidate, category, true)}
         onToggleBookmark={
           place && onAddBookmark ? () => toggleBookmark(place.candidate, place.category) : undefined
         }
@@ -198,6 +203,7 @@ export const AddAndRateModal: React.FC<AddAndRateModalProps> = ({
           candidate={rating.candidate}
           searchCategory={rating.category}
           reRankingEntry={reRankingEntry}
+          lockedCategory={rating.locked ? rating.category : undefined}
           existingRestaurants={existingRestaurants}
           linearRatingScale={linearRatingScale}
           onClose={hideRate}

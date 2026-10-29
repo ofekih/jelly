@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { ShareIcon } from './PlatformIcons';
+import { YourRankings } from './YourRankings';
 import {
   CATEGORY_EMOJI,
   CATEGORY_GROUP,
@@ -57,9 +58,14 @@ interface SpotDetailModalProps {
   /** On someone else's list: rank their spot in your own list ("Been here – rank it") */
   onRankForMe?: (restaurant: RestaurantEntry) => void;
   onClose: () => void;
+  /** All your rankings of this spot (one per list), shown as "Your ranking(s)"; tapping one switches the sheet to it */
+  myRankings?: RestaurantEntry[];
+  onSelectRanking?: (entry: RestaurantEntry) => void;
   onReRank: (restaurant: RestaurantEntry) => void;
-  /** Lists in the same group the spot could move to (not already holding it); empty hides "Move to…" */
-  moveTargets?: SpotCategory[];
+  /** Lists in the same group that don't hold the spot yet: it can be moved there or ranked there as well */
+  otherLists?: SpotCategory[];
+  /** Ranks the spot in another list as well, leaving this ranking as it is */
+  onAddToList?: (restaurant: RestaurantEntry, category: SpotCategory) => void;
   /** Moves the spot to another list, keeping its gut rating, notes and history; then side-by-side there */
   onMove?: (restaurant: RestaurantEntry, category: SpotCategory) => void;
   /** Opens with the "Move to" list picker already expanded (from the right-click menu) */
@@ -89,8 +95,11 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
   myEntry = null,
   onRankForMe,
   onClose,
+  myRankings = [],
+  onSelectRanking,
   onReRank,
-  moveTargets = [],
+  otherLists = [],
+  onAddToList,
   onMove,
   startMoving = false,
   onSaveEdits,
@@ -508,22 +517,25 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Primary Action: Beli-style Re-Rank (or Save to Want to Try + Maps in Friend Read-Only mode) */}
+              {/* Your rankings + actions (or Save to Want to Try + Maps in Friend Read-Only mode) */}
               {!readOnly ? (
                 <div className="space-y-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => {
+                  <YourRankings
+                    rankings={myRankings.length > 0 ? myRankings : [restaurant]}
+                    addable={onAddToList ? otherLists : []}
+                    currentId={restaurant.id}
+                    onSelect={onSelectRanking}
+                    onReRank={(entry) => {
                       onClose();
-                      onReRank(restaurant);
+                      onReRank(entry);
                     }}
-                    className="w-full py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-emerald-500 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 font-semibold text-sm flex items-center justify-center gap-2 transition-colors"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Re-rank in {CATEGORY_LABEL[restaurant.category]}</span>
-                  </button>
+                    onAdd={(category) => {
+                      onClose();
+                      onAddToList?.(restaurant, category);
+                    }}
+                  />
 
-                  {onMove && moveTargets.length > 0 && (
+                  {onMove && otherLists.length > 0 && (
                     <div>
                       <button
                         type="button"
@@ -535,7 +547,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({
                       </button>
                       {isMoving && (
                         <div className="flex flex-wrap gap-1.5 pt-2">
-                          {moveTargets.map((c) => (
+                          {otherLists.map((c) => (
                             <button
                               key={c}
                               type="button"

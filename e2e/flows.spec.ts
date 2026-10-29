@@ -82,6 +82,28 @@ test('re-ranking with side-by-side moves the spot and keeps its notes', async ({
   await expect(page.getByText('Soup dumplings, always')).toBeVisible();
 });
 
+test('ranking a spot in a second list adds to it, and the sheet switches between its rankings', async ({ page }) => {
+  await page.getByText('Golden Dumpling House').click();
+  await expect(page.getByRole('heading', { name: 'Your ranking', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Also rank it in another list' }).click();
+  await expect(page.getByText(/your Restaurants ranking stays as it is/)).toBeVisible();
+  await page.getByRole('button', { name: /Brunch/ }).click();
+
+  // The rating sheet says it adds, and the list can't be changed
+  await expect(page.getByText('Add to Brunch')).toBeVisible();
+  await expect(page.getByText(/your Restaurants ranking stays as it is/)).toBeVisible();
+  await page.getByRole('button', { name: 'Incredible', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  await expect(page.getByText(/Ranked Golden Dumpling House #1 in Brunch/)).toBeVisible();
+
+  // Both rankings exist now; tapping the other one switches the sheet to it
+  await page.getByText('Golden Dumpling House').first().click();
+  await expect(page.getByRole('heading', { name: 'Your rankings', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /Restaurants/ }).first().click();
+  await expect(page.getByText('#3 in Restaurants')).toBeVisible();
+});
+
 test('removing a spot can be undone, back in its place', async ({ page }) => {
   await page.getByText('Burger Lab').click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { PlaceCandidate, RestaurantEntry, SpotCategory } from '../types';
-import { categoryOptions, entryToCandidate, findRankedInGroup, moveTargetsFor, searchCategoryFor } from './addFlow';
+import {
+  addsRankingNote,
+  categoryOptions,
+  entryToCandidate,
+  findRankedInGroup,
+  listsToAddTo,
+  moveTargetsFor,
+  rankingsInGroup,
+  searchCategoryFor,
+} from './addFlow';
 
 const place = (over: Partial<PlaceCandidate> = {}): PlaceCandidate => ({
   placeId: 'gp1',
@@ -67,5 +76,29 @@ describe('addFlow', () => {
     expect(moveTargetsFor(book, [book])).toEqual(['nonfiction']);
     const movie = entry('movies', 0, 8, { id: 'tmdb:movie:1__movies', placeId: 'tmdb:movie:1' });
     expect(moveTargetsFor(movie, [movie])).toEqual([]);
+  });
+
+  it('lists your rankings of a spot in list order, only within its group', () => {
+    const list = [entry('coffee_tea', 2, 7), entry('bakeries', 0, 8), entry('museums', 0, 9, { id: 'm' })];
+    expect(rankingsInGroup(place(), 'eat', list).map((r) => r.category)).toEqual(['bakeries', 'coffee_tea']);
+    expect(rankingsInGroup(place({ placeId: 'other', name: 'Else' }), 'eat', list)).toEqual([]);
+  });
+
+  it('offers the lists of the group that hold no ranking of the spot', () => {
+    const rankings = [entry('bakeries', 0, 8), entry('coffee_tea', 2, 7)];
+    const targets = listsToAddTo('gp1', 'eat', rankings);
+    expect(targets).toContain('brunch');
+    expect(targets).not.toContain('bakeries');
+    expect(targets).not.toContain('coffee_tea');
+    expect(listsToAddTo('tmdb:movie:1', 'watch', [])).toEqual([]);
+  });
+
+  it('says the existing rankings stay as they are', () => {
+    expect(addsRankingNote([entry('bakeries', 0, 8)])).toBe(
+      'This adds a separate ranking—your Bakeries ranking stays as it is.'
+    );
+    expect(addsRankingNote([entry('bakeries', 0, 8), entry('coffee_tea', 2, 7)])).toBe(
+      'This adds a separate ranking—your Bakeries and Coffee & Tea rankings stay as they are.'
+    );
   });
 });

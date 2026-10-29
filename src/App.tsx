@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { moveTargetsFor } from './lib/addFlow';
+import { moveTargetsFor, rankingsInGroup } from './lib/addFlow';
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -1212,6 +1212,12 @@ export const App: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
+  // Ranks a spot you already have in another list of its group as well; the first ranking stays
+  const handleAddToList = (spot: RestaurantEntry, category: SpotCategory) => {
+    trackEvent('add_to_other_list', { from: spot.category, to: category });
+    openRankFor({ ...spot, category });
+  };
+
   const handleFinishPlacement = (placement: PendingPlacement, result: PlacementResult) => {
     setIsSxSOpen(false);
     setPendingPlacement(null);
@@ -1582,6 +1588,15 @@ export const App: React.FC = () => {
     if (!sharedList || !activeDetailSpot) return null;
     return restaurants.find((r) => r.category === activeDetailSpot.category && isSameSpot(r, activeDetailSpot)) ?? null;
   }, [sharedList, activeDetailSpot, restaurants]);
+
+  // Your rankings of the open spot, one per list of its group (the sheet switches between them)
+  const myRankingsForDetailSpot = useMemo(
+    () =>
+      isReadOnly || !activeDetailSpot
+        ? []
+        : rankingsInGroup(activeDetailSpot, CATEGORY_GROUP[activeDetailSpot.category], restaurants),
+    [isReadOnly, activeDetailSpot, restaurants]
+  );
 
   const isDetailSpotBookmarkedByMe = useMemo(() => {
     if (!activeDetailSpot) return false;
@@ -2479,6 +2494,9 @@ export const App: React.FC = () => {
             setActiveDetailSpot(null);
             setDetailStartsMoving(false);
           }}
+          myRankings={myRankingsForDetailSpot}
+          onSelectRanking={setActiveDetailSpot}
+          onAddToList={handleAddToList}
           onReRank={(spot) => {
             trackEvent('open_rerank_modal', {
               restaurant_name: spot.name,
@@ -2487,7 +2505,7 @@ export const App: React.FC = () => {
             setReRankingEntry(spot);
             setIsAddModalOpen(true);
           }}
-          moveTargets={isReadOnly || !activeDetailSpot ? [] : moveTargetsFor(activeDetailSpot, restaurants)}
+          otherLists={isReadOnly || !activeDetailSpot ? [] : moveTargetsFor(activeDetailSpot, restaurants)}
           onMove={handleMoveSpot}
           startMoving={detailStartsMoving}
           onSaveEdits={handleSaveSpotEdits}

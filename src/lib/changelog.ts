@@ -17,6 +17,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.6.0',
+    date: '2026-10-29',
+    title: 'Your rankings, all in one place',
+    highlights: [
+      'A spot you\'ve ranked in more than one list now shows each ranking together—tap one to switch to it, or "Re-rank" to redo just that list',
+      'New "Also rank it in another list" adds a separate ranking and leaves the others as they are; the sheet says so before you rate',
+      'Opening a place from search and opening it from your list now look and work the same',
+    ],
+  },
+  {
     version: '4.5.1',
     date: '2026-10-28',
     title: 'Pick the list first',

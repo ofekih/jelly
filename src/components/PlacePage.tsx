@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { GROUP_COPY, spotPrice, wantLabel } from '../lib/groups';
 import { gameFacts, hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
-import { findRankedInGroup } from '../lib/addFlow';
+import { listsToAddTo, rankingsInGroup } from '../lib/addFlow';
 import { getFriendMatchesForSpot, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
 import { usePlaceStats } from '../lib/usePlaceStats';
@@ -22,6 +22,7 @@ import { formatDistanceMiles, getItemDistanceMiles, UserCoordinates } from '../l
 import { BackIcon } from './PlatformIcons';
 import { PosterThumb } from './PosterThumb';
 import { ScoreBadge } from './ScoreBadge';
+import { YourRankings } from './YourRankings';
 
 /** Matches `.animate-jelly-page-out` */
 const EXIT_MS = 220;
@@ -38,8 +39,12 @@ export interface PlacePageProps {
   userLocation?: UserCoordinates | null;
   isBookmarked: boolean;
   onClose: () => void;
-  /** "Been here – rank it" (or Re-rank when it's already in your list) */
+  /** "Been here – rank it" (shown while it isn't in any of your lists) */
   onRank?: () => void;
+  /** Re-rank one of your rankings of it */
+  onReRank: (entry: RestaurantEntry) => void;
+  /** Rank it in another list as well */
+  onAddTo: (category: SpotCategory) => void;
   /** Want to try / remove from want to try */
   onToggleBookmark?: () => void;
   /** Reviews for this spot in this list (filled in by the reviews feature) */
@@ -71,6 +76,8 @@ const PlaceScreen: React.FC<PlacePageProps & { candidate: PlaceCandidate; visibl
   isBookmarked,
   onClose,
   onRank,
+  onReRank,
+  onAddTo,
   onToggleBookmark,
   renderReviews,
 }) => {
@@ -97,7 +104,8 @@ const PlaceScreen: React.FC<PlacePageProps & { candidate: PlaceCandidate; visibl
     serverPrediction: predictionFor(spot),
   });
   const friendMatches = friendLists.length > 0 ? getFriendMatchesForSpot(candidate, friendLists) : [];
-  const ranked = findRankedInGroup(candidate, category, myRestaurants);
+  const rankings = rankingsInGroup(candidate, group, myRestaurants);
+  const isRanked = rankings.length > 0;
 
   const price = spotPrice(candidate, category);
   const tags = candidate.cuisines.filter((t) => t !== candidate.primaryTypeDisplay);
@@ -206,39 +214,38 @@ const PlaceScreen: React.FC<PlacePageProps & { candidate: PlaceCandidate; visibl
           </a>
 
           {/* Your status */}
-          <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 p-3.5 flex items-center gap-3">
-            {ranked ? (
-              <>
-                <ScoreBadge score={ranked.magicScore} size="md" />
-                <div className="min-w-0">
-                  <p className="text-sm font-bold">
-                    #{ranked.rankIndex + 1} in your {CATEGORY_LABEL[ranked.category]}
-                  </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">You ranked it {ranked.magicScore.toFixed(1)}</p>
-                </div>
-              </>
-            ) : isBookmarked ? (
-              <>
-                <span className="w-11 h-11 shrink-0 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
-                  <BookmarkCheck className="w-5 h-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold">On your {want} list</p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Rank it once you’ve tried it</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <span className="w-11 h-11 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center text-lg">
-                  ?
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold">Not in your lists</p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">Just looking—nothing is saved until you choose</p>
-                </div>
-              </>
-            )}
-          </div>
+          {isRanked ? (
+            <YourRankings
+              rankings={rankings}
+              addable={listsToAddTo(candidate.placeId, group, rankings)}
+              onReRank={onReRank}
+              onAdd={onAddTo}
+            />
+          ) : (
+            <div className="rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 p-3.5 flex items-center gap-3">
+              {isBookmarked ? (
+                <>
+                  <span className="w-11 h-11 shrink-0 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center">
+                    <BookmarkCheck className="w-5 h-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold">On your {want} list</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Rank it once you’ve tried it</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="w-11 h-11 shrink-0 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-400 flex items-center justify-center text-lg">
+                    ?
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold">Not in your lists</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">Just looking—nothing is saved until you choose</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* What friends and jelly think */}
           {hasSocial && (
@@ -315,10 +322,10 @@ const PlaceScreen: React.FC<PlacePageProps & { candidate: PlaceCandidate; visibl
       </div>
 
       {/* Actions */}
-      {(onRank || onToggleBookmark) && (
+      {!isRanked && (onRank || onToggleBookmark) && (
         <div className="shrink-0 border-t border-zinc-900/10 dark:border-white/10 bg-zinc-50/90 dark:bg-zinc-950/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]">
           <div className="max-w-xl mx-auto px-4 py-3 flex gap-2">
-            {onToggleBookmark && !ranked && (
+            {onToggleBookmark && (
               <button
                 type="button"
                 onClick={onToggleBookmark}
@@ -339,7 +346,7 @@ const PlaceScreen: React.FC<PlacePageProps & { candidate: PlaceCandidate; visibl
                 onClick={onRank}
                 className="flex-[1.4] h-12 px-4 rounded-2xl text-sm font-bold bg-emerald-500 hover:bg-emerald-600 dark:hover:bg-emerald-400 text-white dark:text-zinc-950 shadow-sm active:scale-[0.98] transition"
               >
-                {ranked ? 'Rank again' : `${copy.done} – rank it`}
+                {copy.done} – rank it
               </button>
             )}
           </div>

@@ -11,7 +11,7 @@ import {
 } from '../types';
 import { hasSquareCover, posterUrl, spotPlaceLabel } from '../lib/media';
 import { GROUP_COPY } from '../lib/groups';
-import { categoryOptions, findExistingInCategory } from '../lib/addFlow';
+import { addsRankingNote, categoryOptions, findExistingInCategory, rankingsInGroup } from '../lib/addFlow';
 import { useBodyScrollLock } from '../lib/useBodyScrollLock';
 import { useSwipeDownDismiss } from '../lib/useSwipeDownDismiss';
 import { pctToSpectrumRating, spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
@@ -25,6 +25,8 @@ interface RatingSheetProps {
   searchCategory: SpotCategory;
   /** Re-ranking your entry, or ranking a bookmark / For you pick: the list is fixed */
   reRankingEntry?: RestaurantEntry | null;
+  /** Rank in this list only (re-rank one of your rankings, or add a ranking to another list) */
+  lockedCategory?: SpotCategory;
   existingRestaurants: RestaurantEntry[];
   linearRatingScale: boolean;
   onClose: () => void;
@@ -49,22 +51,28 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
   candidate,
   searchCategory,
   reRankingEntry,
+  lockedCategory,
   existingRestaurants,
   linearRatingScale,
   onClose,
   onComplete,
   onSaveForLater,
 }) => {
-  const group = CATEGORY_GROUP[reRankingEntry?.category ?? searchCategory];
+  const fixedCategory = reRankingEntry?.category ?? lockedCategory;
+  const group = CATEGORY_GROUP[fixedCategory ?? searchCategory];
   const copy = GROUP_COPY[group];
   const isTitles = !copy.hasLocation;
   useBodyScrollLock();
   const swipe = useSwipeDownDismiss({ onClose });
-  const candidateCategories = reRankingEntry ? [reRankingEntry.category] : categoryOptions(candidate, searchCategory);
+  const candidateCategories = fixedCategory ? [fixedCategory] : categoryOptions(candidate, searchCategory);
   const [category, setCategory] = useState<SpotCategory>(candidateCategories[0]);
-  // The entry this rating replaces: the one being re-ranked, or your entry in the chosen list
-  const existingInCategory = reRankingEntry ?? findExistingInCategory(candidate, category, existingRestaurants);
-  const previous = existingInCategory ? Math.round(existingInCategory.initialRating * 10) / 10 : null;
+  // The ranking this one replaces (none when it's new to the chosen list), and your rankings elsewhere
+  const replacing = reRankingEntry
+    ? existingRestaurants.find((r) => r.id === reRankingEntry.id)
+    : findExistingInCategory(candidate, category, existingRestaurants);
+  const alsoRankedIn = rankingsInGroup(candidate, group, existingRestaurants).filter((r) => r.category !== category);
+  const seed = reRankingEntry ?? replacing;
+  const previous = seed ? Math.round(seed.initialRating * 10) / 10 : null;
   const [previewRating, setPreviewRating] = useState<number | null>(previous);
   const [isDraggingLine, setIsDraggingLine] = useState(false);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -84,10 +92,10 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
     trackEvent('rate_initial_score', {
       restaurant_name: candidate.name,
       initial_rating: rating,
-      is_rerank: Boolean(reRankingEntry),
+      is_rerank: Boolean(replacing),
     });
     // This exact (placeId + list) or (name + address + list) may already be ranked: replace it
-    onComplete(candidate, rating, category, existingInCategory?.id);
+    onComplete(candidate, rating, category, reRankingEntry?.id ?? replacing?.id);
   };
 
   const computeRatingFromClientX = (clientX: number, rect: DOMRect): number => {
@@ -128,7 +136,7 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
           className="px-5 pt-1 sm:pt-4 pb-2 flex items-center justify-between shrink-0 touch-none select-none"
         >
           <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-            {existingInCategory ? 'Re-rank' : 'Rank'} in {CATEGORY_LABEL[category]}
+            {replacing ? 'Re-rank in' : alsoRankedIn.length > 0 ? 'Add to' : 'Rank in'} {CATEGORY_LABEL[category]}
           </span>
           <button
             type="button"
@@ -156,6 +164,11 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center justify-center gap-1">
                     {!isTitles && <MapPin className="w-3 h-3 shrink-0" />}
                     <span className="truncate max-w-xs">{where}</span>
+                  </p>
+                )}
+                {!replacing && alsoRankedIn.length > 0 && (
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300 max-w-xs mx-auto pt-1">
+                    {addsRankingNote(alsoRankedIn)}
                   </p>
                 )}
               </div>

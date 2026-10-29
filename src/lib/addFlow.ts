@@ -1,5 +1,6 @@
 import {
   CATEGORY_GROUP,
+  CATEGORY_LABEL,
   GROUP_CATEGORIES,
   PlaceCandidate,
   RestaurantEntry,
@@ -31,7 +32,7 @@ export function searchCategoryFor(group: SpotGroup, viewing: SpotCategory): Spot
 
 /** Whether `entry` is the same spot as `candidate` (titles match by ID; places by ID or name + address). */
 export function isSameCandidate(
-  candidate: Pick<PlaceCandidate, 'placeId' | 'name' | 'formattedAddress'>,
+  candidate: Pick<RestaurantEntry, 'placeId' | 'name' | 'formattedAddress'>,
   entry: Pick<RestaurantEntry, 'placeId' | 'name' | 'formattedAddress'>
 ): boolean {
   if (entry.placeId && candidate.placeId && entry.placeId === candidate.placeId) return true;
@@ -64,6 +65,18 @@ export function categoryOptions(candidate: PlaceCandidate, searchCategory: SpotC
   return Array.from(new Set([...detected, searchCategory]));
 }
 
+/** Your entries for this spot in `group`, one per list, in the group's list order. */
+export function rankingsInGroup(
+  spot: Pick<RestaurantEntry, 'placeId' | 'name' | 'formattedAddress'>,
+  group: SpotGroup,
+  restaurants: RestaurantEntry[]
+): RestaurantEntry[] {
+  const order = GROUP_CATEGORIES[group];
+  return restaurants
+    .filter((r) => CATEGORY_GROUP[r.category] === group && isSameCandidate(spot, r))
+    .sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
+}
+
 /**
  * Your entry for this candidate somewhere in the group, if any: the one in its best-guess list
  * first, else your highest-scored one.
@@ -73,8 +86,7 @@ export function findRankedInGroup(
   searchCategory: SpotCategory,
   restaurants: RestaurantEntry[]
 ): RestaurantEntry | undefined {
-  const group = CATEGORY_GROUP[searchCategory];
-  const matches = restaurants.filter((r) => CATEGORY_GROUP[r.category] === group && isSameCandidate(candidate, r));
+  const matches = rankingsInGroup(candidate, CATEGORY_GROUP[searchCategory], restaurants);
   if (matches.length <= 1) return matches[0];
   const best = categoryOptions(candidate, searchCategory)[0];
   return matches.find((r) => r.category === best) ?? [...matches].sort((a, b) => b.magicScore - a.magicScore)[0];
@@ -111,14 +123,27 @@ export function entryToCandidate(
 }
 
 /**
- * Lists a ranked spot can move to: the others in its group that don't already hold it. A title
- * keeps its ID across lists, so only Read (fiction ⇄ nonfiction) allows it; a movie is not a show
- * and a board game is not a video game.
+ * Lists in `group` that could still hold the spot, given its current `rankings`: where it can be
+ * moved to or ranked a second time. A title keeps its ID across lists, so only Read (fiction ⇄
+ * nonfiction) allows it; a movie is not a show and a board game is not a video game.
  */
+export function listsToAddTo(placeId: string | undefined, group: SpotGroup, rankings: RestaurantEntry[]): SpotCategory[] {
+  if (isMediaPlaceId(placeId) && group !== 'read') return [];
+  return GROUP_CATEGORIES[group].filter((c) => !rankings.some((r) => r.category === c));
+}
+
+/** The lists a ranked spot can move to (or be ranked in as well). */
 export function moveTargetsFor(spot: RestaurantEntry, restaurants: RestaurantEntry[]): SpotCategory[] {
   const group = CATEGORY_GROUP[spot.category];
-  if (isMediaPlaceId(spot.placeId) && group !== 'read') return [];
-  return GROUP_CATEGORIES[group].filter(
-    (c) => c !== spot.category && !restaurants.some((r) => r.category === c && r.placeId === spot.placeId)
-  );
+  return listsToAddTo(spot.placeId, group, rankingsInGroup(spot, group, restaurants));
+}
+
+const listFormat = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+/** Said wherever a second ranking is about to be added: the existing ones are not touched. */
+export function addsRankingNote(rankings: RestaurantEntry[]): string {
+  const labels = listFormat.format(rankings.map((r) => CATEGORY_LABEL[r.category]));
+  return rankings.length > 1
+    ? `This adds a separate ranking—your ${labels} rankings stay as they are.`
+    : `This adds a separate ranking—your ${labels} ranking stays as it is.`;
 }
