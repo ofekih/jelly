@@ -7,6 +7,7 @@ const NONE: SpotFilters = {
   cuisine: 'ALL',
   players: 'ALL',
   maxMinutes: 'ALL',
+  maxPrice: 'ALL',
   query: '',
 };
 
@@ -45,6 +46,31 @@ describe('matchesSpotFilters', () => {
     expect(matchesSpotFilters(game, { ...games, players: 5 })).toBe(false);
     expect(matchesSpotFilters(game, { ...games, maxMinutes: 30 })).toBe(false);
     expect(matchesSpotFilters(spot(), { ...NONE, players: 5 })).toBe(true);
+  });
+});
+
+describe('price filter', () => {
+  const games: SpotFilters = { ...NONE, category: 'video_games', maxPrice: 30 };
+  const priced: Record<string, { new: { amount: number; currency: string } } | null> = {
+    'igdb:1': { new: { amount: 20, currency: 'USD' } },
+    'igdb:2': { new: { amount: 60, currency: 'USD' } },
+    'igdb:3': null,
+  };
+  const priceOf = (id: string | undefined) => (id ? priced[id] : undefined);
+  const game = (placeId: string) => spot({ category: 'video_games', placeId });
+
+  it('hides titles over budget and keeps unknown prices', () => {
+    expect(matchesSpotFilters(game('igdb:1'), games, priceOf)).toBe(true);
+    expect(matchesSpotFilters(game('igdb:2'), games, priceOf)).toBe(false);
+    expect(matchesSpotFilters(game('igdb:3'), games, priceOf)).toBe(true);
+    expect(matchesSpotFilters(game('igdb:4'), games, priceOf)).toBe(true);
+    expect(matchesSpotFilters(game('igdb:2'), { ...games, maxPrice: 'ALL' }, priceOf)).toBe(true);
+  });
+
+  it('only applies to lists with prices', () => {
+    expect(matchesSpotFilters(spot({ placeId: 'igdb:2' }), { ...NONE, maxPrice: 30 }, priceOf)).toBe(true);
+    expect(isFilterActive({ ...NONE, maxPrice: 30 })).toBe(false);
+    expect(isFilterActive(games)).toBe(true);
   });
 });
 

@@ -1,9 +1,10 @@
 import React from 'react';
 
 export const PLAYER_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
+export const PRICE_OPTIONS = [10, 20, 30, 50, 75, 100];
 export const MINUTE_OPTIONS = [20, 30, 45, 60, 90, 120, 180];
 
-/** A filter pill (like the city filter) for board games' player count or play time */
+/** A filter pill (like the city filter) for a game list's player count, play time or price */
 export const GameNightSelect: React.FC<{
   label: string;
   value: number | 'ALL';

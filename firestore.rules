@@ -128,6 +128,10 @@ rules_version = '2';
 // Collection: placeStats (publicly readable/listable; written only by Cloud Functions / Admin SDK)
 // Document ID: {statId}
 //
+// Collection: prices (publicly readable/listable; written only by Cloud Functions / Admin SDK)
+// Document ID: {placeId} for titles a price provider knows (bgg:<id>, igdb:<id>); the work queue
+// priceJobs/{placeId} is server-only (default deny).
+//
 // Collection: placeReviews/{placeKey}/reviews (publicly readable/listable)
 // placeKey = {placeId}__{category}, the same key as placeStats and the author's own
 // users/{uid}/restaurants/{placeKey}; the parent placeReviews/{placeKey} doc is never written.
@@ -557,6 +561,12 @@ service cloud.firestore {
     }
 
     match /placeStats/{statId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Prices of games (and any title a provider covers): anyone reads, only Cloud Functions write
+    match /prices/{placeId} {
       allow read: if true;
       allow write: if false;
     }

@@ -83,8 +83,9 @@ import {
   sanitizeHandle,
 } from './lib/friendsService';
 import { isMediaPlaceId, isSameSpot } from './lib/tasteModel';
-import { isFilterActive, matchesSpotFilters, sortByDistance, SpotFilters } from './lib/spotFilters';
-import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS } from './components/GameNightSelect';
+import { hasPriceFilter, isFilterActive, matchesSpotFilters, sortByDistance, SpotFilters } from './lib/spotFilters';
+import { usePrices } from './lib/usePrices';
+import { GameNightSelect, MINUTE_OPTIONS, PLAYER_OPTIONS, PRICE_OPTIONS } from './components/GameNightSelect';
 import { BookmarkList } from './components/BookmarkList';
 import { ForYouList } from './components/ForYouList';
 import { ConfirmModal } from './components/ConfirmModal';
@@ -285,6 +286,7 @@ export const App: React.FC = () => {
   // Board games only: who's playing and how long you have
   const [selectedPlayers, setSelectedPlayers] = useState<number | 'ALL'>('ALL');
   const [maxMinutes, setMaxMinutes] = useState<number | 'ALL'>('ALL');
+  const [maxPrice, setMaxPrice] = useState<number | 'ALL'>('ALL');
   const [sortByNearestSetting, setSortByNearest] = useState<boolean>(false);
   // Movies and shows have no location to sort by
   const sortByNearest = sortByNearestSetting && groupCopy.hasLocation;
@@ -1663,29 +1665,41 @@ export const App: React.FC = () => {
       cuisine: selectedCuisine,
       players: selectedPlayers,
       maxMinutes,
+      maxPrice,
       query: listSearchQuery,
     }),
-    [selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, listSearchQuery]
+    [selectedCategory, selectedCity, selectedCuisine, selectedPlayers, maxMinutes, maxPrice, listSearchQuery]
+  );
+
+  // Prices of the titles in the open list (one shared read), for the price filter
+  const priceOf = usePrices(
+    hasPriceFilter(selectedCategory)
+      ? [
+          ...getCategoryList(activeRestaurants, selectedCategory).map((r) => r.placeId),
+          ...activeBookmarks.map((b) => b.placeId),
+          ...groupForYou.map((s) => s.placeId),
+        ]
+      : []
   );
 
   const filteredRestaurants = useMemo(() => {
     const base = getCategoryList(activeRestaurants, selectedCategory).filter((r) =>
-      matchesSpotFilters(r, filters)
+      matchesSpotFilters(r, filters, priceOf)
     );
     return sortByNearest && userLocation
       ? sortByDistance(base, userLocation, (a, b) => a.rankIndex - b.rankIndex)
       : base;
-  }, [activeRestaurants, selectedCategory, filters, sortByNearest, userLocation]);
+  }, [activeRestaurants, selectedCategory, filters, priceOf, sortByNearest, userLocation]);
 
   const filteredBookmarks = useMemo(() => {
-    const base = activeBookmarks.filter((b) => matchesSpotFilters(b, filters));
+    const base = activeBookmarks.filter((b) => matchesSpotFilters(b, filters, priceOf));
     return userLocation ? sortByDistance(base, userLocation, (a, b) => b.createdAt - a.createdAt) : base;
-  }, [activeBookmarks, filters, userLocation]);
+  }, [activeBookmarks, filters, priceOf, userLocation]);
 
   const filteredForYou = useMemo(() => {
-    const base = groupForYou.filter((s) => matchesSpotFilters(s, filters));
+    const base = groupForYou.filter((s) => matchesSpotFilters(s, filters, priceOf));
     return sortByNearest && userLocation ? sortByDistance(base, userLocation) : base;
-  }, [groupForYou, filters, sortByNearest, userLocation]);
+  }, [groupForYou, filters, priceOf, sortByNearest, userLocation]);
 
   const isFiltered = isFilterActive(filters);
 
@@ -2147,6 +2161,19 @@ export const App: React.FC = () => {
                     }}
                   />
                 </>
+              )}
+
+              {hasPriceFilter(selectedCategory) && (
+                <GameNightSelect
+                  label="Price"
+                  value={maxPrice}
+                  options={PRICE_OPTIONS.map((n) => [n, `Under $${n}`])}
+                  anyLabel="Any price"
+                  onChange={(v) => {
+                    setMaxPrice(v);
+                    trackEvent('filter_price', { max: v });
+                  }}
+                />
               )}
 
             </div>

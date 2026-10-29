@@ -9,13 +9,12 @@
  * query sorted by rating count.
  */
 import { XMLParser } from 'fast-xml-parser';
-import type { GamePrice, GameResult } from '../../src/types';
-import { steamAppId, steamPrice } from './steamPrice';
+import type { GameResult } from '../../src/types';
 
 const MAX_RESULTS = 10;
 
-type Res = { ok: boolean; status: number; json(): Promise<any>; text(): Promise<string> };
-type Fetch = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Res>;
+export type Res = { ok: boolean; status: number; json(): Promise<any>; text(): Promise<string> };
+export type Fetch = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<Res>;
 
 /** 3 for an exact name, 2 for a prefix, 1 when it contains the query, else 0 */
 export function nameScore(name: string, query: string): number {
@@ -247,7 +246,7 @@ export function toVideoGame(raw: any): (GameResult & { ratings: number }) | null
 let twitchToken: { value: string; expiresAt: number } | null = null;
 
 /** An app access token for IGDB, reused until shortly before it expires (about 60 days). */
-async function igdbToken(clientId: string, clientSecret: string, fetchFn: Fetch): Promise<string> {
+export async function igdbToken(clientId: string, clientSecret: string, fetchFn: Fetch): Promise<string> {
   if (twitchToken && twitchToken.expiresAt > Date.now() + 60_000) return twitchToken.value;
   const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: 'client_credentials' });
   const res = await fetchFn('https://id.twitch.tv/oauth2/token', {
@@ -301,26 +300,4 @@ export async function searchVideoGames(
     .sort((a, b) => relevance(b.title, query, b.ratings) - relevance(a.title, query, a.ratings))
     .slice(0, MAX_RESULTS)
     .map(({ ratings: _ratings, ...game }) => game);
-}
-
-/** A video game's Steam price via its IGDB entry's Steam link, or null when it isn't on Steam. */
-export async function videoGamePrice(
-  igdbId: string,
-  clientId: string,
-  clientSecret: string,
-  fetchFn: Fetch = fetch
-): Promise<GamePrice | null> {
-  const token = await igdbToken(clientId, clientSecret, fetchFn);
-  const res = await fetchFn('https://api.igdb.com/v4/games', {
-    method: 'POST',
-    headers: { 'Client-ID': clientId, Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    body: `fields external_games.uid,external_games.external_game_source,external_games.category,websites.url; where id = ${Number(igdbId)};`,
-  });
-  if (res.status === 401) resetIgdbToken();
-  if (!res.ok) throw new Error(`IGDB ${res.status}`);
-  const appId = steamAppId((await res.json())[0]);
-  if (!appId) return null;
-  const steam = await fetchFn(`https://store.steampowered.com/api/appdetails?appids=${appId}&cc=us&filters=basic,price_overview`);
-  if (!steam.ok) throw new Error(`Steam ${steam.status}`);
-  return steamPrice(appId, await steam.json()) ?? null;
 }

@@ -30,6 +30,8 @@ beforeEach(async () => {
       spots: { p1__bars: { score: 8.1, confidence: 'high', basis: 'Based on 3 taste-matched jelly users', raters: 3 } },
     });
     await setDoc(doc(db, 'predictionJobs/bob'), { dirtyAt: 1 });
+    await setDoc(doc(db, 'prices/bgg:13'), { source: 'amazon', new: { amount: 40, currency: 'USD' }, fetchedAt: 1 });
+    await setDoc(doc(db, 'priceJobs/bgg:13'), { queuedAt: 1, attempts: 0 });
   });
 });
 
@@ -163,6 +165,18 @@ describe('profiles/{uid}/followers/{followerUid}', () => {
     await assertFails(setDoc(doc(as('alice'), 'profiles/bob/followers/alice'), {}));
     await assertFails(setDoc(doc(as('alice'), 'profiles/bob/followers/alice'), { createdAt: 'now' }));
     await assertFails(setDoc(doc(as('alice'), 'profiles/bob/followers/alice'), { createdAt: 1, extra: true }));
+  });
+});
+
+describe('prices/{placeId}', () => {
+  it('is public to read, closed to every client write, and its job queue is private', async () => {
+    await assertSucceeds(getDoc(doc(anon(), 'prices/bgg:13')));
+    await assertSucceeds(getDocs(collection(anon(), 'prices')));
+    await assertFails(setDoc(doc(as('alice'), 'prices/bgg:13'), { fetchedAt: 2 }));
+    await assertFails(setDoc(doc(as('alice'), 'prices/bgg:99'), { fetchedAt: 2 }));
+    await assertFails(deleteDoc(doc(as('alice'), 'prices/bgg:13')));
+    await assertFails(getDoc(doc(as('alice'), 'priceJobs/bgg:13')));
+    await assertFails(setDoc(doc(as('alice'), 'priceJobs/bgg:99'), { queuedAt: 1 }));
   });
 });
 

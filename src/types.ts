@@ -201,9 +201,13 @@ export interface GameResult {
   weight?: number;
 }
 
-/** What a game costs: the new retail price (Amazon) and/or secondhand listings' typical range (BGG Marketplace). */
-export interface GamePrice {
+/**
+ * What a title costs (`prices/{placeId}`, written by Cloud Functions): the new retail price and/or
+ * secondhand listings' typical range. A doc with neither means "checked, nothing found".
+ */
+export interface ItemPrice {
   source?: 'amazon' | 'steam';
+  fetchedAt?: number; // ms; when the providers were last asked
   new?: { amount: number; currency: string; was?: number }; // `was`: the list price while on sale; amount 0 = free
   used?: { low: number; high: number; count: number; currency: string };
 }

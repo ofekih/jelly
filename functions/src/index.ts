@@ -10,10 +10,10 @@ import { markPredictionsDirty, recomputeAllPredictions, runPredictionJobs } from
 import { sameIdSet } from './profiles';
 import { recomputePlaceStat } from './recompute';
 import { recountReviewVotes, syncPlaceReview } from './reviews';
-import { boardGamePrice } from './gamePrice';
 import { cleanQuery, searchTitles } from './tmdb';
 import { searchBooks } from './books';
-import { searchBoardGames, searchVideoGames, videoGamePrice } from './games';
+import { searchBoardGames, searchVideoGames } from './games';
+import { queueMissingPrices, queuePrice, queueStalePrices, runPriceJobs } from './itemPrices';
 import { appHtml, cardHeading, listPreview, parseSharePath, previewMeta, siteOrigin, withShareMeta } from './sharePage';
 
 initializeApp();
@@ -42,6 +42,7 @@ export const onRestaurantWritten = onDocumentWritten(
     const keys = affectedPlaceKeys(before, after);
     const db = getFirestore();
     await Promise.all([
+      queuePrice(db, after?.placeId),
       ...keys.map((key) => recomputePlaceStat(db, key)),
       // Public reviews carry the author's score and only live while the spot is ranked
       ...keys.map((key) => syncPlaceReview(db, event.params.uid, key)),
@@ -73,7 +74,8 @@ export const onBookmarkWritten = onDocumentWritten('users/{uid}/bookmarks/{id}',
   const before = event.data?.before.data();
   const after = event.data?.after.data();
   if (before && after && before.placeId === after.placeId && before.category === after.category) return;
-  await markPredictionsDirty(getFirestore(), event.params.uid);
+  const db = getFirestore();
+  await Promise.all([queuePrice(db, after?.placeId), markPredictionsDirty(db, event.params.uid)]);
 });
 
 /**
@@ -113,6 +115,28 @@ export const nightlyPredictions = onSchedule(
 );
 
 const tmdbReadToken = defineSecret('TMDB_READ_TOKEN');
+const bggToken = defineSecret('BGG_API_TOKEN');
+const twitchClientId = defineSecret('TWITCH_CLIENT_ID');
+const twitchClientSecret = defineSecret('TWITCH_CLIENT_SECRET');
+
+/** Looks up the prices that spots in anyone's lists are waiting on (queued by the triggers above). */
+export const processPriceJobs = onSchedule(
+  { schedule: 'every 1 minutes', secrets: [twitchClientId, twitchClientSecret], timeoutSeconds: 300, memory: '256MiB', retryCount: 0 },
+  async () => {
+    const done = await runPriceJobs(getFirestore(), { twitchClientId: twitchClientId.value(), twitchClientSecret: twitchClientSecret.value() });
+    if (done > 0) logger.info('prices fetched', { count: done });
+  }
+);
+
+/** Queues prices that are missing (spots from before prices existed, failed lookups) or stale. */
+export const nightlyPrices = onSchedule(
+  { schedule: 'every day 05:00', timeZone: 'America/Los_Angeles', timeoutSeconds: 540, memory: '512MiB' },
+  async () => {
+    const db = getFirestore();
+    const [missing, stale] = [await queueMissingPrices(db), await queueStalePrices(db)];
+    logger.info('nightly prices', { missing, stale });
+  }
+);
 
 /**
  * Movie & TV search for the Watch lists, served at `/api/tmdb/search?q=` through a Hosting
@@ -161,10 +185,6 @@ export const books = onRequest(
   }
 );
 
-const bggToken = defineSecret('BGG_API_TOKEN');
-const twitchClientId = defineSecret('TWITCH_CLIENT_ID');
-const twitchClientSecret = defineSecret('TWITCH_CLIENT_SECRET');
-
 /** One title search endpoint: validates `?q=`, caches successes on the CDN, hides upstream errors. */
 function titleSearch(name: string, search: (query: string) => Promise<unknown[]>) {
   return async (req: { method: string; path: string; query: Record<string, unknown> }, res: any) => {
@@ -185,61 +205,16 @@ function titleSearch(name: string, search: (query: string) => Promise<unknown[]>
   };
 }
 
-const bggSearch = titleSearch('bgg', (q) => searchBoardGames(q, bggToken.value()));
-
-/**
- * Board & card games for the Play lists: search at `/api/bgg/search?q=` (like `tmdb` above) and a
- * game's price at `/api/bgg/price?id=`, cached for a day since prices move.
- */
+/** Board & card game search for the Play lists, served at `/api/bgg/search?q=` like `tmdb` above. */
 export const bgg = onRequest(
   { secrets: [bggToken], memory: '256MiB', maxInstances: 5, timeoutSeconds: 30 },
-  async (req, res) => {
-    if (!req.path.endsWith('/price')) {
-      await bggSearch(req, res);
-      return;
-    }
-    const id = typeof req.query.id === 'string' ? req.query.id : '';
-    if (req.method !== 'GET' || !/^\d{1,9}$/.test(id)) {
-      res.status(400).json({ error: 'Expected GET /api/bgg/price?id=<BGG game id>' });
-      return;
-    }
-    try {
-      const price = await boardGamePrice(id);
-      res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
-      res.json({ price });
-    } catch (err) {
-      logger.warn('bgg price failed', { id, err: String(err) });
-      res.set('Cache-Control', 'no-store');
-      res.status(502).json({ error: 'Prices are unavailable right now' });
-    }
-  }
+  titleSearch('bgg', (q) => searchBoardGames(q, bggToken.value()))
 );
 
-const igdbSearch = titleSearch('igdb', (q) => searchVideoGames(q, twitchClientId.value(), twitchClientSecret.value()));
-
-/** Video games for the Play lists: search at `/api/igdb/search?q=` and the Steam price at `/api/igdb/price?id=`. */
+/** Video game search for the Play lists, served at `/api/igdb/search?q=`. */
 export const igdb = onRequest(
   { secrets: [twitchClientId, twitchClientSecret], memory: '256MiB', maxInstances: 5, timeoutSeconds: 20 },
-  async (req, res) => {
-    if (!req.path.endsWith('/price')) {
-      await igdbSearch(req, res);
-      return;
-    }
-    const id = typeof req.query.id === 'string' ? req.query.id : '';
-    if (req.method !== 'GET' || !/^\d{1,9}$/.test(id)) {
-      res.status(400).json({ error: 'Expected GET /api/igdb/price?id=<IGDB game id>' });
-      return;
-    }
-    try {
-      const price = await videoGamePrice(id, twitchClientId.value(), twitchClientSecret.value());
-      res.set('Cache-Control', 'public, max-age=3600, s-maxage=86400');
-      res.json({ price });
-    } catch (err) {
-      logger.warn('igdb price failed', { id, err: String(err) });
-      res.set('Cache-Control', 'no-store');
-      res.status(502).json({ error: 'Prices are unavailable right now' });
-    }
-  }
+  titleSearch('igdb', (q) => searchVideoGames(q, twitchClientId.value(), twitchClientSecret.value()))
 );
 
 /**

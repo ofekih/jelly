@@ -3,7 +3,8 @@ import { Bookmark, Copy, ExternalLink, Plus, Sparkles, Trash2 } from 'lucide-rea
 import { BookmarkEntry, CATEGORY_GROUP, CATEGORY_LABEL, RestaurantEntry, SharedListPayload, SpotCategory } from '../types';
 import { GROUP_COPY, hasLocation, spotPrice, wantLabel } from '../lib/groups';
 import { hasSquareCover, posterUrl, spotLink, spotPlaceLabel } from '../lib/media';
-import { gamePriceLine, useGamePrice } from '../lib/gamePrice';
+import { priceLine } from '../lib/itemPrices';
+import { usePrices } from '../lib/usePrices';
 import { PosterThumb } from './PosterThumb';
 import { CommunityStat, getSpotSocialMetrics } from '../lib/friendsService';
 import { placeStatKey } from '../lib/socialService';
@@ -51,19 +52,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   friendName,
   onContextMenu,
 }) => {
-  const rowRef = useRef<HTMLDivElement>(null);
-  const [onScreen, setOnScreen] = useState(false);
-  useEffect(() => {
-    const el = rowRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') {
-      setOnScreen(true);
-      return;
-    }
-    const observer = new IntersectionObserver(([entry]) => entry?.isIntersecting && setOnScreen(true), { rootMargin: '200px' });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  const gamePrice = gamePriceLine(useGamePrice(item.placeId, onScreen));
+  const itemPrice = priceLine(usePrices([item.placeId])(item.placeId));
   const [swipeX, setSwipeX] = useState(0);
   const [isTouchTracking, setIsTouchTracking] = useState(false);
   const touchStateRef = useRef<{
@@ -86,7 +75,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   const distLabel = formatDistanceMiles(rawMiles);
   const subtitleParts = [
     primaryCuisine,
-    spotPrice(item, item.category) || gamePrice,
+    spotPrice(item, item.category) || itemPrice,
     locationLabel,
     distLabel,
   ].filter(Boolean);
@@ -178,7 +167,7 @@ const SwipeableBookmarkRow: React.FC<SwipeableBookmarkRowProps> = ({
   };
 
   return (
-    <div ref={rowRef} className="relative overflow-hidden select-none">
+    <div className="relative overflow-hidden select-none">
       {/* Background Swipe Actions Layer */}
       {!readOnly && swipeX !== 0 && (
         <div className="absolute inset-0 flex items-stretch justify-between pointer-events-auto">

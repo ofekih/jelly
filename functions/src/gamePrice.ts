@@ -5,7 +5,7 @@
  * `/api/bgg/price?id=<bgg id>`. Either half can be missing (Amazon doesn't stock everything, and
  * a few games have no listings), and a game with neither has no price.
  */
-import type { GamePrice } from '../../src/types';
+import type { ItemPrice } from '../../src/types';
 
 const GEEKDO = 'https://api.geekdo.com/api';
 const USER_AGENT = 'jelly/1.0 (https://eatwithjelly.com)';
@@ -26,7 +26,7 @@ export function quantile(sorted: number[], p: number): number {
 }
 
 /** The Amazon ad's price in dollars, from `{us: {newPriceWithoutSymbol}}` (`[]` when there's no ad) */
-export function newPrice(ad: any): GamePrice['new'] {
+export function newPrice(ad: any): ItemPrice['new'] {
   const us = ad?.us;
   const amount = Number(us?.newPriceWithoutSymbol);
   if (!us || us.newPriceCurrency !== CURRENCY || !Number.isFinite(amount) || amount <= 0) return undefined;
@@ -34,7 +34,7 @@ export function newPrice(ad: any): GamePrice['new'] {
 }
 
 /** The middle half (25th–75th percentile) of active dollar listings, rounded to whole dollars */
-export function usedPrice(market: any): GamePrice['used'] {
+export function usedPrice(market: any): ItemPrice['used'] {
   const prices: number[] = ((market?.products ?? []) as any[])
     .filter((p) => p?.currency === CURRENCY && p.productstate === 'active')
     .map((p) => Number(p.price))
@@ -47,7 +47,7 @@ export function usedPrice(market: any): GamePrice['used'] {
 }
 
 /** The game's price, or null when neither source knows one. Throws when both sources fail. */
-export async function boardGamePrice(bggId: string, fetchFn: Fetch = fetch): Promise<GamePrice | null> {
+export async function boardGamePrice(bggId: string, fetchFn: Fetch = fetch): Promise<ItemPrice | null> {
   const id = encodeURIComponent(bggId);
   const get = async (path: string) => {
     const res = await fetchFn(`${GEEKDO}/${path}`, { headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' } });
@@ -59,7 +59,7 @@ export async function boardGamePrice(bggId: string, fetchFn: Fetch = fetch): Pro
     get(`market/products?objectid=${id}&objecttype=thing`),
   ]);
   if (ad.status === 'rejected' && market.status === 'rejected') throw ad.reason;
-  const price: GamePrice = {
+  const price: ItemPrice = {
     source: 'amazon',
     new: ad.status === 'fulfilled' ? newPrice(ad.value) : undefined,
     used: market.status === 'fulfilled' ? usedPrice(market.value) : undefined,
