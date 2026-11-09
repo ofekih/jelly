@@ -127,6 +127,11 @@ import {
   searchProfiles,
 } from './lib/socialService';
 import { refreshPlaceStatsSoon, usePlaceStats } from './lib/usePlaceStats';
+import { BELI_UNDO_DAYS, readBeliStatus, shouldShowBeliCard, writeBeliStatus, type BeliImportStatus } from './lib/beliImportUi';
+import { editedSinceImport, importBatches, undoImport } from './lib/beliImport/plan';
+import type { ImportPlan } from './lib/beliImport/types';
+import { persistListChange } from './lib/sync/importWrite';
+import { BeliEntryCard } from './components/beliImport/BeliEntryCard';
 import { usePredictionMap, usePredictions, watchPredictions } from './lib/usePredictions';
 import { buildForYouSpots, ForYouSpot } from './lib/predictions';
 import { usePriceBackfill } from './lib/usePriceBackfill';
@@ -168,6 +173,7 @@ const SettingsModal = lazyNamed(() => import('./components/SettingsModal'), 'Set
 const FollowListModal = lazyNamed(() => import('./components/FollowListModal'), 'FollowListModal');
 // Only new users (or a replay) ever need the welcome tour, so it isn't preloaded
 const OnboardingTour = lazyNamed(() => import('./components/onboarding/OnboardingTour'), 'OnboardingTour');
+const BeliImportFlow = lazyNamed(() => import('./components/beliImport/BeliImportFlow'), 'BeliImportFlow');
 const FeedbackModal = lazyNamed(() => import('./components/FeedbackModal'), 'FeedbackModal');
 const ReviewPromptSheet = lazyNamed(() => import('./components/ReviewPromptSheet'), 'ReviewPromptSheet');
 const PlaceReviews = lazyNamed(() => import('./components/PlaceReviews'), 'PlaceReviews');
@@ -330,6 +336,18 @@ export const App: React.FC = () => {
   // Welcome tour: opens once for brand-new users; `openTour` replays it (Settings, profile)
   const [isTourOpen, setIsTourOpen] = useState(false);
   const openTour = () => setIsTourOpen(true);
+
+  // Beli import: a full-screen page in the history (Back closes it), the per-device status behind
+  // the Eat card and Settings row, and whether it opens on the "ask Beli" helper
+  const [isBeliOpen, showBeliPage, hideBeliPage] = useHistoryPage('jellyBeliImport');
+  const [beliStartOnAsk, setBeliStartOnAsk] = useState(false);
+  const [beliStatus, setBeliStatus] = useState<BeliImportStatus>(() => readBeliStatus());
+  const updateBeliStatus = (patch: Partial<BeliImportStatus>) => setBeliStatus(writeBeliStatus(patch));
+  const openBeliImport = (onAsk = false) => {
+    trackEvent('beli_import_open', { ask: onAsk });
+    setBeliStartOnAsk(onAsk);
+    showBeliPage();
+  };
   // Dot on Settings after a new major/minor release; brand-new visitors start caught up.
   const [hasUnseenChangelog, setHasUnseenChangelog] = useState(() => {
     const settings = readLocalSettings();
@@ -657,6 +675,80 @@ export const App: React.FC = () => {
         logWriteError('save list')(err);
       }
     }
+  };
+
+  // A whole-list change at once (a Beli import or undoing one): state, the local copy, and every
+  // changed doc in batches. Community stats for the touched spots refresh after.
+  const applyListChange = async (nextRestaurants: RestaurantEntry[], nextBookmarks: BookmarkEntry[]) => {
+    const change = {
+      prevRestaurants: restaurantsRef.current,
+      nextRestaurants,
+      prevBookmarks: bookmarks,
+      nextBookmarks,
+    };
+    restaurantsRef.current = nextRestaurants;
+    setRestaurants(nextRestaurants);
+    setBookmarks(nextBookmarks);
+    await persistListChange(change, { db, uid: user?.uid ?? null });
+    const touched = new Set([...change.prevRestaurants, ...nextRestaurants].map((r) => r.id));
+    refreshPlaceStatsSoon(
+      [...change.prevRestaurants, ...nextRestaurants]
+        .filter((r) => touched.has(r.id))
+        .map((r) => placeStatKey(r.placeId, r.category))
+        .filter((k): k is string => Boolean(k))
+    );
+  };
+
+  const undoBeliBatch = async (batch: string) => {
+    const undone = undoImport(restaurantsRef.current, bookmarks, batch);
+    try {
+      await applyListChange(undone.restaurants, undone.bookmarks);
+      trackEvent('beli_import_undo', { spots: undone.removedSpotIds.length, bookmarks: undone.removedBookmarkIds.length });
+      showToast(`Removed ${undone.removedSpotIds.length} imported spots`, { kind: 'removed' });
+    } catch (err) {
+      logWriteError('undo import')(err);
+      showToast('Couldn’t undo the import – check your connection and try again', { kind: 'error' });
+    }
+  };
+
+  const handleBeliImport = async (plan: ImportPlan) => {
+    try {
+      await applyListChange(plan.restaurants, plan.bookmarks);
+    } catch (err) {
+      logWriteError('beli import')(err);
+      showToast('Some spots didn’t save – choose the file again to finish the import', { kind: 'error' });
+      throw err;
+    }
+    const added = Object.values(plan.summary.added).reduce((n, k) => n + (k ?? 0), 0);
+    showToast(`Imported ${added} spots from Beli`, {
+      kind: 'success',
+      action: { label: 'Undo', onClick: () => void undoBeliBatch(plan.batch) },
+      durationMs: 10000,
+    });
+  };
+
+  const latestBeliImport = useMemo(() => {
+    const latest = importBatches(restaurants, bookmarks)[0];
+    if (!latest || Date.now() - latest.importedAt > BELI_UNDO_DAYS * 86_400_000) return null;
+    return latest;
+  }, [restaurants, bookmarks]);
+
+  const requestUndoBeliImport = () => {
+    if (!latestBeliImport) return;
+    const { batch, spots, bookmarks: saved } = latestBeliImport;
+    const edited = editedSinceImport(restaurants, batch);
+    setConfirmDialog({
+      title: 'Undo the Beli import?',
+      message: `This removes the ${spots} spots${saved ? ` and ${saved} want-to-try places` : ''} it added${
+        edited ? `, including ${edited} you’ve ranked again since` : ''
+      }. Your other spots stay as they are.`,
+      confirmLabel: 'Undo import',
+      onConfirm: () => {
+        setConfirmDialog(null);
+        closeSettings();
+        void undoBeliBatch(batch);
+      },
+    });
   };
 
   const handleAddBookmark = async (
@@ -2198,6 +2290,29 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {!isReadOnly &&
+          !sharedListLoading &&
+          selectedGroup === 'eat' &&
+          activeTab === 'ranked' &&
+          shouldShowBeliCard(
+            restaurants.filter((r) => CATEGORY_GROUP[r.category] === 'eat').length,
+            beliStatus,
+            importBatches(restaurants, bookmarks).length > 0
+          ) && (
+            <div className="mb-3">
+              <BeliEntryCard
+                status={beliStatus}
+                onImport={() => openBeliImport()}
+                onAsk={() => openBeliImport(true)}
+                onDismiss={() => {
+                  trackEvent('beli_card_dismiss');
+                  updateBeliStatus({ cardDismissed: true });
+                  showToast('Hidden. Import from Beli is always in Settings.');
+                }}
+              />
+            </div>
+          )}
+
         {showOrderCheckPrompt && (
           <div className="mb-3 flex items-center gap-3 rounded-2xl border border-emerald-200/70 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 px-4 py-2.5 text-xs">
             <ArrowUpDown className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -2647,6 +2762,25 @@ export const App: React.FC = () => {
             closeSettings();
             openTour();
           }}
+          onOpenBeliImport={() => {
+            closeSettings();
+            openBeliImport();
+          }}
+          beliImportStatus={
+            latestBeliImport
+              ? `Imported ${new Date(latestBeliImport.importedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+              : beliStatus.askedAt
+                ? `Waiting on Beli since ${new Date(beliStatus.askedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                : 'Bring your rankings over'
+          }
+          beliUndo={
+            latestBeliImport
+              ? {
+                  label: `${latestBeliImport.spots} spots · until ${new Date(latestBeliImport.importedAt + BELI_UNDO_DAYS * 86_400_000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`,
+                  onUndo: requestUndoBeliImport,
+                }
+              : null
+          }
         />
       </MountWhenOpened>
 
@@ -2669,6 +2803,32 @@ export const App: React.FC = () => {
               setIsAddModalOpen(true);
             }}
             onSignIn={user ? undefined : handleGoogleSignIn}
+            onBeliImport={() => openBeliImport()}
+          />
+        </Suspense>
+      )}
+
+      {isBeliOpen && (
+        <Suspense fallback={null}>
+          <BeliImportFlow
+            onClose={hideBeliPage}
+            uid={user?.uid ?? null}
+            onSignIn={handleGoogleSignIn}
+            restaurants={restaurants}
+            bookmarks={bookmarks}
+            linearRatingScale={linearRatingScale}
+            onImport={handleBeliImport}
+            onSeeList={(category) => {
+              setSelectedCategory(category);
+              setActiveTab('ranked');
+            }}
+            startOnAsk={beliStartOnAsk}
+            username={beliStatus.username ?? ''}
+            onUsername={(username) => updateBeliStatus({ username })}
+            onAsked={() => {
+              trackEvent('beli_import_asked');
+              updateBeliStatus({ askedAt: Date.now() });
+            }}
           />
         </Suspense>
       )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Download, LogOut, MapPin, MessageCircleHeart, CirclePlay, Navigation, Sparkles } from 'lucide-react';
+import { ChevronRight, Download, FileUp, LogOut, MapPin, MessageCircleHeart, CirclePlay, Navigation, Sparkles, Undo2 } from 'lucide-react';
 import { CURRENT_VERSION, displayVersion } from '../lib/changelog';
 import { spectrumGradient, spectrumRatingToPct } from '../lib/rankingEngine';
 import { RATING_TIERS } from '../lib/ratingTiers';
@@ -27,6 +27,11 @@ interface SettingsModalProps {
   onSignOut: () => void;
   /** Reopens the welcome tour */
   onReplayTour: () => void;
+  /** Import from Beli: where it stands ("Waiting on Beli since Nov 8"), and opening it */
+  beliImportStatus?: string;
+  onOpenBeliImport?: () => void;
+  /** The latest Beli import, while it can still be undone */
+  beliUndo?: { label: string; onUndo: () => void } | null;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -46,6 +51,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   email,
   onSignOut,
   onReplayTour,
+  beliImportStatus,
+  onOpenBeliImport,
+  beliUndo,
 }) => {
   if (!isOpen) return null;
 
@@ -196,6 +204,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>Export JSON</span>
               </button>
             </div>
+
+            {onOpenBeliImport && (
+              <button
+                type="button"
+                onClick={onOpenBeliImport}
+                className="w-full pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2 text-xs text-left group"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <FileUp className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                      Import from Beli
+                    </span>
+                    {beliImportStatus && <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">{beliImportStatus}</span>}
+                  </span>
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+              </button>
+            )}
+            {beliUndo && (
+              <button
+                type="button"
+                onClick={beliUndo.onUndo}
+                className="w-full pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-2 text-xs text-left group"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <Undo2 className="w-3.5 h-3.5 shrink-0 text-rose-500" />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-rose-600 dark:group-hover:text-rose-400 transition-colors">
+                      Undo Beli import
+                    </span>
+                    <span className="block text-[11px] text-zinc-500 dark:text-zinc-400">{beliUndo.label}</span>
+                  </span>
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+              </button>
+            )}
 
             <button
               type="button"

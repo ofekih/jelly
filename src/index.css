@@ -2,6 +2,11 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The Beli import (and other full-screen tasks): a page on phones, a dialog from 640×560 up; `short`
+   is phone landscape and other short screens, where headers compact and hero art hides */
+@custom-variant dialog (@media (min-width: 640px) and (min-height: 560px));
+@custom-variant short (@media (max-height: 480px));
+
 /* Score colors: a fixed copy of emerald, so scores look the same in every group */
 @theme {
   --color-jade-50: oklch(97.9% 0.021 166.113);
@@ -313,4 +318,40 @@
   .animate-jelly-dialog {
     animation: jelly-modal-fade-in 150ms ease-out;
   }
+}
+
+/* Gut-feeling spectrum as a native range input (Beli import anchors) */
+.jelly-spectrum-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3rem;
+  margin: 0;
+  border-radius: 1rem;
+  cursor: pointer;
+  touch-action: pan-y;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+}
+.dark .jelly-spectrum-range {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.15);
+}
+.jelly-spectrum-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid var(--thumb);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+}
+.jelly-spectrum-range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 3px solid var(--thumb);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+}
+.jelly-spectrum-range:focus-visible {
+  outline: 2px solid var(--color-emerald-500);
+  outline-offset: 3px;
 }

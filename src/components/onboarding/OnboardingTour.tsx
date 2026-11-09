@@ -6,7 +6,7 @@ import { SpectrumExplorer } from '../../about/demos/SpectrumExplorer';
 import { DifferentVisual, FreeVisual, FriendsVisual, StartVisual, SxSVisual, WelcomeVisual } from './visuals';
 import './onboarding.css';
 
-export type OnboardingExit = 'skip' | 'done' | 'add_first' | 'sign_in';
+export type OnboardingExit = 'skip' | 'done' | 'add_first' | 'sign_in' | 'beli_import';
 
 interface OnboardingTourProps {
   /** Called once the tour closes, however it closed */
@@ -15,6 +15,8 @@ interface OnboardingTourProps {
   onAddFirst: () => void;
   /** Google sign-in; omit when already signed in (the hint is then hidden) */
   onSignIn?: () => void;
+  /** Opens the Beli import (shown on the last page) */
+  onBeliImport?: () => void;
 }
 
 interface TourPage {
@@ -144,7 +146,7 @@ const SWIPE_VELOCITY = 0.45;
  * Full-screen welcome tour for new users: one idea per page with a live visual, swipe or
  * Next/Back to move, Skip always visible. Loaded in its own chunk.
  */
-export const OnboardingTour: React.FC<OnboardingTourProps> = ({ onClose, onAddFirst, onSignIn }) => {
+export const OnboardingTour: React.FC<OnboardingTourProps> = ({ onClose, onAddFirst, onSignIn, onBeliImport }) => {
   useBodyScrollLock();
   const [index, setIndex] = useState(0);
   const [dragX, setDragX] = useState(0);
@@ -174,8 +176,9 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ onClose, onAddFi
       onClose(exit);
       if (exit === 'add_first') onAddFirst();
       if (exit === 'sign_in') onSignIn?.();
+      if (exit === 'beli_import') onBeliImport?.();
     },
-    [index, onClose, onAddFirst, onSignIn]
+    [index, onClose, onAddFirst, onSignIn, onBeliImport]
   );
 
   useEffect(() => {
@@ -339,6 +342,15 @@ export const OnboardingTour: React.FC<OnboardingTourProps> = ({ onClose, onAddFi
             >
               <Plus className="h-4.5 w-4.5 stroke-[2.5]" /> Add your first spot
             </button>
+            {onBeliImport && (
+              <button
+                type="button"
+                onClick={() => close('beli_import')}
+                className="w-full rounded-full py-2.5 text-[13px] font-semibold text-jade-700 transition hover:bg-zinc-200/60 dark:text-jade-300 dark:hover:bg-zinc-800/70"
+              >
+                Coming from Beli? Import your list
+              </button>
+            )}
             {onSignIn ? (
               <button
                 type="button"
