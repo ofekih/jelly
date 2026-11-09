@@ -98,6 +98,11 @@ restaurants, places, movies, TV shows, books and games. Live at https://eatwithj
 - **Adding a field to any Firestore doc requires updating `firestore.rules` validators**,
   otherwise writes fail (fire-and-forget writes only log via `logWriteError` in the console). Delegate rules edits to the
   `firestore-rules-author` subagent, then deploy rules.
+- **Rules have a budget: 1,000 evaluated expressions per document written** (the emulator enforces
+  it too). Spot and saved-spot validators check only the written keys (`writtenKeys()`: all on
+  create, changed ones on update) with inline checks; a few extra checks there once broke every
+  rank in production. Run `test:emulator` (`rulesBudget.emu.test.ts`) and `test:e2e` before any
+  rules deploy.
 - **Rating scale is non-linear by default**: tiers Skip/Mid/Good/Great/Incredible (≈1–3.9 / 4–5.9 /
   6–7.4 / 7.5–8.7 / 8.8–10) fill 16/21/24/27/12% of the bar (`barShare` in `ratingTiers.ts`): roughly how
   often people feel each way (MovieLens/Letterboxd/BeerAdvocate, 75%) plus a plain-line floor (25%).

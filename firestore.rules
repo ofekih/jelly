@@ -217,24 +217,10 @@ service cloud.firestore {
       return listVal is list && listVal.size() <= maxSize;
     }
 
-    // Validate optional spot category (if present and non-null, must be one of the allowed values)
-    function isValidOptionalCategory(data) {
-      return !('category' in data) ||
-        data.category == null ||
-        data.category in [
-          // Eat
-          'restaurants', 'brunch', 'dessert', 'bakeries', 'coffee_tea', 'bars',
-          // Explore
-          'museums', 'theme_parks', 'zoos', 'nature',
-          // Travel
-          'cities', 'getaways', 'countries', 'stays',
-          // Watch
-          'movies', 'tv_shows',
-          // Read
-          'fiction', 'nonfiction',
-          // Play
-          'board_games', 'video_games'
-        ];
+    // A spot category (one regex, not a 20-item list: each list item costs an expression). Eat |
+    // Explore | Travel | Watch | Read | Play. A non-string fails (`matches` errors).
+    function isValidCategory(c) {
+      return c.matches('^(restaurants|brunch|dessert|bakeries|coffee_tea|bars|museums|theme_parks|zoos|nature|cities|getaways|countries|stays|movies|tv_shows|fiction|nonfiction|board_games|video_games)$');
     }
 
     // Validate a [min, max] pair of small positive whole numbers (players, minutes)
@@ -243,47 +229,38 @@ service cloud.firestore {
         r[0] is int && r[1] is int && r[0] >= 1 && r[0] <= r[1] && r[1] <= 10000;
     }
 
-    // Validate an optional typical spend per person (`PriceRange` in src/types.ts): an ISO 4217
-    // currency plus whole-unit start and/or end (end missing = "100+"), 0..1e9, end >= start
+    // Validate a typical spend per person (`PriceRange` in src/types.ts): an ISO 4217 currency
+    // plus whole-unit start and/or end (end missing = "100+"), 0..1e9, end >= start
     function isValidPriceAmount(v) {
       return v is number && v >= 0 && v <= 1000000000;
     }
 
-    function isValidOptionalPriceRange(data) {
-      return !('priceRange' in data) || data.priceRange == null ||
-        (data.priceRange is map &&
-         data.priceRange.keys().hasOnly(['currency', 'start', 'end']) &&
-         data.priceRange.currency is string && data.priceRange.currency.matches('^[A-Z]{3}$') &&
-         ('start' in data.priceRange || 'end' in data.priceRange) &&
-         (!('start' in data.priceRange) || isValidPriceAmount(data.priceRange.start)) &&
-         (!('end' in data.priceRange) || isValidPriceAmount(data.priceRange.end)) &&
-         (!('start' in data.priceRange) || !('end' in data.priceRange) || data.priceRange.end >= data.priceRange.start));
+    function isValidPriceRange(p) {
+      return p.keys().hasOnly(['currency', 'start', 'end']) &&
+        p.currency is string && p.currency.matches('^[A-Z]{3}$') &&
+        ('end' in p
+          ? isValidPriceAmount(p.end) && (!('start' in p) || (isValidPriceAmount(p.start) && p.end >= p.start))
+          : isValidPriceAmount(p.start));
     }
 
-    // Validate optional import details (`ImportedFrom` in src/types.ts): exactly source, batch, key
-    function isValidOptionalImported(data) {
-      return !('imported' in data) ||
-        (data.imported is map &&
-         data.imported.keys().hasOnly(['source', 'batch', 'key']) &&
-         data.imported.keys().hasAll(['source', 'batch', 'key']) &&
-         data.imported.source in ['beli'] &&
-         data.imported.batch is string && data.imported.batch.size() >= 1 && data.imported.batch.size() <= 80 &&
-         data.imported.key is string && data.imported.key.size() >= 1 && data.imported.key.size() <= 500);
+    // Validate import details (`ImportedFrom` in src/types.ts): exactly source, batch, key
+    function isValidImported(m) {
+      return m.keys().hasOnly(['source', 'batch', 'key']) &&
+        m.source == 'beli' &&
+        m.batch is string && m.batch.size() >= 1 && m.batch.size() <= 80 &&
+        m.key is string && m.key.size() >= 1 && m.key.size() <= 500;
     }
 
-    // Validate optional movie / show / book / game info (`MediaInfo` in src/types.ts)
-    function isValidOptionalMedia(data) {
-      return !('media' in data) ||
-        data.media == null ||
-        (data.media is map &&
-         data.media.keys().hasOnly(['year', 'poster', 'creator', 'players', 'best', 'time', 'weight']) &&
-         (!('players' in data.media) || isValidRange(data.media.players)) &&
-         (!('best' in data.media) || isValidRange(data.media.best)) &&
-         (!('time' in data.media) || isValidRange(data.media.time)) &&
-         (!('weight' in data.media) || (data.media.weight is number && data.media.weight >= 0 && data.media.weight <= 5)) &&
-         (!('year' in data.media) || (data.media.year is int && data.media.year >= 1 && data.media.year <= 3000)) &&
-         (!('poster' in data.media) || (data.media.poster is string && data.media.poster.size() <= 200)) &&
-         (!('creator' in data.media) || (data.media.creator is string && data.media.creator.size() <= 300)));
+    // Validate movie / show / book / game info (`MediaInfo` in src/types.ts)
+    function isValidMedia(m) {
+      return m.keys().hasOnly(['year', 'poster', 'creator', 'players', 'best', 'time', 'weight']) &&
+        (!('year' in m) || (m.year is int && m.year >= 1 && m.year <= 3000)) &&
+        (!('poster' in m) || (m.poster is string && m.poster.size() <= 200)) &&
+        (!('creator' in m) || (m.creator is string && m.creator.size() <= 300)) &&
+        (!('players' in m) || isValidRange(m.players)) &&
+        (!('best' in m) || isValidRange(m.best)) &&
+        (!('time' in m) || isValidRange(m.time)) &&
+        (!('weight' in m) || (m.weight is number && m.weight >= 0 && m.weight <= 5));
     }
 
     // A download URL of `uid`'s own uploaded profile picture (`profilePhotos/{uid}/<name>.webp|jpg`
@@ -333,69 +310,88 @@ service cloud.firestore {
         (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp);
     }
 
-    function isValidRestaurant(data) {
-      return data.keys().size() <= 30 &&
-        hasRequiredFields(['name', 'rankIndex', 'magicScore']) &&
-        validStringLength('name', 1, 200) &&
-        // Absent = never given a gut rating (an imported spot the user didn't rate)
-        (!('initialRating' in data) || (data.initialRating is number && data.initialRating >= 1 && data.initialRating <= 10)) &&
-        data.rankIndex is number && data.rankIndex >= 0 && data.rankIndex <= 100000 &&
-        data.magicScore is number && data.magicScore >= 0 && data.magicScore <= 10 &&
-        isValidOptionalString('id', 1, 150) &&
-        isValidOptionalString('placeId', 0, 300) &&
-        isValidOptionalString('formattedAddress', 0, 500) &&
-        isValidOptionalString('neighborhood', 0, 200) &&
-        isValidOptionalString('city', 0, 200) &&
-        isValidOptionalString('googleMapsUri', 0, 1000) &&
-        isValidOptionalString('primaryTypeDisplay', 0, 200) &&
-        isValidOptionalCategory(data) &&
-        isValidOptionalMedia(data) &&
-        isValidOptionalString('notes', 0, 5000) &&
-        isValidOptionalString('favoriteDishes', 0, 2000) &&
-        isValidOptionalString('privateNotes', 0, 5000) &&
-        isValidOptionalImported(data) &&
-        (!('status' in data) || data.status == null || data.status in ['ranked', 'want_to_try']) &&
-        (!('elo' in data) || data.elo == null || (data.elo is number && data.elo >= 0 && data.elo <= 5000)) &&
-        (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
-        (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
-        (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
-        isValidOptionalPriceRange(data) &&
-        (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
-        (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
-        (!('rankedHistory' in data) || isValidList(data.rankedHistory, 100)) &&
-        (!('comparisons' in data) || isValidList(data.comparisons, 300)) &&
-        (!('comparisonsCount' in data) || (data.comparisonsCount is number && data.comparisonsCount >= 0 && data.comparisonsCount <= 1000000)) &&
-        (!('visitedAt' in data) || data.visitedAt == null || (data.visitedAt is string && data.visitedAt.size() <= 100) || data.visitedAt is number || data.visitedAt is timestamp) &&
-        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
-        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
+    // Spots and saved spots. Firestore stops evaluating rules at 1,000 expressions per document
+    // written (production and the emulator alike), and checking every field of a filled-in spot
+    // took most of that: v4.6.1's validators already rejected a spot with a price range, notes and
+    // dishes, and v4.7's few extra checks broke ranking for real lists. So:
+    // - a field is checked only when it is in `k`: every key on create, only the changed keys on
+    //   update (a rank rewrites rankIndex / magicScore / updatedAt across the list). A skipped
+    //   field costs ~5 expressions.
+    // - checks are written out inline, the usual case first (`x is string && x.size() <= n`),
+    //   then `get(..., null) == null` for absent / null (`||` absorbs the error of reading an
+    //   absent field). A helper call costs several expressions more per field.
+    // `src/lib/sync/rulesBudget.emu.test.ts` keeps the fullest docs well under the limit: rerun it
+    // after adding a check here.
+    function writtenKeys() {
+      return resource == null
+        ? request.resource.data.keys()
+        : request.resource.data.diff(resource.data).affectedKeys();
     }
 
-    function isValidBookmark(data) {
+    function isValidRestaurant(data, k) {
       return data.keys().size() <= 30 &&
-        hasRequiredFields(['name']) &&
-        validStringLength('name', 1, 200) &&
-        isValidOptionalString('id', 1, 150) &&
-        isValidOptionalString('placeId', 0, 300) &&
-        isValidOptionalString('formattedAddress', 0, 500) &&
-        isValidOptionalString('neighborhood', 0, 200) &&
-        isValidOptionalString('city', 0, 200) &&
-        isValidOptionalString('googleMapsUri', 0, 1000) &&
-        isValidOptionalString('primaryTypeDisplay', 0, 200) &&
-        isValidOptionalCategory(data) &&
-        isValidOptionalMedia(data) &&
-        isValidOptionalString('notes', 0, 5000) &&
-        isValidOptionalString('privateNotes', 0, 5000) &&
-        isValidOptionalImported(data) &&
-        isValidOptionalString('recommendedBy', 0, 120) &&
-        isValidOptionalString('recommendedByUid', 0, 150) &&
-        (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
-        (!('lng' in data) || data.lng == null || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
-        (!('priceLevel' in data) || data.priceLevel == null || (data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5)) &&
-        isValidOptionalPriceRange(data) &&
-        (!('categories' in data) || data.categories == null || isValidList(data.categories, 10)) &&
-        (!('cuisines' in data) || isValidList(data.cuisines, 50)) &&
-        (!('createdAt' in data) || data.createdAt == null || data.createdAt is number || data.createdAt is timestamp) &&
-        (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is number || data.updatedAt is timestamp);
+        data.keys().hasAll(['name', 'rankIndex', 'magicScore']) &&
+        (!('name' in k) || data.name is string && data.name.size() >= 1 && data.name.size() <= 200) &&
+        // Absent = never given a gut rating (an imported spot the user didn't rate); never null
+        (!('initialRating' in k) || data.initialRating is number && data.initialRating >= 1 && data.initialRating <= 10 || !('initialRating' in data)) &&
+        (!('rankIndex' in k) || data.rankIndex is number && data.rankIndex >= 0 && data.rankIndex <= 100000) &&
+        (!('magicScore' in k) || data.magicScore is number && data.magicScore >= 0 && data.magicScore <= 10) &&
+        (!('id' in k) || data.id is string && data.id.size() >= 1 && data.id.size() <= 150 || data.get('id', null) == null) &&
+        (!('placeId' in k) || data.placeId is string && data.placeId.size() <= 300 || data.get('placeId', null) == null) &&
+        (!('formattedAddress' in k) || data.formattedAddress is string && data.formattedAddress.size() <= 500 || data.get('formattedAddress', null) == null) &&
+        (!('neighborhood' in k) || data.neighborhood is string && data.neighborhood.size() <= 200 || data.get('neighborhood', null) == null) &&
+        (!('city' in k) || data.city is string && data.city.size() <= 200 || data.get('city', null) == null) &&
+        (!('googleMapsUri' in k) || data.googleMapsUri is string && data.googleMapsUri.size() <= 1000 || data.get('googleMapsUri', null) == null) &&
+        (!('primaryTypeDisplay' in k) || data.primaryTypeDisplay is string && data.primaryTypeDisplay.size() <= 200 || data.get('primaryTypeDisplay', null) == null) &&
+        (!('category' in k) || isValidCategory(data.category) || data.get('category', null) == null) &&
+        (!('media' in k) || isValidMedia(data.media) || data.get('media', null) == null) &&
+        (!('notes' in k) || data.notes is string && data.notes.size() <= 5000 || data.get('notes', null) == null) &&
+        (!('favoriteDishes' in k) || data.favoriteDishes is string && data.favoriteDishes.size() <= 2000 || data.get('favoriteDishes', null) == null) &&
+        (!('privateNotes' in k) || data.privateNotes is string && data.privateNotes.size() <= 5000 || data.get('privateNotes', null) == null) &&
+        (!('imported' in k) || !('imported' in data) || isValidImported(data.imported)) &&
+        (!('status' in k) || data.status == 'ranked' || data.status == 'want_to_try' || data.get('status', null) == null) &&
+        (!('elo' in k) || data.elo is number && data.elo >= 0 && data.elo <= 5000 || data.get('elo', null) == null) &&
+        (!('lat' in k) || data.lat is number && data.lat >= -90 && data.lat <= 90 || data.get('lat', null) == null) &&
+        (!('lng' in k) || data.lng is number && data.lng >= -180 && data.lng <= 180 || data.get('lng', null) == null) &&
+        (!('priceLevel' in k) || data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5 || data.get('priceLevel', null) == null) &&
+        (!('priceRange' in k) || isValidPriceRange(data.priceRange) || data.get('priceRange', null) == null) &&
+        (!('categories' in k) || data.categories is list && data.categories.size() <= 10 || data.get('categories', null) == null) &&
+        // These three: a list when present, never null
+        (!('cuisines' in k) || data.cuisines is list && data.cuisines.size() <= 50 || !('cuisines' in data)) &&
+        (!('rankedHistory' in k) || data.rankedHistory is list && data.rankedHistory.size() <= 100 || !('rankedHistory' in data)) &&
+        (!('comparisons' in k) || data.comparisons is list && data.comparisons.size() <= 300 || !('comparisons' in data)) &&
+        (!('comparisonsCount' in k) || data.comparisonsCount is number && data.comparisonsCount >= 0 && data.comparisonsCount <= 1000000 || !('comparisonsCount' in data)) &&
+        (!('visitedAt' in k) || data.visitedAt is string && data.visitedAt.size() <= 100 || data.visitedAt is number || data.visitedAt is timestamp || data.get('visitedAt', null) == null) &&
+        (!('createdAt' in k) || data.createdAt is number || data.createdAt is timestamp || data.get('createdAt', null) == null) &&
+        (!('updatedAt' in k) || data.updatedAt is number || data.updatedAt is timestamp || data.get('updatedAt', null) == null);
+    }
+
+    function isValidBookmark(data, k) {
+      return data.keys().size() <= 30 &&
+        data.keys().hasAll(['name']) &&
+        (!('name' in k) || data.name is string && data.name.size() >= 1 && data.name.size() <= 200) &&
+        (!('id' in k) || data.id is string && data.id.size() >= 1 && data.id.size() <= 150 || data.get('id', null) == null) &&
+        (!('placeId' in k) || data.placeId is string && data.placeId.size() <= 300 || data.get('placeId', null) == null) &&
+        (!('formattedAddress' in k) || data.formattedAddress is string && data.formattedAddress.size() <= 500 || data.get('formattedAddress', null) == null) &&
+        (!('neighborhood' in k) || data.neighborhood is string && data.neighborhood.size() <= 200 || data.get('neighborhood', null) == null) &&
+        (!('city' in k) || data.city is string && data.city.size() <= 200 || data.get('city', null) == null) &&
+        (!('googleMapsUri' in k) || data.googleMapsUri is string && data.googleMapsUri.size() <= 1000 || data.get('googleMapsUri', null) == null) &&
+        (!('primaryTypeDisplay' in k) || data.primaryTypeDisplay is string && data.primaryTypeDisplay.size() <= 200 || data.get('primaryTypeDisplay', null) == null) &&
+        (!('category' in k) || isValidCategory(data.category) || data.get('category', null) == null) &&
+        (!('media' in k) || isValidMedia(data.media) || data.get('media', null) == null) &&
+        (!('notes' in k) || data.notes is string && data.notes.size() <= 5000 || data.get('notes', null) == null) &&
+        (!('privateNotes' in k) || data.privateNotes is string && data.privateNotes.size() <= 5000 || data.get('privateNotes', null) == null) &&
+        (!('imported' in k) || !('imported' in data) || isValidImported(data.imported)) &&
+        (!('recommendedBy' in k) || data.recommendedBy is string && data.recommendedBy.size() <= 120 || data.get('recommendedBy', null) == null) &&
+        (!('recommendedByUid' in k) || data.recommendedByUid is string && data.recommendedByUid.size() <= 150 || data.get('recommendedByUid', null) == null) &&
+        (!('lat' in k) || data.lat is number && data.lat >= -90 && data.lat <= 90 || data.get('lat', null) == null) &&
+        (!('lng' in k) || data.lng is number && data.lng >= -180 && data.lng <= 180 || data.get('lng', null) == null) &&
+        (!('priceLevel' in k) || data.priceLevel is number && data.priceLevel >= 0 && data.priceLevel <= 5 || data.get('priceLevel', null) == null) &&
+        (!('priceRange' in k) || isValidPriceRange(data.priceRange) || data.get('priceRange', null) == null) &&
+        (!('categories' in k) || data.categories is list && data.categories.size() <= 10 || data.get('categories', null) == null) &&
+        (!('cuisines' in k) || data.cuisines is list && data.cuisines.size() <= 50 || !('cuisines' in data)) &&
+        (!('createdAt' in k) || data.createdAt is number || data.createdAt is timestamp || data.get('createdAt', null) == null) &&
+        (!('updatedAt' in k) || data.updatedAt is number || data.updatedAt is timestamp || data.get('updatedAt', null) == null);
     }
 
     function isValidFriendDoc(data) {
@@ -525,17 +521,17 @@ service cloud.firestore {
 
       match /restaurants/{restaurantId} {
         allow read, delete: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidRestaurant(request.resource.data);
+        allow create: if isOwner(userId) && isValidRestaurant(request.resource.data, writtenKeys());
         allow update: if isOwner(userId) &&
-          isValidRestaurant(request.resource.data) &&
+          isValidRestaurant(request.resource.data, writtenKeys()) &&
           isDocIdUnchanged();
       }
 
       match /bookmarks/{bookmarkId} {
         allow read, delete: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidBookmark(request.resource.data);
+        allow create: if isOwner(userId) && isValidBookmark(request.resource.data, writtenKeys());
         allow update: if isOwner(userId) &&
-          isValidBookmark(request.resource.data) &&
+          isValidBookmark(request.resource.data, writtenKeys()) &&
           isDocIdUnchanged();
       }
 

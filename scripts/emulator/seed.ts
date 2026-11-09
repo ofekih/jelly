@@ -31,6 +31,9 @@ interface SpotSeed {
   lng?: number;
   tags?: string[];
   notes?: string;
+  dishes?: string;
+  /** Google's per-person range in USD, as places get it (with tier `level`) */
+  price?: { level: number; start: number; end?: number };
   media?: MediaInfo;
   placeId?: string;
   address?: string;
@@ -56,11 +59,22 @@ function rankedList(category: SpotCategory, spots: SpotSeed[], dayOffset = 0): R
         categories: [category],
         cuisines: s.tags ?? [],
         media: s.media,
+        // The fields real places carry (a filled-in spot costs the rules the most; see rulesBudget.emu.test.ts)
+        ...(s.lat !== undefined
+          ? { googleMapsUri: `https://maps.google.com/?q=${encodeURIComponent(s.name)}`, primaryTypeDisplay: 'Restaurant' }
+          : {}),
+        ...(s.price
+          ? {
+              priceLevel: s.price.level,
+              priceRange: { currency: 'USD', start: s.price.start, ...(s.price.end ? { end: s.price.end } : {}) },
+            }
+          : {}),
         initialRating: s.gut,
         rankIndex: i,
         magicScore: s.gut,
         comparisonsCount: i === 0 ? 0 : 2,
         notes: s.notes,
+        favoriteDishes: s.dishes,
         rankedHistory: [{ timestamp: at, initialRating: s.gut }],
         createdAt: at,
         updatedAt: at,
@@ -121,11 +135,11 @@ export const USERS = {
 const LISTS: Record<keyof typeof USERS, RestaurantEntry[]> = {
   me: [
     ...rankedList('restaurants', [
-      { ...NOODLE, gut: 9.3, notes: 'Get the spicy miso' },
-      { ...CASA, gut: 8.6 },
-      { ...DUMPLING, gut: 8.2, notes: 'Soup dumplings, always' },
-      { ...TRATTORIA, gut: 7.4 },
-      { ...BURGER, gut: 6.9 },
+      { ...NOODLE, gut: 9.3, notes: 'Get the spicy miso', dishes: 'Spicy miso, gyoza', price: { level: 2, start: 20, end: 30 } },
+      { ...CASA, gut: 8.6, price: { level: 2, start: 10, end: 20 } },
+      { ...DUMPLING, gut: 8.2, notes: 'Soup dumplings, always', price: { level: 1, start: 10, end: 20 } },
+      { ...TRATTORIA, gut: 7.4, price: { level: 3, start: 30, end: 50 } },
+      { ...BURGER, gut: 6.9, price: { level: 2, start: 100 } },
       { ...PHO, gut: 6.0 },
     ]),
     ...rankedList('coffee_tea', [
