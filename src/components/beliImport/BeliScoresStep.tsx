@@ -267,7 +267,7 @@ const RateNext: React.FC<{
           <span>
             <b className="text-zinc-800 dark:text-zinc-100">{acc.rated}</b> of {acc.total} rated
           </span>
-          <span>{acc.rated > 0 ? `scores within about ±${acc.typicalError.toFixed(1)}` : 'no ratings yet'}</span>
+          <span>{Number.isFinite(acc.typicalError) ? `scores within about ±${acc.typicalError.toFixed(1)}` : 'rate a few to see how close'}</span>
         </div>
         <span className="h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden" aria-hidden="true">
           <span className="block h-full bg-emerald-500 rounded-full" style={{ width: `${acc.total ? (acc.rated / acc.total) * 100 : 0}%` }} />
@@ -355,7 +355,7 @@ const ListDone: React.FC<{ category: SpotCategory; rows: BeliRankedRow[]; s: Lis
       <h1 className="text-lg font-extrabold">{CATEGORY_LABEL[category]} is ready</h1>
       <p className="text-sm text-zinc-600 dark:text-zinc-300">
         {acc.rated} of {acc.total} rated
-        {acc.rated > 0 ? `, so scores are within about ±${acc.typicalError.toFixed(1)}.` : ', so scores come from your order alone.'}
+        {Number.isFinite(acc.typicalError) ? `, so scores are within about ±${acc.typicalError.toFixed(1)}.` : ', so scores come from your order alone.'}
         {left > 0 ? ' Rating more makes them more exact.' : ''}
       </p>
       {left > 0 && (
