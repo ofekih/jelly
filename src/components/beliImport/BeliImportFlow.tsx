@@ -180,7 +180,10 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
     setScores(resumable.scores);
     setDecisions(resumable.decisions);
     setActiveList(resumable.include[0] ?? null);
-    setStep(resumable.step === 'file' || resumable.step === 'ask' ? 'summary' : resumable.step);
+    // The fit step needs the lookups back first: resume on the place check (lookups come from the
+    // cache), and Next there picks the saved merges back up
+    const { step: saved } = resumable;
+    setStep(saved === 'file' || saved === 'ask' || saved === 'done' ? 'summary' : saved === 'fit' || saved === 'search' ? 'review' : saved);
     setResumable(null);
   };
 

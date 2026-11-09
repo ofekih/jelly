@@ -158,6 +158,34 @@ test('imports a Beli export: lists, scores, problem places, add, then undo from 
   await expect(page.locator('main').getByText('Noodle Bar Uno')).toBeVisible();
 });
 
+test('a reload in the middle of the side-by-side picks resumes at the same place', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openImportFromSettings(page);
+  await page.getByTestId('beli-file-input').setInputFiles({
+    name: 'beli_data_export.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.from(syntheticBeliZip({ restaurants: 40 })),
+  });
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('radio', { name: /^#10 / }).click();
+  await page.getByRole('button', { name: 'None I didn’t like' }).click();
+  await page.getByRole('button', { name: 'Save and next' }).click();
+  await page.getByRole('button', { name: 'Done rating' }).click();
+  await expect(page.getByRole('heading', { name: 'Which was better?' })).toBeVisible();
+  // The place from the lower pile was better: it moves up, so more questions follow
+  const cards = page.getByRole('button').filter({ hasText: /(, [A-Z]{2}|Tel Aviv-Yafo|Jerusalem)$/ });
+  await cards.nth(1).click();
+  await expect(page.getByText(/^1 answered · /)).toBeVisible();
+  await page.waitForTimeout(800); // The session saves half a second after a change
+
+  await page.reload();
+  await expect(page.getByTitle(/^Signed in as sam@jelly\.test/)).toBeVisible();
+  await openImportFromSettings(page);
+  await page.getByRole('button', { name: 'Continue import' }).click();
+  await expect(page.getByRole('heading', { name: 'Which was better?' })).toBeVisible();
+  await expect(page.getByText(/^1 answered · /)).toBeVisible();
+});
+
 test('without the file yet: the request email is filled in, and Settings remembers the wait', async ({ page }) => {
   await openImportFromSettings(page);
   await page.getByRole('button', { name: 'I don’t have it yet – ask Beli' }).click();
