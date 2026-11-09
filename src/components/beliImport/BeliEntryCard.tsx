@@ -31,7 +31,7 @@ export const BeliEntryCard: React.FC<{
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
         {asked
           ? `You asked Beli ${days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`}. It usually takes about 3 weeks. When the zip arrives, open it here.`
-          : 'Your restaurants, cafés, bakeries, dessert spots and bars, in your order, plus your want-to-try list. A few minutes, mostly automatic.'}
+          : 'Your restaurants, cafés, bakeries, dessert spots and bars, in your order, plus your want-to-try list. Finding the places is automatic; then you rate as many as you like.'}
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button

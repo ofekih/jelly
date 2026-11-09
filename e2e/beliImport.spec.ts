@@ -50,10 +50,19 @@ async function openImportFromSettings(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Import from Beli/ }).click();
 }
 
+/** Answers up to three side-by-side picks, then stops early if any are left */
+async function answerThenStop(page: Page): Promise<void> {
+  const question = page.getByRole('heading', { name: 'Which was better?' });
+  for (let i = 0; i < 3 && (await question.isVisible()); i++) {
+    await page.getByRole('button', { name: 'Too close to call' }).click();
+  }
+  if (await question.isVisible()) await page.getByRole('button', { name: 'Stop here' }).click();
+}
+
 const dialog = (page: Page) => page.getByRole('dialog', { name: /./ }).last();
 
 test('imports a Beli export: lists, scores, problem places, add, then undo from Settings', async ({ page }) => {
-  test.setTimeout(60_000); // A whole import: ~50 lookups, then two list writes
+  test.setTimeout(120_000); // A whole import: ~50 lookups, a few dozen taps, then two list writes
   await openImportFromSettings(page);
   await expect(page.getByRole('heading', { name: 'Bring your Beli rankings' })).toBeVisible();
 
@@ -73,19 +82,31 @@ test('imports a Beli export: lists, scores, problem places, add, then undo from 
   await expect(page.getByRole('heading', { name: 'Where does “It was fine” start?' })).toBeVisible();
   await page.getByRole('radio', { name: /^#30 / }).click();
   await page.getByRole('button', { name: 'None I didn’t like' }).click();
-  const better = page.getByRole('heading', { name: 'Which was better?' });
-  while (await better.isVisible()) {
-    await page.getByRole('button', { name: 'Too close to call' }).click();
-  }
-  await expect(page.getByRole('heading', { name: 'How did these feel?' })).toBeVisible();
-  const top = page.getByRole('slider').first();
-  await top.focus();
+  // Rate spots one at a time (#1 first), with the accuracy shown live
+  await expect(page.getByRole('heading', { name: 'How did this one feel?' })).toBeVisible();
+  await expect(page.getByText('0 of 40 rated')).toBeVisible();
+  const slider = page.getByRole('slider');
+  await slider.focus();
   await page.keyboard.press('End'); // #1 felt as good as it gets
-  await expect(top).toHaveAttribute('aria-valuetext', /Flawless/);
+  await expect(slider).toHaveAttribute('aria-valuetext', /Flawless/);
+  await page.getByRole('button', { name: 'Save and next' }).click();
+  await expect(page.getByText('1 of 40 rated')).toBeVisible();
+  await expect(page.getByText(/scores within about ±\d/)).toBeVisible();
+  await page.getByRole('button', { name: 'Save and next' }).click();
+  await page.getByRole('button', { name: 'Don’t remember' }).click();
+  await page.getByRole('button', { name: 'Save and next' }).click();
+  await expect(page.getByText('3 of 40 rated')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Preview' })).toBeVisible();
+  await page.getByRole('button', { name: 'Done rating' }).click();
 
-  // The other lists get suggested scores
-  await page.getByRole('button', { name: 'Use suggested' }).click();
+  // Then Beli's piles are merged with side-by-side picks (no cap; stopping places the rest by estimate)
+  await expect(page.getByRole('heading', { name: 'Which was better?' })).toBeVisible();
+  await expect(page.getByText(/answered · \d+ places? left to place/)).toBeVisible();
+  await answerThenStop(page);
+  await expect(page.getByRole('heading', { name: 'Restaurants is ready' })).toBeVisible();
+
+  // The other lists stay as they are
+  await page.getByRole('button', { name: 'Skip the rest' }).click();
   await expect(page.getByRole('heading', { name: /places? needs? you/ })).toBeVisible({ timeout: 30_000 });
 
   // A chain branch: pick the first candidate
@@ -104,12 +125,19 @@ test('imports a Beli export: lists, scores, problem places, add, then undo from 
   await expect(list).toBeVisible();
   expect(await list.getByRole('listitem').count()).toBeLessThan(30);
 
+  // Restaurants already has spots: Beli places are fitted in between them with a few picks
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Which was better?' })).toBeVisible();
+  await expect(page.getByText(/In your jelly list/).first()).toBeVisible();
+  await answerThenStop(page);
+  await expect(page.getByRole('heading', { name: 'Restaurants fits together' })).toBeVisible();
+
   await page.getByRole('button', { name: 'Add to jelly' }).click();
   const confirm = page.getByRole('alertdialog');
   await expect(confirm.getByText(/They’re woven in among your spots by score/)).toBeVisible();
   await confirm.getByRole('button', { name: 'Add spots' }).click();
 
-  await expect(page.getByRole('heading', { name: /spots are in jelly$/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /spots are in jelly$/ })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/^Imported \d+ spots from Beli$/)).toBeVisible();
   await page.getByRole('button', { name: /^See my Restaurants/ }).click();
   await expect(page.locator('main').getByText('Café Lumière')).toBeVisible();

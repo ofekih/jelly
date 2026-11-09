@@ -2,17 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookmarkEntry, CATEGORY_EMOJI, CATEGORY_LABEL, RestaurantEntry, SpotCategory } from '../../types';
 import { BeliImportError, readBeliFiles } from '../../lib/beliImport/parse';
 import { buildMatchQueries, matchPlaces } from '../../lib/beliImport/match';
-import { alreadyImported, buildImportPlan, createImportBatchId } from '../../lib/beliImport/plan';
+import { buildImportPlan, createImportBatchId, jellyMergeEstimates, resolvePlace, sharedSpots } from '../../lib/beliImport/plan';
+import { finishMerge, nextMergeQuestion, startJellyMerge } from '../../lib/beliImport/merge';
+import { getCategoryList } from '../../lib/categoryLists';
 import { indexedDbStore } from '../../lib/beliImport/store';
 import type { BeliExport, ImportPlan, MatchDecision, MatchProgress, MatchResult } from '../../lib/beliImport/types';
 import { BELI_UNDO_DAYS, reviewItems } from '../../lib/beliImportUi';
 import { trackEvent } from '../../firebase';
 import { AskBeliStep, FileStep, SignInStep } from './BeliFileSteps';
-import { BeliScoresStep, initialScoreState, ListScoreState, toScoredList } from './BeliScoresStep';
+import { BeliScoresStep, beliOrder, initialScoreState, ListScoreState, ListTabs, MergeQuestions, settleList, toScoredList } from './BeliScoresStep';
 import { BeliReviewStep, matchedRowsFor, PlaceSearchPanel, ReviewTab } from './BeliReviewStep';
 import { Hero, ImportShell, PrimaryButton, QuietButton, SecondaryButton, Switch, useKeyboardInset } from './parts';
 
-type Step = 'file' | 'ask' | 'summary' | 'scores' | 'review' | 'search' | 'done';
+type Step = 'file' | 'ask' | 'summary' | 'scores' | 'review' | 'search' | 'fit' | 'done';
 
 /** Everything chosen so far, saved on this device so a closed tab or a reload loses nothing */
 interface SavedSession {
@@ -70,6 +72,7 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<ImportPlan | null>(null);
   const [resumable, setResumable] = useState<SavedSession | null>(null);
+  const [fitList, setFitList] = useState<SpotCategory | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const keyboardInset = useKeyboardInset(step === 'search' || step === 'ask');
@@ -110,8 +113,8 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
   const queries = useMemo(() => {
     if (!exp) return [];
     const savedKeys = new Set(includeBookmarks ? exp.bookmarks.filter((b) => include.includes(b.category)).map((b) => b.key) : []);
-    return buildMatchQueries(exp, alreadyImported(restaurants, bookmarks)).filter((q) => rankedKeys.has(q.key) || savedKeys.has(q.key));
-  }, [exp, include, includeBookmarks, rankedKeys, restaurants, bookmarks]);
+    return buildMatchQueries(exp).filter((q) => rankedKeys.has(q.key) || savedKeys.has(q.key));
+  }, [exp, include, includeBookmarks, rankedKeys]);
 
   const runMatching = useCallback(
     async (only?: Set<string>) => {
@@ -203,14 +206,19 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
       restaurants,
       bookmarks,
       includeBookmarks,
-      linear: linearRatingScale,
       batch: createImportBatchId(),
     });
-  }, [exp, include, scores, matches, decisions, restaurants, bookmarks, includeBookmarks, linearRatingScale]);
-  const preview = useMemo(() => (confirming ? buildPlan() : null), [confirming, buildPlan]);
+  }, [exp, include, scores, matches, decisions, restaurants, bookmarks, includeBookmarks]);
+  // The plan is frozen when the confirm opens: saving updates App's lists, and a live rebuild would
+  // then see every Beli place as already there
+  const [preview, setPreview] = useState<ImportPlan | null>(null);
+  const openConfirm = () => {
+    setPreview(buildPlan());
+    setConfirming(true);
+  };
 
   const commit = async () => {
-    const plan = buildPlan();
+    const plan = preview;
     if (!plan) return;
     setSaving(true);
     try {
@@ -225,27 +233,56 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
     }
   };
 
-  const nextUnscored = include.find((c) => c !== activeList && !scores[c]?.done);
-  const finishList = () => {
-    if (!activeList || !exp) return;
-    const cur = scores[activeList] ?? initialScoreState(exp.lists[activeList] ?? []);
-    setScores((s) => ({ ...s, [activeList]: { ...cur, done: true } }));
-    if (nextUnscored) setActiveList(nextUnscored);
-    else setStep('review');
-  };
-  const suggestAll = () => {
+  const nextUnscored = include.find((c) => c !== activeList && scores[c]?.phase !== 'done');
+  /** Every list as it stands: unrated spots stay unrated, merges in progress finish by estimate */
+  const settleAll = () => {
     if (!exp) return;
-    // Lists you already answered for keep your answers; the rest use the preset
     setScores((s) =>
-      Object.fromEntries(
-        include.map((c) => {
-          const cur = s[c] ?? initialScoreState(exp.lists[c] ?? []);
-          const answered = cur.done || Object.keys(cur.ratings).length > 0 || Boolean(cur.merge);
-          return [c, { ...cur, suggested: !answered, done: true }];
-        })
-      )
+      Object.fromEntries(include.map((c) => [c, settleList(exp.lists[c] ?? [], s[c] ?? initialScoreState(exp.lists[c] ?? []))]))
     );
     setStep('review');
+  };
+  const finishList = () => {
+    if (nextUnscored) setActiveList(nextUnscored);
+    else settleAll();
+  };
+
+  // Lists that already have spots: the Beli order is merged into them after the place check
+  const fitCategories = useMemo(() => {
+    if (!exp) return [];
+    return include.filter(
+      (c) =>
+        getCategoryList(restaurants, c).length > 0 &&
+        (exp.lists[c] ?? []).some((r) => resolvePlace(r, matches[r.key], decisions[r.key]))
+    );
+  }, [exp, include, restaurants, matches, decisions]);
+  const startFit = () => {
+    if (!exp) return;
+    setScores((cur) => {
+      const next = { ...cur };
+      for (const c of fitCategories) {
+        const rows = exp.lists[c] ?? [];
+        const s = next[c] ?? initialScoreState(rows);
+        if (s.jellyMerge) continue;
+        const kept = beliOrder(rows, s).filter((k) => {
+          const row = rows.find((r) => r.key === k);
+          return row && resolvePlace(row, matches[k], decisions[k]);
+        });
+        const jellyList = getCategoryList(restaurants, c);
+        next[c] = {
+          ...s,
+          jellyMerge: startJellyMerge(
+            kept,
+            jellyList.map((r) => r.id),
+            sharedSpots(rows, c, restaurants, matches, decisions),
+            jellyMergeEstimates(kept, s.guts, jellyList)
+          ),
+        };
+      }
+      return next;
+    });
+    setFitList(fitCategories[0] ?? null);
+    setStep('fit');
   };
 
   // ---------------------------------------------------------------------------
@@ -355,7 +392,7 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
           <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Comes along</p>
           <p>Notes and favorite dishes on {notesCount} places (visible on your shared list, like all jelly notes). Private notes stay private.</p>
           <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mt-2">Not coming over</p>
-          <p>Beli scores (the export only has your order, so you’ll set a few next), photos, labels and preferences.</p>
+          <p>Beli scores (the export only has your order, so you’ll rate spots next: as many as you like), photos, labels and preferences.</p>
         </div>
         {exp.report.badRows.length > 0 && (
           <p className="text-xs text-zinc-500 dark:text-zinc-400">{exp.report.badRows.length} rows in the file couldn’t be read and are left out.</p>
@@ -380,7 +417,7 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
           </span>
         )}
         {!matchingDone && !fatal && (
-          <span className="text-zinc-500 dark:text-zinc-400 short:hidden">Keep jelly open – it picks up where it left off</span>
+          <span className="basis-full text-zinc-500 dark:text-zinc-400 short:hidden">Keep jelly open – it picks up where it left off</span>
         )}
         <span className="basis-full h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden short:hidden" aria-hidden="true">
           <span
@@ -403,7 +440,9 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
         bodyRef={bodyRef}
         footer={
           <>
-            <QuietButton onClick={suggestAll} className="px-2" title="Suggested scores for the lists you haven’t rated">Use suggested</QuietButton>
+            <QuietButton onClick={settleAll} className="px-2" title="Keep the other lists as they are: unrated spots get their score from the order">
+              Skip the rest
+            </QuietButton>
             <PrimaryButton onClick={finishList} disabled={!nextUnscored && !matchingDone && !fatal}>
               {nextUnscored ? `Next: ${CATEGORY_LABEL[nextUnscored]}` : matchingDone || fatal ? 'Check places' : 'Finishing lookup…'}
             </PrimaryButton>
@@ -446,7 +485,7 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
   }
 
   if (step === 'review') {
-    const adds = (preview ?? null) && preview;
+    const adds = preview;
     return (
       <>
         <ImportShell
@@ -462,8 +501,8 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
               <span className="flex-1 min-w-[8rem] text-xs text-zinc-500 dark:text-zinc-400">
                 {openCount ? `${openCount} left out for now – you can fix them later` : 'Nothing left to fix'}
               </span>
-              <PrimaryButton disabled={!matchingDone && !fatal} onClick={() => setConfirming(true)}>
-                Add to jelly
+              <PrimaryButton disabled={!matchingDone && !fatal} onClick={() => (fitCategories.length ? startFit() : openConfirm())}>
+                {fitCategories.length ? 'Next' : 'Add to jelly'}
               </PrimaryButton>
             </>
           }
@@ -495,6 +534,65 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
         </ImportShell>
         {confirming && adds && (
           <ConfirmImport plan={adds} saving={saving} onCancel={() => setConfirming(false)} onConfirm={commit} hadSpots={restaurants.some((r) => include.includes(r.category))} />
+        )}
+      </>
+    );
+  }
+
+  if (step === 'fit' && fitList) {
+    const rows = exp.lists[fitList] ?? [];
+    const s = scores[fitList] ?? initialScoreState(rows);
+    const byKey = new Map(rows.map((r) => [r.key, r]));
+    const byId = new Map(restaurants.map((r) => [r.id, r]));
+    const label = (k: string) => {
+      const row = byKey.get(k);
+      if (row) return { name: row.name, sub: `From Beli · ${row.city}` };
+      const entry = byId.get(k);
+      return { name: entry?.name ?? '', sub: `In your jelly list${entry?.city ? ` · ${entry.city}` : ''}` };
+    };
+    const open = (c: SpotCategory) => Boolean(scores[c]?.jellyMerge && nextMergeQuestion(scores[c]!.jellyMerge!));
+    const nextFit = fitCategories.find((c) => c !== fitList && open(c));
+    const setMerge = (m: ListScoreState['jellyMerge']) => setScores((cur) => ({ ...cur, [fitList]: { ...s, jellyMerge: m } }));
+    const adds = preview;
+    return (
+      <>
+        <ImportShell
+          title="Fit into your lists"
+          step={4}
+          wide
+          onBack={() => setStep('review')}
+          onClose={onClose}
+          bodyRef={bodyRef}
+          footer={
+            <>
+              {nextFit && <SecondaryButton onClick={() => setFitList(nextFit)}>Next: {CATEGORY_LABEL[nextFit]}</SecondaryButton>}
+              <PrimaryButton onClick={openConfirm}>Add to jelly</PrimaryButton>
+            </>
+          }
+        >
+          <ListTabs categories={fitCategories} active={fitList} onActive={setFitList} isDone={(c) => !open(c)} />
+          {s.jellyMerge && nextMergeQuestion(s.jellyMerge) ? (
+            <MergeQuestions
+              merge={s.jellyMerge}
+              label={label}
+              intro={`You already rank places in ${CATEGORY_LABEL[fitList]}. Each pick puts a Beli place between yours. Places in both lists keep your jelly spot.`}
+              onAnswer={setMerge}
+              onStop={() => setMerge(finishMerge(s.jellyMerge!))}
+            />
+          ) : (
+            <div className="rounded-3xl bg-emerald-50 dark:bg-emerald-950/30 p-4">
+              <h1 className="text-lg font-extrabold">{CATEGORY_LABEL[fitList]} fits together</h1>
+              <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">
+                {nextFit ? `Next, ${CATEGORY_LABEL[nextFit]}.` : 'Everything has its place. Add it to jelly when you’re ready.'}
+              </p>
+            </div>
+          )}
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Stopping early is fine: places you haven’t compared go where their scores put them.
+          </p>
+        </ImportShell>
+        {confirming && adds && (
+          <ConfirmImport plan={adds} saving={saving} onCancel={() => setConfirming(false)} onConfirm={commit} hadSpots />
         )}
       </>
     );
