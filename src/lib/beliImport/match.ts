@@ -138,7 +138,7 @@ export function scoreLookup(query: MatchQuery, places: any[], meta: { fromCache:
   return { ...base, status: 'not_found', reasons };
 }
 
-/** The places to look up: ranked spots and bookmarks of one (name, city) share a lookup. `skipKeys` (already imported) are left out. */
+/** The places to look up: ranked spots and bookmarks of one (name, city) share a lookup. `skipKeys` are left out. */
 export function buildMatchQueries(exp: BeliExport, skipKeys: (key: string, category: SpotCategory) => boolean = () => false): MatchQuery[] {
   const byKey = new Map<string, MatchQuery>();
   const rows = [...Object.values(exp.lists).flatMap((rows) => rows ?? []), ...exp.bookmarks];

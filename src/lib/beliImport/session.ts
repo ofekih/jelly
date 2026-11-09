@@ -1,6 +1,6 @@
 import type { SpotCategory } from '../../types';
 import { indexedDbStore, type KeyValueStore } from './store';
-import type { Anchor, BoundaryMergeState, BucketBounds, MatchDecision } from './types';
+import type { BucketBounds, MatchDecision, MergeState } from './types';
 
 /**
  * Everything the user has answered for one export, saved on the device under the export's
@@ -12,8 +12,11 @@ export interface ImportSession {
   categories?: SpotCategory[];
   includeBookmarks?: boolean;
   bounds: Partial<Record<SpotCategory, BucketBounds>>;
-  merges: Partial<Record<SpotCategory, BoundaryMergeState>>;
-  anchors: Partial<Record<SpotCategory, Anchor[]>>;
+  /** Gut ratings by row key, per list */
+  guts: Partial<Record<SpotCategory, Record<string, number>>>;
+  /** The bucket merge, then the jelly merge, per list */
+  bucketMerges: Partial<Record<SpotCategory, MergeState>>;
+  jellyMerges: Partial<Record<SpotCategory, MergeState>>;
   decisions: Record<string, MatchDecision>;
   /** Set once the import was written, with its batch (so a second run doesn't import twice) */
   committedBatch?: string;
@@ -21,7 +24,7 @@ export interface ImportSession {
 }
 
 export function emptySession(fingerprint: string, now = Date.now()): ImportSession {
-  return { fingerprint, bounds: {}, merges: {}, anchors: {}, decisions: {}, updatedAt: now };
+  return { fingerprint, bounds: {}, guts: {}, bucketMerges: {}, jellyMerges: {}, decisions: {}, updatedAt: now };
 }
 
 let defaultStore: KeyValueStore<ImportSession> | null = null;

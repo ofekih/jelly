@@ -45,7 +45,7 @@ rules_version = '2';
 //   - categories: list<string> (optional, <= 10 items) - suggested categories
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
-//   - initialRating: number (required, 1..10) - initial gut rating
+//   - initialRating: number (optional, 1..10) - gut rating; absent = never rated (imported spots the user skipped)
 //   - rankIndex: number (required, >= 0) - 0-based rank position
 //   - magicScore: number (required, 0..10) - computed ranking score
 //   - elo: number (optional, 0..5000) - Elo rating score
@@ -335,9 +335,10 @@ service cloud.firestore {
 
     function isValidRestaurant(data) {
       return data.keys().size() <= 30 &&
-        hasRequiredFields(['name', 'initialRating', 'rankIndex', 'magicScore']) &&
+        hasRequiredFields(['name', 'rankIndex', 'magicScore']) &&
         validStringLength('name', 1, 200) &&
-        data.initialRating is number && data.initialRating >= 1 && data.initialRating <= 10 &&
+        // Absent = never given a gut rating (an imported spot the user didn't rate)
+        (!('initialRating' in data) || (data.initialRating is number && data.initialRating >= 1 && data.initialRating <= 10)) &&
         data.rankIndex is number && data.rankIndex >= 0 && data.rankIndex <= 100000 &&
         data.magicScore is number && data.magicScore >= 0 && data.magicScore <= 10 &&
         isValidOptionalString('id', 1, 150) &&

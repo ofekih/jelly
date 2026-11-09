@@ -176,20 +176,23 @@ function forwardPass(n: number, evidence: Float64Array, rows: Float64Array): num
   return logZ;
 }
 
-/** Adds weight × each spot's expected grid value to `out`, via a backward pass up the list */
-function addPosteriorMeans(n: number, evidence: Float64Array, rows: Float64Array, weight: number, out: number[]): void {
+/** Adds weight × each spot's expected grid value (and its square, to `outSq`) to `out`, via a backward pass up the list */
+function addPosteriorMeans(n: number, evidence: Float64Array, rows: Float64Array, weight: number, out: number[], outSq?: number[]): void {
   let backward = new Float64Array(K).fill(1); // ∝ P(guts below spot i | spot i at grid k)
   let next = new Float64Array(K);
   for (let i = n - 1; i >= 0; i--) {
     const at = i * K;
     let total = 0;
     let weighted = 0;
+    let weightedSq = 0;
     for (let k = 0; k < K; k++) {
       const p = rows[at + k] * backward[k];
       total += p;
       weighted += p * SCORE_GRID[k];
+      weightedSq += p * SCORE_GRID[k] * SCORE_GRID[k];
     }
     out[i] += (weight * weighted) / total;
+    if (outSq) outSq[i] += (weight * weightedSq) / total;
     if (i > 0) {
       let atOrBelow = 0;
       for (let k = 0; k < K; k++) {
@@ -204,19 +207,36 @@ function addPosteriorMeans(n: number, evidence: Float64Array, rows: Float64Array
 
 /**
  * Expected true scores for spots in list order, given their gut ratings: never increasing down the
- * list, each pulled towards its gut rating, its neighbours' and the list's median.
+ * list, each pulled towards its gut rating, its neighbours' and the list's median. A spot without a
+ * gut rating (null) adds no evidence: its score comes from the order and the spots around it.
  */
-export function fitScoresToOrder(guts: number[]): number[] {
+export function fitScoresToOrder(guts: Array<number | null>): number[] {
+  return fitScoresWithSpread(guts).map((s) => s.mean);
+}
+
+const NO_GUTS_CENTER = 7.0; // Only if no spot in the list has a gut rating
+
+/**
+ * `fitScoresToOrder` plus how sure each score is: `sd` is the posterior standard deviation (in
+ * score points), averaged over the noise and spread settings like the mean.
+ */
+export function fitScoresWithSpread(guts: Array<number | null>): Array<{ mean: number; sd: number }> {
   const n = guts.length;
   if (n === 0) return [];
-  const center = median(guts);
+  const rated = guts.filter((g): g is number => g !== null);
+  const center = rated.length ? median(rated) : NO_GUTS_CENTER;
 
   // Gut-rating likelihoods per noise level (Student-t; the constant cancels except for 1/noise)
   const likelihoods = GUT_NOISE_OPTIONS.map((noise) => {
     const lik = new Float64Array(n * K);
     for (let i = 0; i < n; i++) {
+      const gut = guts[i];
       for (let k = 0; k < K; k++) {
-        const r = (guts[i] - SCORE_GRID[k]) / noise;
+        if (gut === null) {
+          lik[i * K + k] = 1; // No gut rating: no evidence
+          continue;
+        }
+        const r = (gut - SCORE_GRID[k]) / noise;
         lik[i * K + k] = Math.pow(1 + (r * r) / GUT_NOISE_DOF, -(GUT_NOISE_DOF + 1) / 2) / noise;
       }
     }
@@ -241,16 +261,20 @@ export function fitScoresToOrder(guts: number[]): number[] {
 
   const top = Math.max(...settings.map((s) => s.logWeight));
   const scores = new Array<number>(n).fill(0);
+  const squares = new Array<number>(n).fill(0);
   let total = 0;
   for (const s of settings) {
     const weight = Math.exp(s.logWeight - top);
     if (weight < NEGLIGIBLE_WEIGHT) continue;
     const evidence = withPrior(likelihoods[GUT_NOISE_OPTIONS.indexOf(s.noise)], s.prior, n);
     forwardPass(n, evidence, rows);
-    addPosteriorMeans(n, evidence, rows, weight, scores);
+    addPosteriorMeans(n, evidence, rows, weight, scores, squares);
     total += weight;
   }
-  return scores.map((s) => s / total);
+  return scores.map((s, i) => {
+    const mean = s / total;
+    return { mean, sd: Math.sqrt(Math.max(0, squares[i] / total - mean * mean)) };
+  });
 }
 
 function withPrior(likelihood: Float64Array, prior: Float64Array, n: number): Float64Array {
@@ -268,10 +292,8 @@ export function recomputeMagicScores(orderedList: RestaurantEntry[]): Restaurant
   const n = orderedList.length;
   if (n === 0) return [];
 
-  const guts = orderedList.map((r) => {
-    if (Number.isFinite(r.initialRating)) return clamp(r.initialRating, 1.0, 10.0);
-    return Number.isFinite(r.magicScore) ? clamp(r.magicScore, 1.0, 10.0) : 5.0;
-  });
+  // A spot never given a gut rating (an import the user didn't rate) counts as unknown, never guessed
+  const guts = orderedList.map((r) => (typeof r.initialRating === 'number' && Number.isFinite(r.initialRating) ? clamp(r.initialRating, 1.0, 10.0) : null));
   const scores = fitScoresToOrder(guts).map((s) => round1(clamp(s, 1.0, 10.0)));
 
   return orderedList.map((item, idx) => ({

@@ -3,20 +3,21 @@ import type { BookmarkEntry, PlaceCandidate, RestaurantEntry, SpotCategory } fro
 import { buildEntryId, getCategoryList, recomputeAllCategoryScores } from '../categoryLists';
 import { buildPublicLists } from '../publicList';
 import { placeSpot } from '../rankingActions';
-import { answerBoundaryQuestion, bucketOf, mergedOrder, startBoundaryMerge } from './boundaryMerge';
 import { syntheticBeliTexts } from './fixtures';
 import { buildMatchQueries } from './match';
+import { answerMergeQuestion, mergeOrder, nextMergeQuestion, startBucketMerge, startJellyMerge } from './merge';
 import { parseBeliExport } from './parse';
 import {
-  alreadyImported,
   batchTime,
   buildImportPlan,
   createImportBatchId,
   editedSinceImport,
   importBatches,
-  undoImport,
+  jellyMergeEstimates,
   longestIncreasing,
   mergeIntoList,
+  sharedSpots,
+  undoImport,
   weaveByScore,
 } from './plan';
 import type { BeliExport, MatchResult, ScoredList } from './types';
@@ -37,11 +38,9 @@ function matchAll(exp: BeliExport, overrides: Record<string, PlaceCandidate> = {
   );
 }
 
-function scoredLists(exp: BeliExport, ratings: Record<string, number> = {}): ScoredList[] {
-  return (Object.keys(exp.lists) as SpotCategory[]).map((category) => {
-    const order = exp.lists[category]!.map((r) => r.key);
-    return { category, order, anchors: Object.entries(ratings).filter(([k]) => order.includes(k)).map(([key, rating]) => ({ key, rating, source: 'user' as const })), answers: [] };
-  });
+/** Every list in Beli order, with the given gut ratings (by row key) */
+function scoredLists(exp: BeliExport, guts: Record<string, number> = {}): ScoredList[] {
+  return (Object.keys(exp.lists) as SpotCategory[]).map((category) => ({ category, order: exp.lists[category]!.map((r) => r.key), guts, answers: [] }));
 }
 
 function jellyEntry(id: string, magicScore: number, rankIndex: number, extra: Partial<RestaurantEntry> = {}): RestaurantEntry {
@@ -50,17 +49,28 @@ function jellyEntry(id: string, magicScore: number, rankIndex: number, extra: Pa
 
 const exp = parseBeliExport(syntheticBeliTexts({ restaurants: 12 }) as any);
 const resKeys = exp.lists.restaurants!.map((r) => r.key);
+const allRated = Object.fromEntries(resKeys.map((k, i) => [k, Math.round((9.5 - i * 0.4) * 10) / 10]));
 
 describe('buildImportPlan into empty lists', () => {
-  const plan = buildImportPlan({ exp, lists: scoredLists(exp, { [resKeys[0]]: 9.5, [resKeys[11]]: 5 }), matches: matchAll(exp), restaurants: [], bookmarks: [], batch: BATCH, now: NOW });
+  const guts = { ...allRated };
+  delete guts[resKeys[5]]; // Not rated
+  const plan = buildImportPlan({ exp, lists: scoredLists(exp, guts), matches: matchAll(exp), restaurants: [], bookmarks: [], batch: BATCH, now: NOW });
   const res = getCategoryList(plan.restaurants, 'restaurants');
 
-  it('imports every list in Beli order with non-increasing scores', () => {
-    expect(res.map((r) => r.imported!.key)).toEqual(resKeys.map((k) => `restaurants:${k}`));
+  it('imports every list in its order with non-increasing scores', () => {
+    expect(res.map((r) => r.imported!.key)).toEqual(resKeys);
     res.slice(1).forEach((r, i) => expect(r.magicScore).toBeLessThanOrEqual(res[i].magicScore));
     expect(res[0].initialRating).toBe(9.5);
-    expect(res[11].initialRating).toBe(5);
     expect(plan.summary.added).toEqual({ restaurants: 12, bakeries: 4, coffee_tea: 2, dessert: 1 });
+  });
+
+  it('leaves a spot the user did not rate without a gut rating', () => {
+    expect(res[5].initialRating).toBeUndefined();
+    expect(res[5].rankedHistory).toEqual([{ timestamp: res[5].createdAt }]);
+    expect(res[5].magicScore).toBeLessThanOrEqual(res[4].magicScore);
+    expect(res[5].magicScore).toBeGreaterThanOrEqual(res[6].magicScore);
+    // The other lists had no ratings at all
+    expect(plan.summary.unrated).toBe(1 + 4 + 2 + 1);
   });
 
   it('maps the fields: notes, dishes, private notes, dates, history, import details', () => {
@@ -70,29 +80,27 @@ describe('buildImportPlan into empty lists', () => {
     expect(cafe.createdAt).toBe(Date.parse('2025-06-01T18:30:00.123Z'));
     expect(cafe.rankedHistory).toEqual([{ timestamp: cafe.createdAt, initialRating: 9.5 }]);
     expect(cafe.comparisonsCount).toBe(0);
-    expect(cafe.imported).toEqual({ source: 'beli', batch: BATCH, key: `restaurants:${resKeys[0]}` });
+    expect(cafe.imported).toEqual({ source: 'beli', batch: BATCH, key: resKeys[0] });
     expect(cafe.cuisines).toEqual(['Italian']);
     expect(cafe.priceLevel).toBeUndefined();
     expect(res[1].privateNotes).toBe('Ask for the back table');
   });
 
   it('never publishes private notes or import details', () => {
-    const pub = buildPublicLists(plan.restaurants, plan.bookmarks);
-    const json = JSON.stringify(pub);
+    const json = JSON.stringify(buildPublicLists(plan.restaurants, plan.bookmarks));
     expect(json).not.toContain('Ask for the back table');
     expect(json).not.toContain('"imported"');
     expect(json).toContain('Second visit');
   });
 
-  it('imports bookmarks with their notes, skipping duplicates', () => {
+  it('imports bookmarks with their notes', () => {
     expect(plan.bookmarks.map((b) => b.name).sort()).toEqual(['Crust Club', 'Matcha Lab', 'Saffron Road']);
     expect(plan.bookmarks.find((b) => b.name === 'Saffron Road')!.notes).toBe('Friend says the biryani is the move');
     expect(plan.bookmarks.every((b) => b.imported?.batch === BATCH && b.id === b.placeId)).toBe(true);
   });
 });
 
-describe('merging into existing lists', () => {
-  // The user already ranked two of the Beli spots in jelly, plus two others
+describe('merging with a list that already has spots', () => {
   const dupTop = candidate(resKeys[2]);
   const dupLow = candidate(resKeys[8]);
   const existing = recomputeAllCategoryScores([
@@ -101,88 +109,48 @@ describe('merging into existing lists', () => {
     jellyEntry('other_b__restaurants', 7.5, 2),
     jellyEntry(buildEntryId(dupLow.placeId, 'restaurants'), 6.0, 3),
   ]);
-  const plan = buildImportPlan({ exp, lists: scoredLists(exp), matches: matchAll(exp), restaurants: existing, bookmarks: [], batch: BATCH, now: NOW });
-  const res = getCategoryList(plan.restaurants, 'restaurants');
+  const jelly = getCategoryList(existing, 'restaurants');
+  const matches = matchAll(exp);
 
-  it('keeps the jelly entry for a place already in the list and reports it', () => {
-    expect(plan.summary.duplicates.map((d) => d.key)).toEqual([resKeys[2], resKeys[8]]);
-    expect(res.find((r) => r.placeId === dupTop.placeId)).toMatchObject({ notes: 'mine', comparisonsCount: 3 });
+  it('with the jelly merge answered, uses its order exactly and keeps shared spots as the jelly entry', () => {
+    const shared = sharedSpots(exp.lists.restaurants!, 'restaurants', existing, matches);
+    expect(shared).toEqual({ [resKeys[2]]: jelly[1].id, [resKeys[8]]: jelly[3].id });
+    // Hidden truth: Beli spots on their gut scale, jelly spots at their scores
+    const truth: Record<string, number> = { ...allRated, ...Object.fromEntries(jelly.map((r) => [r.id, r.magicScore])) };
+    let s = startJellyMerge(resKeys, jelly.map((r) => r.id), shared, jellyMergeEstimates(resKeys, allRated, jelly));
+    for (let q = nextMergeQuestion(s); q; q = nextMergeQuestion(s)) s = answerMergeQuestion(s, truth[q.candidate] > truth[q.other] ? 'candidate' : 'other', 7);
+    const list: ScoredList = { category: 'restaurants', order: mergeOrder(s), guts: allRated, answers: s.answers };
+    const plan = buildImportPlan({ exp, lists: [list], matches, restaurants: existing, bookmarks: [], batch: BATCH, now: NOW });
+    const res = getCategoryList(plan.restaurants, 'restaurants');
+    expect(res.map((r) => r.id)).toEqual(list.order.map((k) => res.find((r) => r.id === k || r.imported?.key === k)!.id));
     expect(res).toHaveLength(4 + 10);
+    expect(res.find((r) => r.id === jelly[1].id)).toMatchObject({ notes: 'mine', comparisonsCount: 3 });
+    expect(plan.summary.duplicates.map((d) => d.key)).toEqual([resKeys[2], resKeys[8]]);
+    // Answers against jelly spots are stored on the imported spot
+    const withJellyAnswer = res.find((r) => r.comparisons?.some((c) => jelly.some((j) => j.id === c.opponentId)));
+    expect(withJellyAnswer?.imported).toBeDefined();
   });
 
-  it('keeps both orders: the existing spots and the imported ones', () => {
-    const existingOrder = res.filter((r) => !r.imported).map((r) => r.id);
-    expect(existingOrder).toEqual(existing.map((r) => r.id));
-    const importedOrder = res.filter((r) => r.imported).map((r) => r.imported!.key.replace('restaurants:', ''));
-    expect(importedOrder).toEqual(resKeys.filter((k) => k !== resKeys[2] && k !== resKeys[8]));
-  });
-
-  it('uses the duplicates as anchors: Beli spots around a duplicate land around it', () => {
-    const pos = (key: string) => res.findIndex((r) => r.imported?.key === `restaurants:${key}`);
-    const dupPos = res.findIndex((r) => r.placeId === dupLow.placeId);
+  it('without the jelly merge, falls back to pinning by shared spots and weaving by score', () => {
+    const plan = buildImportPlan({ exp, lists: scoredLists(exp, allRated), matches, restaurants: existing, bookmarks: [], batch: BATCH, now: NOW });
+    const res = getCategoryList(plan.restaurants, 'restaurants');
+    expect(res.filter((r) => !r.imported).map((r) => r.id)).toEqual(jelly.map((r) => r.id));
+    expect(res.filter((r) => r.imported).map((r) => r.imported!.key)).toEqual(resKeys.filter((k) => k !== resKeys[2] && k !== resKeys[8]));
+    const pos = (key: string) => res.findIndex((r) => r.imported?.key === key);
+    const dupPos = res.findIndex((r) => r.id === jelly[3].id);
     expect(pos(resKeys[9])).toBeGreaterThan(dupPos);
     expect(pos(resKeys[1])).toBeLessThan(dupPos);
   });
 
-  it('shared spots pin the orders together: a new spot stays between its Beli neighbours', () => {
-    const existing = [jellyEntry('A', 9, 0), jellyEntry('D1', 8, 1), jellyEntry('B', 7, 2)];
-    const hi = jellyEntry('hi', 4, 0, { initialRating: 4 }); // Its gut says low, but Beli ranks it above D1
-    const lo = jellyEntry('lo', 9.5, 0, { initialRating: 9.5 });
-    const out = mergeIntoList(existing, [{ entry: hi }, { existingId: 'D1' }, { entry: lo }]);
-    expect(out.list.map((r) => r.id)).toEqual(['A', 'hi', 'D1', 'lo', 'B']);
-    expect(out.fixed).toEqual(['D1']);
-  });
-
-  it('shared spots the two orders disagree about pin nothing and are reported', () => {
-    const existing = [jellyEntry('D1', 9, 0), jellyEntry('D2', 8, 1), jellyEntry('D3', 7, 2)];
-    const n = jellyEntry('n', 8.5, 0, { initialRating: 8.5 });
-    // Beli: D3 > D1 > n > D2 (D3 disagrees with jelly)
-    const out = mergeIntoList(existing, [{ existingId: 'D3' }, { existingId: 'D1' }, { entry: n }, { existingId: 'D2' }]);
+  it('mergeIntoList: shared spots pin the orders; ones the orders disagree on pin nothing', () => {
+    const ex = [jellyEntry('D1', 9, 0), jellyEntry('D2', 8, 1), jellyEntry('D3', 7, 2)];
+    const n = jellyEntry('n', 8.5, 0);
+    const out = mergeIntoList(ex, [{ existingId: 'D3' }, { existingId: 'D1' }, { entry: n }, { existingId: 'D2' }]);
     expect(out.fixed).toEqual(['D1', 'D2']);
     expect(out.conflicting).toEqual(['D3']);
     expect(out.list.map((r) => r.id)).toEqual(['D1', 'n', 'D2', 'D3']);
-  });
-
-  it('longestIncreasing finds a longest increasing run', () => {
     expect(longestIncreasing([3, 1, 2, 5, 4, 6])).toEqual([1, 2, 4, 5]);
-    expect(longestIncreasing([])).toEqual([]);
-  });
-
-  it('weaveByScore is a merge of two sorted runs', () => {
-    const a = [jellyEntry('a', 9, 0), jellyEntry('b', 7, 1), jellyEntry('c', 5, 2)];
-    const b = [jellyEntry('x', 8, 0), jellyEntry('y', 7, 1), jellyEntry('z', 2, 2)];
-    expect(weaveByScore(a, b).map((r) => r.id)).toEqual(['a', 'x', 'b', 'y', 'c', 'z']);
-  });
-});
-
-describe('re-importing a newer export', () => {
-  const first = buildImportPlan({ exp, lists: scoredLists(exp), matches: matchAll(exp), restaurants: [], bookmarks: [], batch: BATCH, now: NOW });
-  const newer = parseBeliExport(syntheticBeliTexts({ restaurants: 15 }) as any);
-  const skip = alreadyImported(first.restaurants, first.bookmarks);
-
-  it('needs lookups only for the new places', () => {
-    const queries = buildMatchQueries(newer, skip);
-    expect(queries.map((q) => q.name)).toEqual(newer.lists.restaurants!.slice(12).map((r) => r.name));
-  });
-
-  it('does not re-add a spot moved to another jelly list since', () => {
-    const nonna = first.restaurants.find((r) => r.name.startsWith('Nonna'))!;
-    const moved = first.restaurants.map((r) => (r.id === nonna.id ? { ...r, category: 'brunch' as const, id: buildEntryId(r.placeId!, 'brunch') } : r));
-    const plan = buildImportPlan({ exp: newer, lists: scoredLists(newer), matches: matchAll(newer), restaurants: moved, bookmarks: first.bookmarks, batch: 'beli-x-0', now: NOW });
-    expect(getCategoryList(plan.restaurants, 'restaurants').some((r) => r.name.startsWith('Nonna'))).toBe(false);
-    expect(alreadyImported(moved, [])(nonna.imported!.key.replace('restaurants:', ''), 'restaurants')).toBe(true);
-  });
-
-  it('adds only the new spots', () => {
-    const batch2 = createImportBatchId(NOW + 1000, () => 0.1);
-    const plan = buildImportPlan({ exp: newer, lists: scoredLists(newer), matches: matchAll(newer), restaurants: first.restaurants, bookmarks: first.bookmarks, batch: batch2, now: NOW + 1000 });
-    expect(plan.summary.added).toEqual({ restaurants: 3 });
-    expect(plan.summary.addedBookmarks).toBe(0);
-    expect(plan.summary.alreadyImported).toBe(12 + 4 + 2 + 1 + 3);
-    expect(importBatches(plan.restaurants, plan.bookmarks).map((b) => [b.batch, b.spots, b.bookmarks])).toEqual([
-      [batch2, 3, 0],
-      [BATCH, 19, 3],
-    ]);
+    expect(weaveByScore([jellyEntry('a', 9, 0), jellyEntry('b', 5, 1)], [jellyEntry('x', 7, 0)]).map((r) => r.id)).toEqual(['a', 'x', 'b']);
   });
 });
 
@@ -193,7 +161,7 @@ describe('decisions and bookmarks', () => {
     matches[resKeys[4]] = { ...matches[resKeys[4]], status: 'not_found', best: undefined };
     const plan = buildImportPlan({
       exp,
-      lists: scoredLists(exp),
+      lists: scoredLists(exp, allRated),
       matches,
       decisions: { [resKeys[4]]: { kind: 'manual' }, [resKeys[5]]: { kind: 'skip' } },
       restaurants: [],
@@ -203,50 +171,42 @@ describe('decisions and bookmarks', () => {
     });
     const res = getCategoryList(plan.restaurants, 'restaurants');
     expect(res).toHaveLength(10);
-    const manual = res.find((r) => r.imported?.key === `restaurants:${resKeys[4]}`)!;
-    expect(manual.placeId).toMatch(/^manual_beli_/);
+    expect(res.find((r) => r.imported?.key === resKeys[4])!.placeId).toMatch(/^manual_beli_/);
     expect(plan.summary).toMatchObject({ skipped: 2, manual: 1 });
   });
 
   it('skips bookmarks already saved or already ranked in that list', () => {
-    const bm = exp.bookmarks;
-    const saffron = candidate(bm[0].key);
-    const crust = candidate(bm[1].key);
+    const saffron = candidate(exp.bookmarks[0].key);
+    const crust = candidate(exp.bookmarks[1].key);
     const saved: BookmarkEntry = { id: saffron.placeId, placeId: saffron.placeId, name: 'Saffron', formattedAddress: '', category: 'restaurants', categories: [], cuisines: [], createdAt: 1, updatedAt: 1 };
     const ranked = jellyEntry(buildEntryId(crust.placeId, 'bakeries'), 8, 0, { category: 'bakeries' });
     const plan = buildImportPlan({ exp, lists: [], matches: matchAll(exp), restaurants: [ranked], bookmarks: [saved], batch: BATCH, now: NOW });
     expect(plan.summary).toMatchObject({ addedBookmarks: 1, skippedBookmarks: 2 });
-    expect(plan.bookmarks.map((b) => b.name)).toContain('Matcha Lab');
-  });
-
-  it('can leave bookmarks out entirely', () => {
-    const plan = buildImportPlan({ exp, lists: [], matches: matchAll(exp), restaurants: [], bookmarks: [], includeBookmarks: false, batch: BATCH, now: NOW });
-    expect(plan.bookmarks).toEqual([]);
+    expect(buildImportPlan({ exp, lists: [], matches: matchAll(exp), restaurants: [], bookmarks: [], includeBookmarks: false, batch: BATCH }).bookmarks).toEqual([]);
   });
 });
 
-describe('boundary answers become comparisons', () => {
-  it('stores each answer on the lower spot, against the spot it was compared with', () => {
-    const keys = exp.lists.restaurants!.map((r) => r.key);
-    let merge = startBoundaryMerge(keys, { firstFine: 8 });
-    merge = answerBoundaryQuestion(merge, 'lower', 5); // F0 beats L7
-    merge = answerBoundaryQuestion(merge, 'upper', 6); // …but not L5: lands between
-    const list: ScoredList = { category: 'restaurants', order: mergedOrder(merge), anchors: [], buckets: bucketOf(merge), answers: merge.answers };
+describe('merge answers become comparisons', () => {
+  it('stores each answer on the imported spots, either side of the question', () => {
+    // The best "fine" spot (#9) beats the worst "liked" one
+    const truth = Object.fromEntries(resKeys.map((k, i) => [k, i === 8 ? 7.45 : 9.5 - i * 0.3]));
+    let s = startBucketMerge(resKeys, { firstFine: 8 }, truth);
+    for (let q = nextMergeQuestion(s); q; q = nextMergeQuestion(s)) s = answerMergeQuestion(s, truth[q.candidate] > truth[q.other] ? 'candidate' : 'other', 5);
+    const list: ScoredList = { category: 'restaurants', order: mergeOrder(s), guts: {}, answers: s.answers };
+    expect(list.order.indexOf(resKeys[8])).toBe(7);
     const plan = buildImportPlan({ exp, lists: [list], matches: matchAll(exp), restaurants: [], bookmarks: [], batch: BATCH, now: NOW });
     const res = getCategoryList(plan.restaurants, 'restaurants');
-    expect(res.map((r) => r.imported!.key)).toEqual(list.order.map((k) => `restaurants:${k}`));
-    const moved = res.find((r) => r.imported!.key === `restaurants:${keys[8]}`)!;
-    expect(moved.comparisons).toEqual([
-      { opponentId: buildEntryId(candidate(keys[7]).placeId, 'restaurants'), result: 1, at: 5 },
-      { opponentId: buildEntryId(candidate(keys[5]).placeId, 'restaurants'), result: 0, at: 6 },
-    ]);
-    expect(moved.comparisonsCount).toBe(2);
+    expect(res.map((r) => r.imported!.key)).toEqual(list.order);
+    const moved = res.find((r) => r.imported!.key === resKeys[8])!;
+    expect(moved.comparisons!.length).toBe(s.answers.filter((a) => a.candidate === resKeys[8]).length);
+    const other = res.find((r) => r.id === moved.comparisons![0].opponentId)!;
+    expect(other.comparisons).toContainEqual({ opponentId: moved.id, result: 1 - moved.comparisons![0].result, at: 5 });
   });
 });
 
 describe('undo', () => {
   const existing = recomputeAllCategoryScores([jellyEntry('a__restaurants', 9.6, 0), jellyEntry('b__restaurants', 5.0, 1)]);
-  const plan = buildImportPlan({ exp, lists: scoredLists(exp), matches: matchAll(exp), restaurants: existing, bookmarks: [], batch: BATCH, now: NOW });
+  const plan = buildImportPlan({ exp, lists: scoredLists(exp, allRated), matches: matchAll(exp), restaurants: existing, bookmarks: [], batch: BATCH, now: NOW });
 
   it('removes exactly the batch and restores the other scores', () => {
     const undone = undoImport(plan.restaurants, plan.bookmarks, BATCH);
@@ -254,10 +214,11 @@ describe('undo', () => {
     expect(undone.bookmarks).toEqual([]);
     expect(undone.removedSpotIds).toHaveLength(19);
     expect(undone.removedBookmarkIds).toHaveLength(3);
+    expect(importBatches(plan.restaurants, plan.bookmarks)).toEqual([{ batch: BATCH, source: 'beli', spots: 19, bookmarks: 3, importedAt: NOW }]);
   });
 
-  it('a re-ranked import keeps its batch (and private notes), and is counted for the confirm', () => {
-    const target = plan.restaurants.find((r) => r.imported?.key === `restaurants:${resKeys[1]}`)!;
+  it('a re-ranked import keeps its batch and private notes, and is counted for the confirm', () => {
+    const target = plan.restaurants.find((r) => r.imported?.key === resKeys[1])!;
     const placed = placeSpot(
       plan.restaurants,
       { candidate: candidate(resKeys[1]), initialRating: 7, category: 'restaurants', cuisines: [], existingIdToReplace: target.id },

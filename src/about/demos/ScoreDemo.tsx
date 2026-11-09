@@ -48,8 +48,8 @@ export const ScoreDemo: React.FC = () => {
                 <button type="button" aria-label="Lower gut rating" className={iconBtn} onClick={() => nudge(i, -0.5)}>
                   <Minus className="h-3 w-3" />
                 </button>
-                <span className="w-7 text-center tabular-nums" style={{ color: getRatingTier(s.initialRating).thumbColor }}>
-                  {s.initialRating.toFixed(1)}
+                <span className="w-7 text-center tabular-nums" style={{ color: getRatingTier(s.initialRating ?? s.magicScore).thumbColor }}>
+                  {(s.initialRating ?? s.magicScore).toFixed(1)}
                 </span>
                 <button type="button" aria-label="Raise gut rating" className={iconBtn} onClick={() => nudge(i, 0.5)}>
                   <Plus className="h-3 w-3" />

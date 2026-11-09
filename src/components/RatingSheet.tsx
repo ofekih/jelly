@@ -72,7 +72,7 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
     : findExistingInCategory(candidate, category, existingRestaurants);
   const alsoRankedIn = rankingsInGroup(candidate, group, existingRestaurants).filter((r) => r.category !== category);
   const seed = reRankingEntry ?? replacing;
-  const previous = seed ? Math.round(seed.initialRating * 10) / 10 : null;
+  const previous = seed?.initialRating !== undefined ? Math.round(seed.initialRating * 10) / 10 : null;
   const [previewRating, setPreviewRating] = useState<number | null>(previous);
   const [isDraggingLine, setIsDraggingLine] = useState(false);
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -84,7 +84,7 @@ export const RatingSheet: React.FC<RatingSheetProps> = ({
     setCategory(next);
     // Show what you rated it in that list (if anything) on the line
     const entry = findExistingInCategory(candidate, next, existingRestaurants);
-    setPreviewRating(entry ? Math.round(entry.initialRating * 10) / 10 : null);
+    setPreviewRating(entry?.initialRating !== undefined ? Math.round(entry.initialRating * 10) / 10 : null);
   };
 
   const handlePickRating = (rawRating: number) => {

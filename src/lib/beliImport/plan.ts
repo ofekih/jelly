@@ -1,9 +1,8 @@
 import type { BookmarkEntry, PlaceCandidate, RestaurantEntry, SpotCategory, StoredComparison } from '../../types';
 import { buildEntryId, getCategoryList, recomputeAllCategoryScores, replaceCategoryList } from '../categoryLists';
 import { createManualPlaceCandidate } from '../placesService';
-import { interpolateGuts } from './scores';
+import { estimateScores } from './scores';
 import type {
-  Anchor,
   BeliBookmarkRow,
   BeliExport,
   BeliRankedRow,
@@ -23,7 +22,7 @@ export function createImportBatchId(now = Date.now(), random = Math.random): str
   return `beli-${now.toString(36)}-${Math.floor(random() * 36 ** 4).toString(36).padStart(4, '0')}`;
 }
 
-/** A custom spot's ID for a Beli place: stable, so a re-import recognises it; `manual_` keeps it out of community stats */
+/** A custom spot's ID for a Beli place: stable for the same export; `manual_` keeps it out of community stats */
 function manualPlaceId(key: string): string {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
@@ -43,59 +42,50 @@ export function resolvePlace(
 }
 
 /**
- * `imported.key` on an entry: the Beli list it came from plus the place key, so a spot moved to
- * another jelly list since is still recognised (and the same place in two Beli lists stays two).
+ * Spots of a Beli list that are already in that jelly list (same Google place): row key → entry
+ * ID. Pass to `startJellyMerge`, which then treats each as one spot known to both lists.
  */
-export function importKey(category: SpotCategory, key: string): string {
-  return `${category}:${key}`;
-}
-
-/** Whether an entry or bookmark came from this Beli row (any earlier batch, wherever it is now) */
-const fromBeliRow = (item: { imported?: { source: string; key: string } }, row: { category: SpotCategory; key: string }) =>
-  item.imported?.source === 'beli' && item.imported.key === importKey(row.category, row.key);
-
-/**
- * For `buildMatchQueries`: rows an earlier import already brought in (by Beli key, in that list
- * or in Want to try) need no lookup this time.
- */
-export function alreadyImported(restaurants: RestaurantEntry[], bookmarks: BookmarkEntry[]): (key: string, category: SpotCategory) => boolean {
-  const keys = new Set([...restaurants, ...bookmarks].filter((r) => r.imported?.source === 'beli').map((r) => r.imported!.key));
-  return (key, category) => keys.has(importKey(category, key));
-}
-
-/**
- * Spots of a Beli list that are already in that jelly list: their jelly scores are free anchors
- * at their Beli position (so a merge or re-import needs few or no questions).
- */
-export function existingAnchors(
+export function sharedSpots(
   rows: BeliRankedRow[],
   category: SpotCategory,
   restaurants: RestaurantEntry[],
   matches: Record<string, MatchResult>,
   decisions: Record<string, MatchDecision> = {}
-): Anchor[] {
-  const byId = new Map(getCategoryList(restaurants, category).map((r) => [r.id, r]));
-  const anchors: Anchor[] = [];
+): Record<string, string> {
+  const ids = new Set(getCategoryList(restaurants, category).map((r) => r.id));
+  const out: Record<string, string> = {};
   for (const row of rows) {
-    const earlier = restaurants.find((r) => r.category === category && fromBeliRow(r, row));
-    const place = earlier ? null : resolvePlace(row, matches[row.key], decisions[row.key]);
-    const entry = earlier ?? (place ? byId.get(buildEntryId(place.placeId, category)) : undefined);
-    if (entry) anchors.push({ key: row.key, rating: entry.magicScore, source: 'existing' });
+    const place = resolvePlace(row, matches[row.key], decisions[row.key]);
+    const id = place ? buildEntryId(place.placeId, category) : undefined;
+    if (id && ids.has(id)) out[row.key] = id;
   }
-  return anchors;
+  return out;
 }
 
-/** Comparisons for the spot `key` from the boundary answers (as the lower spot), against spots that made it into the list */
+/** Estimated scores for the jelly merge: Beli rows from their gut ratings and order, jelly spots their scores. */
+export function jellyMergeEstimates(
+  beliOrder: string[],
+  guts: Record<string, number | undefined>,
+  jellyList: RestaurantEntry[]
+): Record<string, number> {
+  return { ...estimateScores(beliOrder, guts), ...Object.fromEntries(jellyList.map((r) => [r.id, r.magicScore])) };
+}
+
+/** The merge answers about one imported spot, against spots that made it into the list (by entry ID) */
 function comparisonsFor(key: string, list: ScoredList, idOf: Map<string, string>): StoredComparison[] {
-  return list.answers
-    .filter((a) => a.lower === key && idOf.has(a.upper))
-    .map((a) => ({ opponentId: idOf.get(a.upper)!, result: a.result, at: a.at }));
+  const out: StoredComparison[] = [];
+  for (const a of list.answers) {
+    if (a.candidate === key && idOf.has(a.other)) out.push({ opponentId: idOf.get(a.other)!, result: a.result, at: a.at });
+    else if (a.other === key && idOf.has(a.candidate)) out.push({ opponentId: idOf.get(a.candidate)!, result: (1 - a.result) as 0 | 0.5 | 1, at: a.at });
+  }
+  return out;
 }
 
 function entryFor(
   row: BeliRankedRow,
   place: PlaceCandidate,
-  gut: number,
+  gut: number | undefined,
+  estimate: number,
   comparisons: StoredComparison[],
   batch: string,
   now: number
@@ -116,16 +106,16 @@ function entryFor(
     categories: Array.from(new Set([row.category, ...(place.categories || [])])),
     cuisines: place.cuisines || [],
     primaryTypeDisplay: place.primaryTypeDisplay,
-    initialRating: gut,
+    initialRating: gut, // Absent when the user didn't rate it: the fit never guesses one
     rankIndex: 0,
-    magicScore: gut,
+    magicScore: estimate, // Replaced by the fit
     comparisonsCount: comparisons.length,
     notes: row.notes,
     favoriteDishes: row.favoriteDishes,
     privateNotes: row.privateNotes,
-    rankedHistory: [{ timestamp: createdAt, initialRating: gut }],
+    rankedHistory: [gut === undefined ? { timestamp: createdAt } : { timestamp: createdAt, initialRating: gut }],
     comparisons: comparisons.length ? comparisons : undefined,
-    imported: { source: 'beli', batch, key: importKey(row.category, row.key) },
+    imported: { source: 'beli', batch, key: row.key },
     createdAt,
     updatedAt: now,
   };
@@ -149,22 +139,23 @@ function bookmarkFor(row: BeliBookmarkRow, place: PlaceCandidate, batch: string,
     primaryTypeDisplay: place.primaryTypeDisplay,
     notes: notes ? notes.slice(0, 5000) : undefined,
     privateNotes: row.privateNotes,
-    imported: { source: 'beli', batch, key: importKey(row.category, row.key) },
+    imported: { source: 'beli', batch, key: row.key },
     createdAt: row.createdAt ?? now,
     updatedAt: now,
   };
 }
 
 /**
- * Weaves imported spots (best first, by gut) into an existing list (best first, by score) as a
- * merge of two sorted sequences, so both orders survive. Ties keep the existing spot first.
+ * Weaves imported spots (best first) into an existing list (best first) by score, as a merge of
+ * two sorted sequences, so both orders survive. Ties keep the existing spot first. Only a fallback
+ * for when the user skipped the jelly merge's questions.
  */
 export function weaveByScore(existing: RestaurantEntry[], imported: RestaurantEntry[]): RestaurantEntry[] {
   const out: RestaurantEntry[] = [];
   let i = 0;
   let j = 0;
   while (i < existing.length || j < imported.length) {
-    if (j >= imported.length || (i < existing.length && existing[i].magicScore >= imported[j].initialRating)) out.push(existing[i++]);
+    if (j >= imported.length || (i < existing.length && existing[i].magicScore >= imported[j].magicScore)) out.push(existing[i++]);
     else out.push(imported[j++]);
   }
   return out;
@@ -198,7 +189,8 @@ export type BeliSlot = { existingId: string } | { entry: RestaurantEntry };
  * the longest run of them that both orders agree on become fixed points (a shared spot the two
  * orders disagree about stays where jelly has it and pins nothing), and each new spot can only
  * land between the fixed points around it in Beli's order. Between two fixed points, new and
- * existing spots are woven by score. Without shared spots this is `weaveByScore`.
+ * existing spots are woven by score. Without shared spots this is `weaveByScore`. A fallback: normally the
+ * jelly merge's questions settle the order exactly.
  */
 export function mergeIntoList(existing: RestaurantEntry[], slots: BeliSlot[]): { list: RestaurantEntry[]; fixed: string[]; conflicting: string[] } {
   const jellyPos = new Map(existing.map((r, i) => [r.id, i]));
@@ -233,92 +225,88 @@ export interface BuildImportInput {
   restaurants: RestaurantEntry[];
   bookmarks: BookmarkEntry[];
   includeBookmarks?: boolean; // Default true
-  linear?: boolean; // The user's rating scale (`linearRatingScale`)
   batch: string;
   now?: number;
 }
 
 /**
- * The lists after the import. A place already in that jelly list keeps its jelly entry (reported
- * as a duplicate, used as an anchor); rows an earlier import brought in are skipped; the rest get
- * gut ratings from the anchors and are woven in by score. Bookmarks already saved, or ranked in
- * that list, are skipped. Scores are recomputed for every list touched.
+ * The lists after the import. Each list takes the order from the merges (`ScoredList.order`): a
+ * place already in that jelly list keeps its jelly entry (reported as a duplicate); existing spots
+ * the order leaves out (jelly merge skipped) are woven in by `mergeIntoList`. Rated spots get their
+ * gut rating; unrated ones none. Bookmarks already saved, or ranked in that list, are skipped.
+ * Scores are recomputed for every list touched.
  */
 export function buildImportPlan(input: BuildImportInput): ImportPlan {
-  const { exp, matches, batch, includeBookmarks = true, linear = false } = input;
+  const { exp, matches, batch, includeBookmarks = true } = input;
   const decisions = input.decisions ?? {};
   const now = input.now ?? Date.now();
-  const summary: ImportSummary = { added: {}, addedBookmarks: 0, duplicates: [], orderConflicts: [], alreadyImported: 0, skippedBookmarks: 0, skipped: 0, manual: 0 };
+  const summary: ImportSummary = { added: {}, addedBookmarks: 0, duplicates: [], orderConflicts: [], unrated: 0, skippedBookmarks: 0, skipped: 0, manual: 0 };
   let restaurants = input.restaurants;
 
   for (const list of input.lists) {
     const { category } = list;
     const rows = new Map((exp.lists[category] ?? []).map((r) => [r.key, r]));
-    const ordered = list.order.map((k) => rows.get(k)).filter((r): r is BeliRankedRow => Boolean(r));
     const current = getCategoryList(restaurants, category);
-    const currentIds = new Set(current.map((r) => r.id));
-    const guts = interpolateGuts(
-      list.order,
-      [...list.anchors.filter((a) => a.source === 'user'), ...existingAnchors(ordered, category, restaurants, matches, decisions)],
-      { linear, buckets: list.buckets }
-    );
-
+    const currentById = new Map(current.map((r) => [r.id, r]));
     // Resolve every row first, so comparisons can point at any spot that made it in
+    const idOf = new Map<string, string>(current.map((r) => [r.id, r.id]));
+    const added = new Map<string, RestaurantEntry>();
     const resolved: Array<{ row: BeliRankedRow; place: PlaceCandidate }> = [];
-    const slots: Array<{ existingId: string } | { row: BeliRankedRow }> = [];
-    const idOf = new Map<string, string>();
-    const seenIds = new Set<string>();
-    for (const row of ordered) {
-      const earlier = restaurants.find((r) => fromBeliRow(r, row));
-      if (earlier) {
-        summary.alreadyImported++;
-        // Still in this list: it pins the order; moved to another list since: left alone
-        if (earlier.category === category) {
-          idOf.set(row.key, earlier.id);
-          slots.push({ existingId: earlier.id });
-        }
-        continue;
-      }
-      const place = resolvePlace(row, matches[row.key], decisions[row.key]);
+    for (const [key, row] of rows) {
+      const place = resolvePlace(row, matches[key], decisions[key]);
       if (!place) {
         summary.skipped++;
         continue;
       }
       const id = buildEntryId(place.placeId, category);
-      idOf.set(row.key, id);
-      if (currentIds.has(id) || seenIds.has(id)) {
-        summary.duplicates.push({ key: row.key, category, entryId: id });
-        if (currentIds.has(id)) slots.push({ existingId: id });
+      if (currentById.has(id) || [...idOf.values()].includes(id)) {
+        summary.duplicates.push({ key, category, entryId: id });
+        if (currentById.has(id)) idOf.set(key, id);
         continue;
       }
-      seenIds.add(id);
-      slots.push({ row });
-      if (decisions[row.key]?.kind === 'manual') summary.manual++;
+      idOf.set(key, id);
       resolved.push({ row, place });
     }
-
-    const added = new Map(
-      resolved.map(({ row, place }) => [row.key, entryFor(row, place, guts[row.key], comparisonsFor(row.key, list, idOf), batch, now)])
-    );
+    // The Beli spots in their merged order (a shared spot may appear under its jelly ID), for estimates
+    const rowOfId = new Map([...idOf.entries()].filter(([k]) => rows.has(k)).map(([k, id]) => [id, k]));
+    const beliOrder = list.order.map((k) => (rows.has(k) ? k : rowOfId.get(k))).filter((k): k is string => Boolean(k));
+    const estimates = estimateScores(beliOrder, list.guts);
+    for (const { row, place } of resolved) {
+      const gut = list.guts[row.key];
+      if (gut === undefined) summary.unrated++;
+      if (decisions[row.key]?.kind === 'manual') summary.manual++;
+      added.set(row.key, entryFor(row, place, gut, estimates[row.key] ?? 5, comparisonsFor(row.key, list, idOf), batch, now));
+    }
     if (added.size === 0) continue;
     summary.added[category] = added.size;
-    const merged = mergeIntoList(
-      current,
-      slots.map((s) => ('row' in s ? { entry: added.get(s.row.key)! } : s))
-    );
-    summary.orderConflicts.push(...merged.conflicting.map((entryId) => ({ category, entryId })));
-    restaurants = replaceCategoryList(restaurants, category, merged.list);
+
+    // The merged order: imported entries and existing ones (directly, or through a shared row)
+    const used = new Set<string>();
+    const ordered: RestaurantEntry[] = [];
+    const slots: BeliSlot[] = [];
+    for (const key of list.order) {
+      const existing = currentById.get(key) ?? (rows.has(key) && idOf.has(key) ? currentById.get(idOf.get(key)!) : undefined);
+      const entry = existing ?? added.get(key);
+      if (!entry || used.has(entry.id)) continue;
+      used.add(entry.id);
+      ordered.push(entry);
+      if (rows.has(key)) slots.push(existing ? { existingId: existing.id } : { entry });
+    }
+    let next = ordered;
+    if (current.some((r) => !used.has(r.id))) {
+      // The jelly merge wasn't done: weave the Beli order into the existing list
+      const merged = mergeIntoList(current, slots);
+      summary.orderConflicts.push(...merged.conflicting.map((entryId) => ({ category, entryId })));
+      next = merged.list;
+    }
+    restaurants = replaceCategoryList(restaurants, category, next);
   }
 
   let bookmarks = input.bookmarks;
   if (includeBookmarks) {
-    const added: BookmarkEntry[] = [];
+    const newBookmarks: BookmarkEntry[] = [];
     const savedIds = new Set(bookmarks.flatMap((b) => [b.id, b.placeId].filter(Boolean) as string[]));
     for (const row of exp.bookmarks) {
-      if ([...bookmarks, ...restaurants].some((b) => fromBeliRow(b, row))) {
-        summary.alreadyImported++;
-        continue;
-      }
       const place = resolvePlace(row, matches[row.key], decisions[row.key]);
       if (!place) {
         summary.skipped++;
@@ -331,10 +319,10 @@ export function buildImportPlan(input: BuildImportInput): ImportPlan {
       }
       savedIds.add(place.placeId);
       if (decisions[row.key]?.kind === 'manual') summary.manual++;
-      added.push(bookmarkFor(row, place, batch, now));
+      newBookmarks.push(bookmarkFor(row, place, batch, now));
     }
-    summary.addedBookmarks = added.length;
-    bookmarks = [...added, ...bookmarks].sort((a, b) => b.createdAt - a.createdAt);
+    summary.addedBookmarks = newBookmarks.length;
+    bookmarks = [...newBookmarks, ...bookmarks].sort((a, b) => b.createdAt - a.createdAt);
   }
 
   return { batch, restaurants, bookmarks, summary };

@@ -3,26 +3,27 @@ export * from './types';
 export { BeliImportError, beliPlaceKey, readBeliFiles, parseBeliExport, unzipBeliExport } from './parse';
 export { buildMatchQueries, matchPlaces, scoreLookup, textQueryFor, type MatchRun, type MatchRunOptions } from './match';
 export {
-  answerBoundaryQuestion,
-  boundaryMergeDone,
-  bucketOf,
-  continueBoundary,
-  DEFAULT_BOUNDARY_CAP,
-  finishBoundary,
-  mergedOrder,
-  nextBoundaryQuestion,
-  startBoundaryMerge,
-} from './boundaryMerge';
-export { interpolateGuts, presetAnchors, suggestAnchors } from './scores';
+  answerMergeQuestion,
+  bucketsFor,
+  finishMerge,
+  mergeDone,
+  mergeOrder,
+  nextMergeQuestion,
+  startBucketMerge,
+  startJellyMerge,
+  startMerge,
+} from './merge';
+export { estimateScores, listAccuracy, nextToRate, ratingOrder } from './scores';
 export {
-  alreadyImported,
   batchTime,
   buildImportPlan,
   createImportBatchId,
   editedSinceImport,
-  existingAnchors,
   importBatches,
+  jellyMergeEstimates,
+  mergeIntoList,
   resolvePlace,
+  sharedSpots,
   undoImport,
   type BuildImportInput,
 } from './plan';

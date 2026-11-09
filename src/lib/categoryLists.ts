@@ -125,7 +125,8 @@ function stripLegacyFields<T extends Record<string, any>>(obj: T): T {
 
 function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
   const category = resolveCategory(raw);
-  const initialRating = typeof raw.initialRating === 'number' ? raw.initialRating : 8;
+  // No gut rating stays none: the fit treats it as unknown (an imported spot the user didn't rate)
+  const initialRating = typeof raw.initialRating === 'number' ? raw.initialRating : undefined;
   const legacy = isLegacyDoc(raw);
   // Elo no longer exists; older docs still carry it until they're next saved
   const { elo: _elo, ...base } = legacy ? stripLegacyFields(raw) : raw;

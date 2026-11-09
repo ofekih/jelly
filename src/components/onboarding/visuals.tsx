@@ -119,7 +119,7 @@ export const SxSVisual: React.FC<VisualProps> = ({ active }) => {
   }, [active, phase, match, state, newWins]);
 
   const placed = useMemo(() => {
-    const spots = SXS_LIST.map((e) => ({ name: e.name, gut: e.initialRating }));
+    const spots = SXS_LIST.map((e) => ({ name: e.name, gut: e.initialRating ?? e.magicScore }));
     spots.splice(insertIndex, 0, { name: NEW_NAME, gut: NEW_GUT });
     return buildList(spots, 'placed');
   }, [insertIndex]);

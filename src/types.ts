@@ -224,7 +224,7 @@ export interface PriceRange {
 
 export interface RankedHistoryEvent {
   timestamp: number;
-  initialRating: number;
+  initialRating?: number; // Absent: ranked without a gut rating (an import the user didn't rate)
   magicScore?: number;
 }
 
@@ -237,8 +237,8 @@ export interface StoredComparison {
 
 /**
  * Where an entry came from when it arrived by import (`src/lib/beliImport`): private, never published.
- * `batch` groups one import run (undo removes a batch); `key` is the source's own place key, so a
- * later import of a newer export recognises it without a lookup.
+ * `batch` groups one import run (undo removes a batch); `key` is the source's own place key
+ * (Beli: name|city), for tracing a spot back to the export.
  */
 export interface ImportedFrom {
   source: 'beli';
@@ -268,7 +268,7 @@ export interface RestaurantEntry {
   media?: MediaInfo;
 
   // Rating & Ranking
-  initialRating: number; // Integer 1 to 10 gut rating from Q1
+  initialRating?: number; // Gut rating 1–10 from the spectrum; absent = never rated (imported): the fit treats it as unknown, never guesses
   rankIndex: number; // 0 = #1 ranked spot within its category list
   magicScore: number; // 1.0 to 10.0 displayed score: the gut ratings fitted to the order (recomputeMagicScores)
   comparisonsCount: number;

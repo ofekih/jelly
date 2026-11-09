@@ -30,7 +30,7 @@ function matchAll(exp: BeliExport): Record<string, MatchResult> {
 }
 
 const lists = (exp: BeliExport): ScoredList[] =>
-  (Object.keys(exp.lists) as SpotCategory[]).map((category) => ({ category, order: exp.lists[category]!.map((r) => r.key), anchors: [], answers: [] }));
+  (Object.keys(exp.lists) as SpotCategory[]).map((category) => ({ category, order: exp.lists[category]!.map((r) => r.key), guts: { [exp.lists[category]![0].key]: 9 }, answers: [] }));
 
 async function cloudLists(device: ReturnType<typeof createDevice>) {
   const [r, b] = await Promise.all([
@@ -127,6 +127,10 @@ describe('Beli import write path', () => {
     await expect(write({ ...base, imported: { source: 'beli', batch } })).rejects.toThrow();
     await expect(write({ ...base, imported: 'beli' })).rejects.toThrow();
     await expect(write({ ...base, privateNotes: 'x'.repeat(5001) })).rejects.toThrow();
+    // A spot without a gut rating is allowed; an out-of-range one is not
+    const { initialRating: _gut, ...unrated } = base;
+    await expect(write(unrated)).resolves.toBeUndefined();
+    await expect(write({ ...base, initialRating: 11 })).rejects.toThrow();
     const bm = doc(device.db, 'users', device.uid, 'bookmarks', 'b1');
     await expect(setDoc(bm, { name: 'B', privateNotes: 'ok', imported: { source: 'beli', batch, key: 'k' } })).resolves.toBeUndefined();
     await expect(setDoc(bm, { name: 'B', imported: { source: 'beli', batch: '', key: 'k' } })).rejects.toThrow();

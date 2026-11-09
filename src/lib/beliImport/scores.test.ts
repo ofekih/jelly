@@ -1,221 +1,154 @@
 import { describe, expect, it } from 'vitest';
+import { fitScoresToOrder, recomputeMagicScores } from '../rankingEngine';
 import type { RestaurantEntry } from '../../types';
-import { recomputeMagicScores, spectrumRatingToPct } from '../rankingEngine';
 import {
-  answerBoundaryQuestion,
-  boundaryMergeDone,
+  answerMergeQuestion,
   bucketsFor,
-  continueBoundary,
-  mergedOrder,
-  nextBoundaryQuestion,
-  startBoundaryMerge,
-} from './boundaryMerge';
-import { interpolateGuts, presetAnchors, suggestAnchors } from './scores';
-import type { Anchor, BoundaryAnswer, BoundaryMergeState } from './types';
+  finishMerge,
+  mergeDone,
+  mergeOrder,
+  nextMergeQuestion,
+  startBucketMerge,
+  startJellyMerge,
+  startMerge,
+} from './merge';
+import { estimateScores, listAccuracy, nextToRate, ratingOrder } from './scores';
+import type { MergeState } from './types';
 
 const keys = (n: number, p = 'k') => Array.from({ length: n }, (_, i) => `${p}${i}`);
 
-/** Answers every question from a hidden true order (lower index = better) */
-function runWithTruth(state: BoundaryMergeState, truth: string[], maxQuestions = 1000) {
-  const rank = new Map(truth.map((k, i) => [k, i]));
+/** Answers every question from hidden true scores; returns the final state and the count */
+function answerAll(state: MergeState, truth: Record<string, number>) {
   let s = state;
   let asked = 0;
-  for (let q = nextBoundaryQuestion(s); q || s.paused; q = nextBoundaryQuestion(s)) {
-    if (!q) {
-      s = continueBoundary(s);
-      continue;
-    }
-    if (++asked > maxQuestions) break;
-    const answer: BoundaryAnswer = rank.get(q.lower)! < rank.get(q.upper)! ? 'lower' : 'upper';
-    s = answerBoundaryQuestion(s, answer, 1);
+  for (let q = nextMergeQuestion(s); q; q = nextMergeQuestion(s)) {
+    s = answerMergeQuestion(s, truth[q.candidate] > truth[q.other] ? 'candidate' : 'other', asked);
+    asked++;
+    if (asked > 10_000) throw new Error('runaway');
   }
-  return { state: s, asked };
+  return { s, asked };
 }
+
+let seed = 42;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 describe('bucketsFor', () => {
-  it('splits by the bounds, with missing bounds meaning "no such bucket"', () => {
+  it('splits by the bounds, missing bounds meaning "no such bucket"', () => {
     expect(bucketsFor(5, { firstFine: 2, firstDisliked: 4 })).toEqual(['liked', 'liked', 'fine', 'fine', 'disliked']);
     expect(bucketsFor(3, {})).toEqual(['liked', 'liked', 'liked']);
-    expect(bucketsFor(3, { firstDisliked: 1 })).toEqual(['liked', 'disliked', 'disliked']);
     expect(bucketsFor(3, { firstFine: 2, firstDisliked: 1 })).toEqual(['liked', 'disliked', 'disliked']);
-    expect(bucketsFor(2, { firstFine: 0 })).toEqual(['fine', 'fine']);
   });
 });
 
-describe('boundary merge', () => {
-  it('asks one question when Beli got the boundary right', () => {
-    const order = [...keys(10, 'L'), ...keys(5, 'F')];
-    const s = startBoundaryMerge(order, { firstFine: 10 });
-    expect(nextBoundaryQuestion(s)).toMatchObject({ lower: 'F0', upper: 'L9', boundary: 1, asked: 0 });
-    const done = answerBoundaryQuestion(s, 'upper', 1);
-    expect(boundaryMergeDone(done)).toBe(true);
-    expect(mergedOrder(done)).toEqual(order);
-    expect(done.answers).toEqual([{ lower: 'F0', upper: 'L9', result: 0, at: 1 }]);
+describe('merging sorted runs', () => {
+  it('recovers the true order exactly from realistic overlapping buckets', () => {
+    for (let trial = 0; trial < 20; trial++) {
+      const truth: Record<string, number> = {};
+      const all = keys(120).map((k) => ((truth[k] = 1 + 9 * rnd()), k));
+      // Bucket from a noisy reading, each bucket sorted: Beli's export order
+      const bucket = (k: string) => (truth[k] + (rnd() - 0.5) * 2 > 6.5 ? 0 : truth[k] + (rnd() - 0.5) * 2 > 3.5 ? 1 : 2);
+      const runs: string[][] = [[], [], []];
+      all.forEach((k) => runs[bucket(k)].push(k));
+      runs.forEach((r) => r.sort((a, b) => truth[b] - truth[a]));
+      const exportOrder = runs.flat();
+      const guts = Object.fromEntries(exportOrder.map((k) => [k, truth[k] + (rnd() - 0.5)]));
+      const { s } = answerAll(
+        startBucketMerge(exportOrder, { firstFine: runs[0].length, firstDisliked: runs[0].length + runs[1].length }, estimateScores(exportOrder, guts)),
+        truth
+      );
+      expect(mergeDone(s)).toBe(true);
+      expect(mergeOrder(s)).toEqual([...all].sort((a, b) => truth[b] - truth[a]));
+    }
   });
 
-  it('recovers the true order when fine spots beat the bottom of liked', () => {
-    const liked = keys(20, 'L');
-    const fine = keys(10, 'F');
-    // True order: F0 and F1 sit among the bottom liked spots, F2 just below L19
-    const truth = [...liked.slice(0, 15), 'F0', ...liked.slice(15, 18), 'F1', ...liked.slice(18), ...fine.slice(2)];
-    const { state, asked } = runWithTruth(startBoundaryMerge([...liked, ...fine], { firstFine: 20 }), truth);
-    expect(mergedOrder(state)).toEqual(truth);
-    expect(asked).toBeLessThanOrEqual(12);
+  it('takes ~2 questions per spot when the estimates are right, far fewer than ranking from scratch', () => {
+    const base = keys(100, 'a');
+    const run = keys(50, 'b');
+    const truth: Record<string, number> = {};
+    base.forEach((k, i) => (truth[k] = 10 - i * 0.09));
+    run.forEach((k, i) => (truth[k] = 9.95 - i * 0.18));
+    const { s, asked } = answerAll(startMerge(base, [{ stage: 'fine', keys: run }], truth), truth);
+    expect(mergeOrder(s)).toEqual([...base, ...run].sort((a, b) => truth[b] - truth[a]));
+    expect(asked).toBeLessThanOrEqual(2 * 50);
+    // Without estimates (all equal) it still gets there, by galloping
+    const blind = answerAll(startMerge(base, [{ stage: 'fine', keys: run }], {}), truth);
+    expect(mergeOrder(blind.s)).toEqual(mergeOrder(s));
   });
 
-  it('merges all three buckets, including a disliked spot above some fine ones', () => {
-    const order = [...keys(6, 'L'), ...keys(6, 'F'), ...keys(4, 'D')];
-    const truth = ['L0', 'L1', 'L2', 'L3', 'F0', 'L4', 'L5', 'F1', 'F2', 'F3', 'D0', 'F4', 'F5', 'D1', 'D2', 'D3'];
-    const { state } = runWithTruth(startBoundaryMerge(order, { firstFine: 6, firstDisliked: 12 }), truth);
-    expect(mergedOrder(state)).toEqual(truth);
+  it('asks one question when a whole run belongs below', () => {
+    const truth = { a: 9, b: 8, c: 3, d: 2 };
+    const { asked, s } = answerAll(startMerge(['a', 'b'], [{ stage: 'fine', keys: ['c', 'd'] }], truth), truth);
+    expect(mergeOrder(s)).toEqual(['a', 'b', 'c', 'd']);
+    expect(asked).toBe(1); // c loses to b, so it and every worse spot of its run (d) go below
   });
 
-  it('finds the top of the list for a fine spot better than everything (galloping)', () => {
-    const liked = keys(64, 'L');
-    const truth = ['F0', ...liked];
-    const { state, asked } = runWithTruth(startBoundaryMerge([...liked, 'F0'], { firstFine: 64 }), truth);
-    expect(mergedOrder(state)).toEqual(truth);
-    expect(asked).toBeLessThanOrEqual(14);
+  it('a tie puts the candidate just below; finishMerge places the rest by estimate', () => {
+    let s = startMerge(['a', 'b', 'c'], [{ stage: 'fine', keys: ['x', 'y'] }], { a: 9, b: 7, c: 5, x: 8, y: 4 });
+    expect(nextMergeQuestion(s)).toMatchObject({ candidate: 'x', other: 'b', remaining: 2 });
+    s = answerMergeQuestion(s, 'tie', 1);
+    expect(s.merged).toEqual(['a', 'b', 'x', 'c']);
+    expect(mergeOrder(s)).toEqual(['a', 'b', 'x', 'c', 'y']);
+    expect(finishMerge(s).pending).toEqual([]);
+    expect(s.answers).toEqual([{ candidate: 'x', other: 'b', result: 0.5, at: 1 }]);
   });
 
-  it('pauses at the cap, keeps Beli order for what is unanswered, and resumes', () => {
-    const liked = keys(64, 'L');
-    let s = startBoundaryMerge([...liked, 'F0'], { firstFine: 64 }, { cap: 3 });
-    for (let i = 0; i < 3; i++) s = answerBoundaryQuestion(s, 'lower');
-    expect(s.paused).toBe(true);
-    expect(nextBoundaryQuestion(s)).toBeNull();
-    // Galloping, F0 beat L63, L61 and L57: it goes just above L57 for now
-    expect(mergedOrder(s).indexOf('F0')).toBe(57);
-    s = continueBoundary(s);
-    expect(nextBoundaryQuestion(s)).toMatchObject({ asked: 3, cap: 6 });
+  it('jelly merge: shared spots need no question and bound their neighbours', () => {
+    // Jelly: J1 > S > J2; Beli: b1 > S(shared, row key "s") > b2. Truth puts b1 above J1.
+    const truth: Record<string, number> = { J1: 8, S: 7, J2: 5, b1: 9, b2: 6 };
+    const state = startJellyMerge(['b1', 's', 'b2'], ['J1', 'S', 'J2'], { s: 'S' }, { J1: 8, S: 7, J2: 5, b1: 9, b2: 6 });
+    const { s, asked } = answerAll(state, truth);
+    expect(mergeOrder(s)).toEqual(['b1', 'J1', 'S', 'b2', 'J2']);
+    expect(s.answers.some((a) => a.candidate === 'S' || a.other === 'S' && a.candidate === 's')).toBe(false);
+    expect(asked).toBeLessThanOrEqual(4);
   });
 
-  it('skip stops this boundary but still asks the next one; tie places just below', () => {
-    const order = ['L0', 'L1', 'F0', 'F1', 'D0'];
-    let s = startBoundaryMerge(order, { firstFine: 2, firstDisliked: 4 });
-    s = answerBoundaryQuestion(s, 'skip');
-    expect(nextBoundaryQuestion(s)).toMatchObject({ lower: 'D0', upper: 'F1', boundary: 2 });
-    s = answerBoundaryQuestion(s, 'tie');
-    expect(boundaryMergeDone(s)).toBe(true);
-    expect(mergedOrder(s)).toEqual(['L0', 'L1', 'F0', 'F1', 'D0']);
-    expect(s.answers[0].result).toBe(0.5);
-  });
-
-  it('handles lists with no liked spots or a single bucket', () => {
-    expect(mergedOrder(startBoundaryMerge(['a', 'b'], { firstFine: 0 }))).toEqual(['a', 'b']);
-    expect(nextBoundaryQuestion(startBoundaryMerge(['a', 'b', 'c'], {}))).toBeNull();
-    const noLiked = startBoundaryMerge(['F0', 'D0'], { firstFine: 0, firstDisliked: 1 });
-    expect(nextBoundaryQuestion(noLiked)).toMatchObject({ lower: 'D0', upper: 'F0', boundary: 2 });
-  });
-});
-
-describe('suggestAnchors', () => {
-  it('asks about every spot of tiny lists and #1, middle, last otherwise', () => {
-    expect(suggestAnchors(['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
-    expect(suggestAnchors(keys(9))).toEqual(['k0', 'k4', 'k8']);
-    expect(suggestAnchors(keys(9), 'more')).toEqual(['k0', 'k2', 'k4', 'k6', 'k8']);
-  });
-
-  it('uses the last liked spot instead of the median when buckets are known', () => {
-    const order = keys(10);
-    const buckets = Object.fromEntries(order.map((k, i) => [k, i < 7 ? 'liked' : 'fine'] as const));
-    expect(suggestAnchors(order, 'quick', buckets)).toEqual(['k0', 'k6', 'k9']);
-    expect(suggestAnchors(order, 'more', buckets)).toEqual(['k0', 'k2', 'k4', 'k6', 'k7', 'k9']);
+  it('inserts the shorter list into the longer one', () => {
+    const state = startJellyMerge(keys(10, 'b'), ['J1', 'J2'], {}, {});
+    expect(state.merged).toHaveLength(10);
+    expect(state.pending[0].keys).toEqual(['J1', 'J2']);
   });
 });
 
-function scored(order: string[], guts: Record<string, number>): RestaurantEntry[] {
-  return recomputeMagicScores(
-    order.map((id) => ({ id, name: id, formattedAddress: '', category: 'restaurants', categories: [], cuisines: [], initialRating: guts[id], rankIndex: 0, magicScore: 0, comparisonsCount: 0, createdAt: 0, updatedAt: 0 }))
-  );
-}
+describe('rating order and accuracy', () => {
+  it('asks #1, last, middle, then the middle of each gap, covering every spot once', () => {
+    expect(ratingOrder(9)).toEqual([0, 8, 4, 2, 6, 1, 3, 5, 7]);
+    for (const n of [0, 1, 2, 3, 50, 301]) expect([...ratingOrder(n)].sort((a, b) => a - b)).toEqual([...Array(n).keys()]);
+    expect(nextToRate(['a', 'b', 'c'], { a: 9 })).toEqual(['c', 'b']);
+  });
 
-const user = (key: string, rating: number): Anchor => ({ key, rating, source: 'user' });
-
-describe('interpolateGuts', () => {
-  for (const linear of [false, true]) {
-    describe(linear ? 'linear scale' : 'non-linear scale', () => {
-      const order = keys(41);
-      const anchors = [user('k0', 9.4), user('k20', 7.2), user('k40', 3.5)];
-      const guts = interpolateGuts(order, anchors, { linear });
-
-      it('keeps anchors as rated and the rest non-increasing', () => {
-        expect(guts.k0).toBe(9.4);
-        expect(guts.k20).toBe(7.2);
-        expect(guts.k40).toBe(3.5);
-        const values = order.map((k) => guts[k]);
-        values.slice(1).forEach((v, i) => expect(v).toBeLessThanOrEqual(values[i]));
-      });
-
-      it('interpolates evenly in spectrum-% space', () => {
-        const mid = (spectrumRatingToPct(9.4, linear) + spectrumRatingToPct(7.2, linear)) / 2;
-        expect(spectrumRatingToPct(guts.k10, linear)).toBeCloseTo(mid, 0);
-      });
-
-      it('preserves the order and stays near the anchors after recomputeMagicScores', () => {
-        const list = scored(order, guts);
-        expect(list.map((r) => r.id)).toEqual(order);
-        list.slice(1).forEach((r, i) => expect(r.magicScore).toBeLessThanOrEqual(list[i].magicScore));
-        expect(Math.abs(list[0].magicScore - 9.4)).toBeLessThan(0.6);
-        expect(Math.abs(list[20].magicScore - 7.2)).toBeLessThan(0.4);
-        expect(Math.abs(list[40].magicScore - 3.5)).toBeLessThan(0.6);
-      });
+  it('the typical error shrinks as ratings come in', () => {
+    const order = keys(60);
+    const truth = order.map((_, i) => 9.5 - i * 0.08);
+    const errors = [3, 10, 30, 60].map((count) => {
+      const rated = new Set(ratingOrder(60).slice(0, count));
+      const guts = Object.fromEntries(order.flatMap((k, i) => (rated.has(i) ? [[k, truth[i]]] : [])));
+      return listAccuracy(order, guts).typicalError;
     });
-  }
+    errors.slice(1).forEach((e, i) => expect(e).toBeLessThan(errors[i]));
+    expect(listAccuracy(order, {})).toMatchObject({ rated: 0, total: 60 });
+  });
+});
 
-  it('the two scales differ between anchors (the bar is not linear in rating)', () => {
-    const order = keys(3);
-    const anchors = [user('k0', 10), user('k2', 1)];
-    expect(interpolateGuts(order, anchors, { linear: true }).k1).toBe(5.5);
-    expect(interpolateGuts(order, anchors, { linear: false }).k1).not.toBe(5.5);
+describe('spots without a gut rating', () => {
+  it('get their score from the order and their rated neighbours, never a guess', () => {
+    const fit = fitScoresToOrder([9, null, null, 6, null, 3]);
+    fit.slice(1).forEach((v, i) => expect(v).toBeLessThanOrEqual(fit[i] + 1e-9));
+    expect(fit[1]).toBeLessThan(fit[0]);
+    expect(fit[1]).toBeGreaterThan(fit[3]);
+    expect(fit[4]).toBeGreaterThan(fit[5]);
   });
 
-  it('flattens contradicting anchors instead of bending back up', () => {
-    const guts = interpolateGuts(keys(5), [user('k0', 6), user('k2', 9), user('k4', 3)]);
-    // The ratings given are kept; the spots between follow the flattened curve (6 and 9 pooled to ~7.5)
-    expect([guts.k0, guts.k2, guts.k4]).toEqual([6, 9, 3]);
-    expect(guts.k1).toBeGreaterThan(6);
-    expect(guts.k1).toBeLessThan(9);
-    expect(guts.k3).toBeLessThan(guts.k1);
+  it('recomputeMagicScores treats a missing initialRating as unknown', () => {
+    const e = (id: string, initialRating?: number) =>
+      ({ id, name: id, formattedAddress: '', category: 'restaurants', categories: [], cuisines: [], initialRating, rankIndex: 0, magicScore: 0, comparisonsCount: 0, createdAt: 0, updatedAt: 0 }) as RestaurantEntry;
+    const list = recomputeMagicScores([e('a', 9), e('b'), e('c', 5)]);
+    expect(list[1].initialRating).toBeUndefined();
+    expect(list[1].magicScore).toBeLessThan(list[0].magicScore);
+    expect(list[1].magicScore).toBeGreaterThan(list[2].magicScore);
   });
 
-  it('uses the preset past the user anchors and when there are none', () => {
-    const order = keys(11);
-    const onlyTop = interpolateGuts(order, [user('k0', 9.6)]);
-    expect(onlyTop.k0).toBe(9.6);
-    expect(onlyTop.k10).toBe(4.5);
-    const none = interpolateGuts(order, []);
-    expect([none.k0, none.k5, none.k10]).toEqual([9, 7, 4.5]);
-  });
-
-  it('existing jelly spots work as anchors, but user anchors win at the same spot', () => {
-    const guts = interpolateGuts(keys(5), [
-      { key: 'k0', rating: 9, source: 'existing' },
-      { key: 'k4', rating: 5, source: 'existing' },
-      { key: 'k4', rating: 4, source: 'user' },
-    ]);
-    expect(guts.k4).toBe(4);
-    expect(guts.k2).toBeLessThan(9);
-    expect(guts.k2).toBeGreaterThan(4);
-  });
-
-  it('bucket presets descend through each bucket', () => {
-    const order = keys(6);
-    const buckets = Object.fromEntries(order.map((k, i) => [k, i < 3 ? 'liked' : i < 5 ? 'fine' : 'disliked'] as const));
-    expect(presetAnchors(order, buckets).map((a) => [a.key, a.rating])).toEqual([
-      ['k0', 9.2],
-      ['k2', 6.0],
-      ['k3', 5.9],
-      ['k4', 4.0],
-      ['k5', 3.9],
-    ]);
-    const guts = interpolateGuts(order, [], { buckets });
-    expect(guts.k1).toBeGreaterThan(6);
-    expect(guts.k1).toBeLessThan(9.2);
-  });
-
-  it('handles empty and one-spot lists', () => {
-    expect(interpolateGuts([], [])).toEqual({});
-    expect(interpolateGuts(['a'], [])).toEqual({ a: 8 });
+  it('a list with no ratings at all still scores (flat around the default center)', () => {
+    const fit = fitScoresToOrder([null, null, null]);
+    expect(fit.every((v) => v > 5 && v < 9)).toBe(true);
   });
 });

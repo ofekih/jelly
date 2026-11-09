@@ -29,7 +29,7 @@ export interface BeliSpotText {
 
 /** One row of `rankings.csv`, with its notes joined in. */
 export interface BeliRankedRow extends BeliSpotText {
-  /** `beliPlaceKey(name, city)`: what notes are joined on and what re-imports recognise */
+  /** `beliPlaceKey(name, city)`: what notes, dishes and lookups are joined on */
   key: string;
   name: string;
   city: string;
@@ -158,88 +158,77 @@ export type BeliBucket = 'liked' | 'fine' | 'disliked';
 /**
  * Where the buckets start in a Beli list (0-based positions in rank order). The export has no
  * scores, so the user points at the first spot Beli scores below ≈6.7 (`firstFine`) and below
- * ≈3.4 (`firstDisliked`). `undefined` = not given (the whole rest counts as the bucket above);
- * the list's length = that bucket is empty.
+ * ≈3.4 (`firstDisliked`), reading them off the Beli app. `undefined` = not given (the rest counts
+ * as the bucket above); the list's length = that bucket is empty.
  */
 export interface BucketBounds {
   firstFine?: number;
   firstDisliked?: number;
 }
 
-/** A side-by-side question at a bucket boundary: is `lower` (from the bucket below) better than `upper`? */
-export interface BoundaryQuestion {
-  lower: string; // row key
-  upper: string; // row key
-  /** 1 = liked/fine boundary, 2 = (liked+fine)/disliked boundary */
-  boundary: 1 | 2;
-  /** Questions answered so far at this boundary, and its soft cap */
+/** Which merge a question belongs to: fine into liked, didn't-like into those, or Beli with the jelly list */
+export type MergeStage = 'fine' | 'disliked' | 'jelly';
+
+/** A side-by-side question: is `candidate` (being placed) better than `other` (already placed)? */
+export interface MergeQuestion {
+  candidate: string;
+  other: string;
+  stage: MergeStage;
+  /** Questions answered so far in this merge */
   asked: number;
-  cap: number;
+  /** Spots still to place (each takes ~2 questions when its estimate is right, more when not) */
+  remaining: number;
 }
 
-/** 'lower' / 'upper' = that one is better; 'tie' = too close (lower goes just below upper); 'skip' = stop this boundary */
-export type BoundaryAnswer = 'lower' | 'upper' | 'tie' | 'skip';
+/** 'candidate' / 'other' = that one is better; 'tie' = too close to call */
+export type MergeAnswer = 'candidate' | 'other' | 'tie';
 
-/** One recorded answer, kept so the entries get them as `comparisons` */
-export interface BoundaryAnswerRecord {
-  lower: string;
-  upper: string;
-  /** Result for `lower`: 1 = preferred, 0 = not, 0.5 = too close */
+/** One answer, kept so the imported entries carry it as `comparisons` */
+export interface MergeAnswerRecord {
+  candidate: string;
+  other: string;
+  /** Result for `candidate`: 1 = preferred, 0 = not, 0.5 = too close */
   result: 0 | 0.5 | 1;
   at: number;
 }
 
-/**
- * The interactive merge at the bucket boundaries, as a plain serialisable value (save it to
- * resume). Use `nextBoundaryQuestion` / `answerBoundaryQuestion` / `mergedOrder`.
- */
-export interface BoundaryMergeState {
-  /** Row keys in Beli order and each one's bucket */
-  keys: string[];
-  buckets: BeliBucket[];
-  /** The merged order so far: everything above the run being merged in */
+/** A merge in progress, as plain JSON (save it to resume). Use the functions in `merge.ts`. */
+export interface MergeState {
+  /** The merged order so far */
   merged: string[];
-  /** Runs still to merge, in order (fine, then disliked), each best first */
-  pending: Array<{ boundary: 1 | 2; keys: string[] }>;
-  /** Search for `pending[0].keys[0]`: its gap in `merged` lies in [lo, hi] */
+  /** Runs still to merge in, in order, each best first */
+  pending: Array<{ stage: MergeStage; keys: string[] }>;
+  /** Estimated scores, to start each search where the spot probably belongs */
+  estimates: Record<string, number>;
+  /** The current spot can't land above this gap (it's below the previous spot of its run) */
+  floor: number;
+  /** The current spot's gap lies in [lo, hi] */
   lo: number;
   hi: number;
-  /** Next probe distance from `hi` while galloping (0 = binary search phase) */
+  /** Where its estimate puts it */
+  guess: number;
+  phase: 'start' | 'up' | 'down' | 'binary';
   step: number;
-  /** Gap the previous spot of this run landed in (later ones can't land above it) */
-  floor: number;
-  asked: Record<1 | 2, number>;
-  cap: number;
-  /** Paused at the cap: `continueBoundary` lifts it by another `cap` */
-  paused: boolean;
-  answers: BoundaryAnswerRecord[];
+  asked: number;
+  answers: MergeAnswerRecord[];
 }
-
-/** A gut rating the user gave (or that comes for free from a spot already in the jelly list). */
-export interface Anchor {
-  key: string; // row key
-  rating: number; // 1–10, as the spectrum gives it
-  source: 'user' | 'existing' | 'preset';
-}
-
-/** How many anchor questions to ask: 'quick' (2–3 per list) or 'more' (adds quartiles, bucket edges) */
-export type AnchorLevel = 'quick' | 'more';
 
 // ---------------------------------------------------------------------------
 // Building and merging entries
 // ---------------------------------------------------------------------------
 
-/** One list, ready to build: its final order, the user's anchors and the boundary answers */
+/** One Beli list, ready to build */
 export interface ScoredList {
   category: SpotCategory;
-  /** Row keys, best first (`mergedOrder` after the boundary merge, or Beli's order) */
+  /**
+   * The final order, best first: Beli row keys and, if the list already had spots, jelly entry IDs
+   * (`mergeOrder` of the jelly merge). Existing spots missing from it are woven in by score.
+   */
   order: string[];
-  /** Gut ratings the user gave (`source: 'user'`); spots already in the jelly list are added as free anchors when building */
-  anchors: Anchor[];
-  /** Each row's Beli bucket, if the user gave the bounds (shapes the preset) */
-  buckets?: Record<string, BeliBucket>;
-  /** Boundary answers, stored on the entries as comparisons */
-  answers: BoundaryAnswerRecord[];
+  /** Gut ratings by row key; spots without one are unknown to the fit (never guessed) */
+  guts: Record<string, number | undefined>;
+  /** Every merge answer (buckets and jelly), stored on the imported entries as comparisons */
+  answers: MergeAnswerRecord[];
 }
 
 export interface ImportPlan {
@@ -258,8 +247,8 @@ export interface ImportSummary {
   duplicates: Array<{ key: string; category: SpotCategory; entryId: string }>;
   /** Spots in both lists that Beli and jelly order differently: jelly's order is kept, and they pin nothing */
   orderConflicts: Array<{ category: SpotCategory; entryId: string }>;
-  /** Already imported by an earlier run (recognised by Beli key; no lookup needed) */
-  alreadyImported: number;
+  /** Imported spots without a gut rating (scored from the order and the spots around them) */
+  unrated: number;
   /** Bookmarks skipped: already saved, or already ranked in that list */
   skippedBookmarks: number;
   /** Rows left out: not found / skipped by the user */

@@ -16,64 +16,83 @@ gitignored. Tests and the emulator use the synthetic export in `fixtures.ts`
 
 ## Flow (what the UX does, in order)
 
+This is a one-time import: re-imports aren't supported.
+
 | Step | Call | Notes |
 |---|---|---|
-| 1. Pick file(s) | `readBeliFiles(files)` → `BeliExport` | Takes one `.zip` or loose CSVs. Only the five CSVs are opened; photos, devices, profile and the rest are listed by name only. Throws `BeliImportError` (`not_zip`, `no_rankings`, `not_beli`). Show `report` (unknown list codes, bad rows, trimmed notes). |
-| 2. Resume | `loadImportSession(exp.fingerprint)` | Earlier answers for this export (`ImportSession`). Save with `saveImportSession` after every answer. |
-| 3. Find places (background) | `buildMatchQueries(exp, alreadyImported(restaurants, bookmarks))`, then `matchPlaces(queries, { apiKey, signal, onProgress, onResult })` | Ranked spots and bookmarks of one place share a lookup. Re-imports skip rows already imported. Cached on the device for 30 days, so a reload or a second try is free. Cancel with an `AbortController`. Show `progress` (`apiCalls`, `fromCache`, `backingOff`). `run.fatal` means Google refused the key: stop and say so. |
-| 4. Fix Beli's buckets, per list (can run during step 3) | `startBoundaryMerge(keys, bounds)`, then `nextBoundaryQuestion` / `answerBoundaryQuestion` | See **Scores** below. `bounds` comes from "tap the first spot Beli scores below ≈6.7 / ≈3.4" (optional). Each answer is `'lower' \| 'upper' \| 'tie' \| 'skip'`. When `state.paused`, ask "keep going?" and call `continueBoundary`. `mergedOrder(state)` is always valid. |
-| 5. Gut ratings, per list | `suggestAnchors(order, 'quick' \| 'more', bucketOf(state))` | Rate these on the normal spectrum. The user may add any other spot. Skipping uses `presetAnchors`. Ratings are `{ key, rating, source: 'user' }`. |
-| 6. Review places | `MatchResult.status`: `matched` (auto), `review` (show `candidates`, top 3, and `reasons`), `not_found`, `error` (retry by running step 3 again) | The decision per key is `MatchDecision`: `{ kind: 'place', candidate }`, `{ kind: 'manual' }` (custom spot) or `{ kind: 'skip' }`. A place found through normal search is passed as `place`. |
-| 7. Preview + write | `plan = buildImportPlan({ exp, lists, matches, decisions, restaurants, bookmarks, linear, batch: createImportBatchId() })`, then `persistListChange({ prev…, next… }, { db, uid })` | `lists` holds one `ScoredList` per list to import: `{ category, order: mergedOrder(s), anchors, buckets: bucketOf(s), answers: s.answers }`. Show `plan.summary`. Then set App state (`restaurantsRef`, `setRestaurants`, `setBookmarks`) to `plan.restaurants` / `plan.bookmarks`, so App's debounced publish writes `sharedLists` **once**. Store `committedBatch` in the session. |
-| Undo | `importBatches(restaurants, bookmarks)`, `undoImport(restaurants, bookmarks, batch)`, `persistListChange(…)` | Removes every spot and bookmark of that batch, re-ranked ones included (`editedSinceImport` counts them for the `ConfirmModal`). The other spots are refit back to their old scores. |
+| 1. Pick file(s) | `readBeliFiles(files)` → `BeliExport` | Takes one `.zip` or loose CSVs. Only the five CSVs are opened; photos, devices, profile and the rest are listed by name only. Throws `BeliImportError` (`not_zip`, `no_rankings`, `not_beli`). Show `report`. |
+| 2. Resume | `loadImportSession(exp.fingerprint)` | Earlier answers for this export. Save with `saveImportSession` after every answer. |
+| 3. Find places (background) | `matchPlaces(buildMatchQueries(exp), { apiKey, signal, onProgress, onResult })` | Ranked spots and bookmarks of one place share a lookup. Cached on the device for 30 days. Cancel with an `AbortController`. `run.fatal` means Google refused the key. |
+| 4. Bucket boundaries, per list | `BucketBounds` | "Tap the first spot Beli scores below ≈6.7, then below ≈3.4", read off the Beli app. Optional: without them the whole list counts as one run. |
+| 5. Gut ratings, per list (can run during step 3) | `nextToRate(order, guts)`, `listAccuracy(order, guts)` | Ask in this order: #1, last, middle, then the middle of each gap. Show `typicalError` live. The user may stop at any point. A spot without a rating stays without one. |
+| 6. Merge Beli's buckets | `startBucketMerge(keys, bounds, estimateScores(keys, guts))`, then `nextMergeQuestion` / `answerMergeQuestion(s, 'candidate' \| 'other' \| 'tie')` until it returns null | No cap. `q.remaining` drives a progress bar. `finishMerge` places what's left by estimate if the user stops. |
+| 7. Review places | `MatchResult.status`: `matched` (auto), `review` (top 3 `candidates` + `reasons`), `not_found`, `error` (run step 3 again) | The decision per key is `MatchDecision`: `place`, `manual` (custom spot) or `skip`. |
+| 8. Merge with the jelly list (only if that list has spots; needs step 7) | `startJellyMerge(mergeOrder(bucketMerge), jellyIds, sharedSpots(rows, category, restaurants, matches, decisions), jellyMergeEstimates(beliOrder, guts, jellyList))`, then the same question loop | The shorter list is inserted into the longer one. A place in both lists is one spot: no question, and it bounds its neighbours. |
+| 9. Preview + write | `plan = buildImportPlan({ exp, lists, matches, decisions, restaurants, bookmarks, batch: createImportBatchId() })`, then `persistListChange({ prev…, next… }, { db, uid })` | `lists` holds one `{ category, order: mergeOrder(jellyMerge or bucketMerge), guts, answers: [...bucket.answers, ...jelly.answers] }` per list. Show `plan.summary`. Then set App state to `plan.restaurants` / `plan.bookmarks`, so App publishes `sharedLists` **once**. |
+| Undo | `importBatches`, `undoImport(restaurants, bookmarks, batch)`, `persistListChange(…)` | Removes every spot and bookmark of the batch; the rest are refit back. `editedSinceImport` counts re-ranked ones for the `ConfirmModal`. `batchTime(batch)` gives the import time, for a 30-day window. |
 
-A console version of the whole flow, with canned Places answers, runs under `npm run dev:emu`:
-`await jellyDevBeliImport.run()`, `await jellyDevBeliImport.undo()` (`src/dev/beliImportDev.ts`).
+A console version of the whole flow, with canned Places answers and a simulated user, runs under
+`npm run dev:emu`: `await jellyDevBeliImport.run({ rate: 0.5 })`, `await jellyDevBeliImport.undo()`
+(`src/dev/beliImportDev.ts`).
 
-## Scores
+## Rebuilding the order: merge sort's merge, with the user as the comparison
 
 Beli asks liked / fine / didn't like first. It compares spots only within that bucket and spreads
-scores evenly in thirds (>6.7, 3.4–6.7, <3.4). So the export is **three sorted runs stacked**: the
-order inside a run is earned, the order across a boundary is forced. Often the top of "fine" beats
-the bottom of "liked".
+scores in thirds, so the export is **three sorted runs stacked**: the order inside a run is earned,
+the order across a boundary is forced. The user's jelly list is a fourth sorted run. The true order
+is their merge (`merge.ts`):
+- fine into liked;
+- didn't-like into that;
+- then the shorter of Beli and jelly into the longer.
 
-**Boundary merge** (`boundaryMerge.ts`)
-- The true order is a merge of the runs. First the best "fine" spot is compared with the worst
-  "liked" one. If it loses, Beli was right: **one question per boundary**.
-- If it wins, the search gallops up (2, 4, 8 places), then binary-searches. The next spot starts
-  where the previous one landed.
-- There is a soft cap of 6 questions per boundary, then "keep going?". Anything unanswered keeps
-  Beli's order.
-- Answers are stored as `comparisons` on the entries.
+**How each spot is placed.** The search starts where the estimated scores put it. Fresh gut
+ratings make that estimate close, so a right guess is confirmed in about 2 questions; a wrong one
+gallops outward (1, 2, 4 places) and then bisects. A spot never lands above the one before it in
+its run.
 
-**Anchors** (`scores.ts`)
-- **Quick:** #1, the last "liked" spot (or the median) and the last spot. Lists of 3 or fewer: every spot.
-- **More:** adds the quartiles and the bucket edges.
-- Spots already in that jelly list are **free anchors**, using their jelly score.
-- Anchors keep the rating the user gave. Every other spot is interpolated by position in
-  spectrum-% space (the same on the linear and the non-linear scale), on the anchors made
-  non-increasing first.
-- Then the usual `recomputeMagicScores`.
-- The preset, used for skipped lists and past the user's last anchor: liked 9.2→6.0,
-  fine 5.9→4.0, didn't like 3.9→1.5 (with buckets), else 9.0 / 7.0 / 4.5.
+**Simulated cost** (realistic bucket mistakes: ~84 of a 300-spot list's "fine" spots truly beat
+the worst "liked" one). Questions for an exact merge:
 
-## Merging into lists that already have spots
+| List | Guided by gut ratings | Galloping from the bottom | Ranking every spot |
+|---|---|---|---|
+| 300 spots | ~210 | ~470 | ~2,500 |
+| 100 spots | ~60 | ~110 | ~660 |
+| 300 spots + 40 in jelly | ~430 | – | – |
 
-- **A place already in that jelly list** keeps its jelly entry untouched, notes included
-  (`summary.duplicates`). It is a free anchor.
-- **Shared spots pin the two orders together.** The longest run of shared spots that Beli and
-  jelly order the same way become fixed points. Each new spot lands between the fixed points
-  around it in Beli's order. Between two fixed points, new and existing spots are woven by score,
-  as a merge of two sorted runs, so both orders survive.
-- **Shared spots the orders disagree on** stay where jelly has them and pin nothing
-  (`summary.orderConflicts`).
-- **Existing spots' scores move a little**, because the whole list is refit: in simulations,
-  median 0.1 and at most 0.6 when 300 Beli spots land on a 15-spot list. Their order never changes.
-- **A re-import of a newer export** skips rows already imported (`imported.key` = Beli list +
-  name|city, so a spot moved to another jelly list is still recognised). Earlier imports pin the
-  order for the new ones.
-- **Beli bookmarks** go to Want to try in the mapped list. They are skipped when already saved
-  (any list) or already ranked in that list.
+Answers are stored on the imported entries as `comparisons`.
+
+## Scores: gut ratings, never guessed
+
+jelly's `magicScore` is gut ratings fitted to the order. A spot without a gut rating has **no**
+`initialRating`: the fit (`fitScoresToOrder`, which now takes `null`) treats it as unknown, and its
+score comes from the order and the rated spots around it. `fitScoresWithSpread` also returns each
+score's posterior spread, which is what `listAccuracy` reports.
+
+Simulated error (RMS, score points) by how many spots are rated:
+
+| List | 3 rated | 20 rated | 60 rated | all rated |
+|---|---|---|---|---|
+| 300 spots | 1.0 | 0.33 | 0.25 | 0.13 |
+| 100 spots | 0.8 | 0.34 | 0.21 | 0.19 |
+
+Rating every spot matches a list ranked in jelly. Picking which spots to rate adaptively barely
+beats the even spread of `ratingOrder`.
+
+**Older app versions.** Before this change, a loaded spot without `initialRating` defaulted to 8.
+An old cached app on another device would score unrated imports as 8s, and its load-time refresh
+would write those scores back until that device updates. Ship the reading side (this branch's
+`rankingEngine` / `categoryLists`) before the import UI, and let devices update.
+
+## Lists that already have spots
+
+- **A place in both lists** keeps its jelly entry untouched, notes included (`summary.duplicates`).
+- **The jelly merge** (step 8) settles the order exactly.
+- **If it was skipped**, `buildImportPlan` falls back: the longest run of shared spots that both
+  orders agree on pins the two orders together, and new spots are woven in by estimated score
+  between those pins (`mergeIntoList`). Shared spots the orders disagree on are reported in
+  `summary.orderConflicts`.
+- **Beli bookmarks** go to Want to try in the mapped list. They are skipped when already saved (any
+  list) or already ranked in that list.
 
 ## Fields and privacy
 
@@ -83,12 +102,12 @@ the bottom of "liked".
 | Notes | `notes` (several joined by a blank line) | yes |
 | Favorite Dishes | `favoriteDishes` (bookmarks: appended to `notes`) | yes |
 | Private Notes | `privateNotes` | **no**: `toSharedEntry` / `toSharedBookmark` strip it |
-| Created Date | `createdAt`, one `rankedHistory` event | yes |
+| Created Date | `createdAt`, one `rankedHistory` event (no `initialRating` if unrated) | yes |
 | (import) | `imported: { source: 'beli', batch, key }` | **no**: stripped |
 | Visit Dates, labels | dropped (labels by decision; both parsed and counted) | – |
 | follows.csv | `exp.follows`, returned only, never stored | – |
 
-`comparisonsCount` is the number of boundary answers the spot carries (0 for most).
+`comparisonsCount` is the number of merge answers the spot carries.
 `placeSpot` carries `privateNotes` and `imported` through a re-rank or a move.
 
 ## Cost (Google Places)
@@ -132,7 +151,8 @@ the bottom of "liked".
 
 - `parse.ts`, `csv.ts`: zip/CSV reading, joins, report.
 - `match.ts`, `store.ts`: lookups, scoring, cache.
-- `boundaryMerge.ts`, `scores.ts`: rebuilding scores.
+- `merge.ts`: merging sorted runs with questions.
+- `scores.ts`: rating order, estimates, accuracy.
 - `plan.ts`: building entries, merging, bookmarks, undo.
 - `session.ts`: saved answers.
 - `fixtures.ts`: the synthetic export and fake Places search.
