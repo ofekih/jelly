@@ -66,7 +66,9 @@ Answers are stored on the imported entries as `comparisons`.
 jelly's `magicScore` is gut ratings fitted to the order. A spot without a gut rating has **no**
 `initialRating`: the fit (`fitScoresToOrder`, which now takes `null`) treats it as unknown, and its
 score comes from the order and the rated spots around it. `fitScoresWithSpread` also returns each
-score's posterior spread, which is what `listAccuracy` reports.
+score's posterior spread. `listAccuracy` reports that, or a floor fitted to simulations when it is
+larger: with fewer than about 15 ratings on a long list, the model is too confident, because it
+takes the list's center from a handful of ratings. With no ratings, `typicalError` is `Infinity`.
 
 Simulated error (RMS, score points) by how many spots are rated:
 

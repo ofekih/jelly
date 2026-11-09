@@ -125,7 +125,13 @@ describe('rating order and accuracy', () => {
       return listAccuracy(order, guts).typicalError;
     });
     errors.slice(1).forEach((e, i) => expect(e).toBeLessThan(errors[i]));
-    expect(listAccuracy(order, {})).toMatchObject({ rated: 0, total: 60 });
+    expect(listAccuracy(order, {})).toMatchObject({ rated: 0, total: 60, typicalError: Infinity });
+  });
+
+  it('is not overconfident with a few ratings on a long list (simulated truth: ~0.75 after 4)', () => {
+    const order = keys(300);
+    const guts = Object.fromEntries(ratingOrder(300).slice(0, 4).map((i) => [order[i], 9 - i * 0.015]));
+    expect(listAccuracy(order, guts).typicalError).toBeGreaterThan(0.6);
   });
 });
 

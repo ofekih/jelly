@@ -50,15 +50,27 @@ export function estimateScores(order: string[], guts: Record<string, number | un
 }
 
 /**
- * How sure the list's scores are with the ratings so far: `typicalError` is the root-mean-square
- * posterior spread across spots (score points), straight from the model. Live feedback for "rate
- * more?" (it shrinks as ratings come in).
+ * Below ~15 ratings the model's own spread is too confident on long lists: it takes the list's
+ * center from the median of the few ratings and doesn't count that guess as uncertain (simulated:
+ * a 400-spot list with 2–5 ratings reports ~0.33 against a true 0.6–0.85). This floor is fitted to
+ * those simulations (n 15–400, 2–100 ratings); past ~20 ratings the model's figure is the larger.
+ */
+function fewRatingsFloor(rated: number, total: number): number {
+  if (rated === 0) return Infinity;
+  return (1.4 / Math.sqrt(rated)) * Math.sqrt(Math.min(1, total / 150));
+}
+
+/**
+ * How sure the list's scores are with the ratings so far: `typicalError` is the expected
+ * root-mean-square error of the scores (score points): the model's posterior spread, or the
+ * simulated floor for few ratings if that is larger. Live feedback for "rate more?" (it shrinks as
+ * ratings come in). `Infinity` with no ratings at all.
  */
 export function listAccuracy(order: string[], guts: Record<string, number | undefined>): { rated: number; total: number; typicalError: number } {
   const g = gutsInOrder(order, guts);
   const rated = g.filter((x) => x !== null).length;
   if (order.length === 0) return { rated: 0, total: 0, typicalError: 0 };
   const fit = fitScoresWithSpread(g);
-  const typicalError = Math.sqrt(fit.reduce((s, f) => s + f.sd * f.sd, 0) / fit.length);
-  return { rated, total: order.length, typicalError };
+  const model = Math.sqrt(fit.reduce((s, f) => s + f.sd * f.sd, 0) / fit.length);
+  return { rated, total: order.length, typicalError: Math.max(model, fewRatingsFloor(rated, order.length)) };
 }
