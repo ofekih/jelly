@@ -95,6 +95,8 @@ export function placeSpot(
     comparisonsCount: (existing?.comparisonsCount || 0) + result.comparisonsDone,
     notes: existing?.notes,
     favoriteDishes: existing?.favoriteDishes,
+    privateNotes: existing?.privateNotes,
+    imported: existing?.imported, // A re-ranked import still belongs to its batch (undo, re-import)
     rankedHistory: [...prevHistory, { timestamp: now, initialRating }],
     // A (re-)rank starts its answer history fresh: older answers about it no longer count
     comparisons: result.answers.map((a): StoredComparison => ({ ...a, at: now })),

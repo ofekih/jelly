@@ -54,6 +54,8 @@ rules_version = '2';
 //   - comparisons: list (optional, <= 300 items) - stored side-by-side answers ({opponentId, result, at})
 //   - notes: string (optional, <= 5000 chars) - personal review notes
 //   - favoriteDishes: string (optional, <= 2000 chars) - recommended dishes
+//   - privateNotes: string (optional, <= 5000 chars) - notes only the owner sees (never in sharedLists)
+//   - imported: map (optional) - where an imported spot came from {source: 'beli', batch: string 1..80, key: string 1..500}
 //   - visitedAt: string | number | timestamp (optional, <= 100 chars if string) - visit date
 //   - createdAt: number | timestamp (optional) - creation timestamp
 //   - updatedAt: number | timestamp (optional) - last update timestamp
@@ -77,6 +79,8 @@ rules_version = '2';
 //   - cuisines: list<string> (optional, <= 50 items) - cuisine tags
 //   - primaryTypeDisplay: string (optional, <= 200 chars) - primary type label
 //   - notes: string (optional, <= 5000 chars) - personal notes / why want to try
+//   - privateNotes: string (optional, <= 5000 chars) - notes only the owner sees (never in sharedLists)
+//   - imported: map (optional) - as on restaurants
 //   - recommendedBy: string (optional, <= 120 chars) - friend recommendation badge
 //   - recommendedByUid: string (optional, <= 150 chars) - recommending friend UID/shareId
 //   - createdAt: number | timestamp (optional) - creation timestamp
@@ -256,6 +260,17 @@ service cloud.firestore {
          (!('start' in data.priceRange) || !('end' in data.priceRange) || data.priceRange.end >= data.priceRange.start));
     }
 
+    // Validate optional import details (`ImportedFrom` in src/types.ts): exactly source, batch, key
+    function isValidOptionalImported(data) {
+      return !('imported' in data) ||
+        (data.imported is map &&
+         data.imported.keys().hasOnly(['source', 'batch', 'key']) &&
+         data.imported.keys().hasAll(['source', 'batch', 'key']) &&
+         data.imported.source in ['beli'] &&
+         data.imported.batch is string && data.imported.batch.size() >= 1 && data.imported.batch.size() <= 80 &&
+         data.imported.key is string && data.imported.key.size() >= 1 && data.imported.key.size() <= 500);
+    }
+
     // Validate optional movie / show / book / game info (`MediaInfo` in src/types.ts)
     function isValidOptionalMedia(data) {
       return !('media' in data) ||
@@ -336,6 +351,8 @@ service cloud.firestore {
         isValidOptionalMedia(data) &&
         isValidOptionalString('notes', 0, 5000) &&
         isValidOptionalString('favoriteDishes', 0, 2000) &&
+        isValidOptionalString('privateNotes', 0, 5000) &&
+        isValidOptionalImported(data) &&
         (!('status' in data) || data.status == null || data.status in ['ranked', 'want_to_try']) &&
         (!('elo' in data) || data.elo == null || (data.elo is number && data.elo >= 0 && data.elo <= 5000)) &&
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
@@ -366,6 +383,8 @@ service cloud.firestore {
         isValidOptionalCategory(data) &&
         isValidOptionalMedia(data) &&
         isValidOptionalString('notes', 0, 5000) &&
+        isValidOptionalString('privateNotes', 0, 5000) &&
+        isValidOptionalImported(data) &&
         isValidOptionalString('recommendedBy', 0, 120) &&
         isValidOptionalString('recommendedByUid', 0, 150) &&
         (!('lat' in data) || data.lat == null || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&

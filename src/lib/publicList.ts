@@ -1,5 +1,5 @@
 import { BookmarkEntry, RestaurantEntry } from '../types';
-import { toSharedEntry } from './categoryLists';
+import { toSharedBookmark, toSharedEntry } from './categoryLists';
 import { stripUndefined } from './firestoreDoc';
 
 /** Firestore's doc limit is 1 MiB (the only limit on how many spots fit); leave room for the other fields. */
@@ -30,7 +30,7 @@ export function buildPublicLists(
   let spots = restaurants
     .map((r) => stripUndefined(toSharedEntry(r)) as Record<string, any>)
     .sort((a, b) => a.rankIndex - b.rankIndex);
-  let saved = bookmarks.map((b) => stripUndefined(b) as Record<string, any>);
+  let saved = bookmarks.map((b) => stripUndefined(toSharedBookmark(b)) as Record<string, any>);
 
   const fits = () => byteSize({ spots, saved }) <= maxBytes;
   if (fits()) return { restaurants: spots, bookmarks: saved, trimmed: 'none' };

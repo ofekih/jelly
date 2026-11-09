@@ -142,7 +142,7 @@ function normalizeForMatch(str: string): string {
  * Returns > 0 if the query matches the restaurant's name, or 0 if it only matched
  * unrelated review/category text (e.g. shabu-shabu places appearing for "boil").
  */
-function computeNameMatchScore(candidateName: string, rawQuery: string): number {
+export function computeNameMatchScore(candidateName: string, rawQuery: string): number {
   const normName = normalizeForMatch(candidateName);
   const normQuery = normalizeForMatch(rawQuery);
   if (!normName || !normQuery) return 0;
@@ -212,7 +212,7 @@ export function locationAdjustedScore(
   return km > FAR_AWAY_KM ? nameScore - 30 : nameScore;
 }
 
-function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate {
+export function mapGooglePlaceToCandidate(p: any, fallbackName: string): PlaceCandidate {
   const name = p.displayName?.text || fallbackName;
   const formattedAddress = p.formattedAddress || p.shortFormattedAddress || '';
   const { neighborhood, city } = extractNeighborhoodAndCity(
@@ -285,6 +285,60 @@ export async function fetchPlacePrice(placeId: string, customApiKey?: string): P
     return googlePrice(await res.json());
   } catch {
     return null;
+  }
+}
+
+/**
+ * Fields for bulk imports (src/lib/beliImport): Text Search Pro only, no Enterprise fields
+ * (priceLevel/priceRange/serves*; prices are filled in later by `usePriceBackfill`), so each call
+ * bills as Text Search Pro: 5,000 free a month, then $32 per 1,000 (a separate SKU from normal
+ * search's Enterprise + Atmosphere). A typical Beli export is ~600 calls.
+ */
+export const IMPORT_FIELD_MASK = [
+  'id',
+  'displayName',
+  'formattedAddress',
+  'shortFormattedAddress',
+  'addressComponents',
+  'location',
+  'types',
+  'primaryType',
+  'primaryTypeDisplayName',
+  'googleMapsUri',
+  'viewport',
+  'businessStatus',
+];
+
+/** One import lookup's outcome: `retry` (rate limit, server error, offline) is worth trying again; `fatal` (bad key, API off, quota) is not. */
+export type ImportSearchResponse =
+  | { status: 'ok'; places: any[] }
+  | { status: 'retry'; code: number }
+  | { status: 'fatal'; code: number };
+
+/** One Text Search call for an import, with `IMPORT_FIELD_MASK`. Throws only on abort. */
+export async function searchTextForImport(
+  textQuery: string,
+  options: { apiKey?: string; signal?: AbortSignal; maxResults?: number } = {}
+): Promise<ImportSearchResponse> {
+  const apiKey = (options.apiKey && options.apiKey.trim()) || DEFAULT_PLACES_API_KEY;
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': IMPORT_FIELD_MASK.map((f) => `places.${f}`).join(','),
+      },
+      body: JSON.stringify({ textQuery, maxResultCount: options.maxResults ?? 5 }),
+      signal: options.signal,
+    });
+    if (res.status === 429 || res.status >= 500) return { status: 'retry', code: res.status };
+    if (!res.ok) return { status: 'fatal', code: res.status };
+    const data = await res.json();
+    return { status: 'ok', places: Array.isArray(data.places) ? data.places : [] };
+  } catch (err) {
+    if (options.signal?.aborted) throw err;
+    return { status: 'retry', code: 0 };
   }
 }
 

@@ -149,9 +149,18 @@ function sanitizeLoadedRestaurant(raw: any): RestaurantEntry {
   };
 }
 
-/** A copy safe to publish in a shared list: answer history stays private (and keeps the doc small) */
+/**
+ * A copy safe to publish in a shared list: answer history, private notes and import details stay
+ * private (and keep the doc small)
+ */
 export function toSharedEntry(entry: RestaurantEntry): RestaurantEntry {
-  const { comparisons: _private, ...shared } = entry;
+  const { comparisons: _private, privateNotes: _notes, imported: _imported, ...shared } = entry;
+  return shared;
+}
+
+/** A bookmark safe to publish: private notes and import details stay private */
+export function toSharedBookmark(bookmark: BookmarkEntry): BookmarkEntry {
+  const { privateNotes: _notes, imported: _imported, ...shared } = bookmark;
   return shared;
 }
 

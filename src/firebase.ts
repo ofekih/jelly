@@ -47,6 +47,7 @@ if (IS_EMULATOR) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
   void import('./dev/emulator').then((m) => m.startEmulatorSession(auth));
+  void import('./dev/beliImportDev').then((m) => m.installBeliImportDev(db, auth));
 }
 
 let analyticsInstance: Analytics | null = null;

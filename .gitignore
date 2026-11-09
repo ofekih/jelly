@@ -10,3 +10,7 @@ firestore-debug.log
 *.tsbuildinfo
 test-results/
 playwright-report/
+
+# Beli data exports hold real people's personal data: never commit one
+*_data_export.zip
+*_data_export/

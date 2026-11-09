@@ -235,6 +235,17 @@ export interface StoredComparison {
   at: number; // When it was answered; answers older than either spot's last (re-)rank are ignored
 }
 
+/**
+ * Where an entry came from when it arrived by import (`src/lib/beliImport`): private, never published.
+ * `batch` groups one import run (undo removes a batch); `key` is the source's own place key, so a
+ * later import of a newer export recognises it without a lookup.
+ */
+export interface ImportedFrom {
+  source: 'beli';
+  batch: string;
+  key: string;
+}
+
 export interface RestaurantEntry {
   id: string; // Unique per (placeId + category)
   placeId?: string;
@@ -265,6 +276,8 @@ export interface RestaurantEntry {
   // Optional hidden metadata (only shown if user opens the detail/edit drawer)
   notes?: string;
   favoriteDishes?: string;
+  privateNotes?: string; // Only ever shown to you: never copied into shared lists
+  imported?: ImportedFrom; // Private: never copied into shared lists
   rankedHistory?: RankedHistoryEvent[];
   comparisons?: StoredComparison[]; // Private: never copied into shared lists
   createdAt: number;
@@ -307,6 +320,8 @@ export interface BookmarkEntry {
   primaryTypeDisplay?: string;
   media?: MediaInfo;
   notes?: string;
+  privateNotes?: string; // Only ever shown to you: never copied into shared lists
+  imported?: ImportedFrom; // Private: never copied into shared lists
   recommendedBy?: string; // e.g. "Sarah (9.4)"
   recommendedByUid?: string;
   createdAt: number;
