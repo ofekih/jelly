@@ -17,6 +17,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '4.7.0',
+    date: '2026-11-09',
+    title: 'Bring your Beli rankings',
+    highlights: [
+      'Coming from Beli? Settings → Import from Beli takes the data file Beli emails you and turns your rankings and want-to-try list into jelly lists',
+      'No file yet? jelly writes the request email to Beli for you—it takes about 3 weeks to arrive',
+      'Places are found on Google Maps on their own; rate as many as you like and a few side-by-side picks fill in the rest',
+      'Already have spots? Beli places are woven in among them, and you can undo the whole import from Settings for 30 days',
+    ],
+  },
+  {
     version: '4.6.1',
     date: '2026-10-29',
     title: 'Search is search',
