@@ -35,7 +35,7 @@ export const BeliReviewStep: React.FC<Props> = ({ items, decisions, onDecide, ta
       <div>
         <h1 className="text-lg font-extrabold">{open ? `${open} place${open === 1 ? '' : 's'} need${open === 1 ? 's' : ''} you` : 'All sorted'}</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-          Everything else matched on its own. Fix what you can and leave the rest for later.
+          Everything else matched on its own. Fix what you can; the rest is left out, and you can add those by hand later.
         </p>
       </div>
       <div className="flex flex-wrap gap-1.5 text-xs font-semibold">

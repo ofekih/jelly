@@ -502,7 +502,7 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
           footer={
             <>
               <span className="flex-1 min-w-[8rem] text-xs text-zinc-500 dark:text-zinc-400">
-                {openCount ? `${openCount} left out for now – you can fix them later` : 'Nothing left to fix'}
+                {openCount ? `${openCount} left out unless you fix them` : 'Nothing left to fix'}
               </span>
               <PrimaryButton disabled={!matchingDone && !fatal} onClick={() => (fitCategories.length ? startFit() : openConfirm())}>
                 {fitCategories.length ? 'Next' : 'Add to jelly'}
@@ -651,7 +651,7 @@ export const BeliImportFlow: React.FC<BeliImportFlowProps> = (props) => {
         {(result.summary.duplicates.length > 0 || result.summary.skipped > 0) && (
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             {result.summary.duplicates.length > 0 && `${result.summary.duplicates.length} were already in jelly and kept your jelly score. `}
-            {result.summary.skipped > 0 && `${result.summary.skipped} were left out; choose the same file again any time to add them.`}
+            {result.summary.skipped > 0 && `${result.summary.skipped} were left out; you can add them by hand with Add.`}
           </p>
         )}
         <div className="rounded-2xl bg-zinc-100 dark:bg-zinc-800/60 p-3.5 text-xs text-zinc-600 dark:text-zinc-400">
